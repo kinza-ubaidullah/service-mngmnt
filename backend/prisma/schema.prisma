@@ -1,0 +1,144 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  ADMIN
+  CALL_CENTER
+  TECHNICIAN
+  WORKSHOP_MANAGER
+}
+
+enum JobStatus {
+  New
+  Assigned
+  InProgress
+  Completed
+  Cancelled
+  InspectionCompleted
+  PickedForWorkshop
+}
+
+enum WorkshopStatus {
+  Received
+  WorkStarted
+  WaitingForParts
+  Completed
+}
+
+model User {
+  id            Int       @id @default(autoincrement())
+  name          String
+  email         String?   @unique
+  phone         String    @unique
+  password_hash String
+  role          Role
+  team_id       Int?
+  team          Team?     @relation(fields: [team_id], references: [id])
+  is_active     Boolean   @default(true)
+  created_at    DateTime  @default(now())
+
+  assigned_jobs Lead[]    @relation("AssignedTo")
+  created_jobs  Lead[]    @relation("AssignedBy")
+
+  @@map("users")
+}
+
+model Team {
+  id            Int      @id @default(autoincrement())
+  name          String
+  contact       String?
+  payment_model Json?
+  created_at    DateTime @default(now())
+  users         User[]
+  leads         Lead[]
+
+  @@map("teams")
+}
+
+model Customer {
+  id              Int      @id @default(autoincrement())
+  name            String
+  phone           String   @unique
+  area            String?
+  exact_address   String?
+  google_map_link String?
+  created_at      DateTime @default(now())
+
+  leads           Lead[]
+
+  @@map("customers")
+}
+
+model Lead {
+  id               Int       @id @default(autoincrement())
+  lead_id          String    @unique
+  customer_id      Int
+  customer         Customer  @relation(fields: [customer_id], references: [id])
+  product_type     String    
+  problem_details  String?   @db.Text
+  product_image    String?
+  house_image      String?
+  status           JobStatus @default(New)
+  
+  assigned_to      Int?
+  technician       User?     @relation("AssignedTo", fields: [assigned_to], references: [id])
+  assigned_by      Int?
+  assigner         User?     @relation("AssignedBy", fields: [assigned_by], references: [id])
+  
+  assigned_at      DateTime?
+  visit_date       DateTime?
+  
+  actual_problem   String?   @db.Text
+  repair_details   String?   @db.Text
+  total_amount     Decimal?  @db.Decimal(10, 2)
+  collected_amount Decimal?  @db.Decimal(10, 2)
+  
+  warranty_months  Int       @default(1)
+  warranty_start   DateTime?
+  warranty_end     DateTime?
+  
+  team_id          Int?
+  team             Team?     @relation(fields: [team_id], references: [id])
+  
+  created_at       DateTime  @default(now())
+  updated_at       DateTime  @updatedAt
+
+  history          JobHistory[]
+  workshop_job     WorkshopJob?
+
+  @@map("leads")
+}
+
+model JobHistory {
+  id           Int       @id @default(autoincrement())
+  lead_id      Int
+  lead         Lead      @relation(fields: [lead_id], references: [id])
+  action       String
+  performed_by Int?
+  old_status   JobStatus?
+  new_status   JobStatus?
+  timestamp    DateTime  @default(now())
+
+  @@map("job_history")
+}
+
+model WorkshopJob {
+  id                Int            @id @default(autoincrement())
+  lead_id           Int            @unique
+  lead              Lead           @relation(fields: [lead_id], references: [id])
+  received_date     DateTime       @default(now()) @db.Date
+  received_time     DateTime       @default(now()) @db.Time(6)
+  received_by       Int?           
+  promised_delivery DateTime?
+  priority          String         @default("Normal")
+  status            WorkshopStatus @default(Received)
+  current_day_count Int            @default(0)
+  notes             String?        @db.Text
+
+  @@map("workshop_jobs")
+}
