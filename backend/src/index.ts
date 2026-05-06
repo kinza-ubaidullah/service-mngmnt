@@ -14,6 +14,25 @@ app.use(helmet());
 app.use(morgan('dev'));
 app.use(express.json());
 
+// Routes
+import authRoutes from './routes/auth.routes.js';
+import leadRoutes from './routes/lead.routes.js';
+import userRoutes from './routes/user.routes.js';
+import dashboardRoutes from './routes/dashboard.routes.js';
+import expenseRoutes from './routes/expense.routes.js';
+import financialRoutes from './routes/financial.routes.js';
+import workshopRoutes from './routes/workshop.routes.js';
+import teamRoutes from './routes/team.routes.js';
+
+app.use('/api/auth', authRoutes);
+app.use('/api/leads', leadRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/expenses', expenseRoutes);
+app.use('/api/finance', financialRoutes);
+app.use('/api/workshop', workshopRoutes);
+app.use('/api/teams', teamRoutes);
+
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'Server is healthy' });
 });

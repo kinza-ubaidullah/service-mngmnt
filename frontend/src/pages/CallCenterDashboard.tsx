@@ -1,0 +1,489 @@
+import React, { useState, useEffect } from 'react';
+import { useDispatch, useSelector } from 'react-redux';
+import type { RootState } from '../store';
+import { logout } from '../store/slices/authSlice';
+import { LogOut, PhoneCall, Plus, ClipboardList, MapPin, User, Settings, Loader2, Sparkles, Activity, X, Calendar, Wrench } from 'lucide-react';
+import toast from 'react-hot-toast';
+import api from '../services/api';
+import { motion, AnimatePresence } from 'framer-motion';
+
+interface Lead {
+  id: number;
+  lead_id: string;
+  status: string;
+  product_type: string;
+  problem_details: string;
+  created_at: string;
+  customer: {
+    name: string;
+    phone: string;
+    area: string;
+  };
+}
+
+interface Technician {
+  id: number;
+  name: string;
+  location_name?: string;
+  specialization?: string;
+  team: { name: string } | null;
+}
+
+const CallCenterDashboard = () => {
+  const dispatch = useDispatch();
+  const user = useSelector((state: RootState) => state.auth.user);
+
+  // Data States
+  const [leads, setLeads] = useState<Lead[]>([]);
+  const [technicians, setTechnicians] = useState<Technician[]>([]);
+  const [fetchingLeads, setFetchingLeads] = useState(true);
+
+  // Form States
+  const [loading, setLoading] = useState(false);
+  const [formData, setFormData] = useState({
+    customer_name: '',
+    customer_phone: '',
+    customer_area: '',
+    exact_address: '',
+    product_type: 'Fridge',
+    problem_details: '',
+  });
+
+  // Assign Modal States
+  const [assignModal, setAssignModal] = useState<{ isOpen: boolean; lead: Lead | null }>({ isOpen: false, lead: null });
+  const [assignForm, setAssignForm] = useState({ technician_id: '', visit_date: '' });
+  const [assigning, setAssigning] = useState(false);
+
+  // Customer Insights
+  const [customerInsight, setCustomerInsight] = useState<any>(null);
+
+  // Fetch Data
+  const fetchLeads = async () => {
+    try {
+      const res = await api.get('/leads');
+      setLeads(res.data.leads);
+    } catch (error) {
+      toast.error('Failed to load leads');
+    } finally {
+      setFetchingLeads(false);
+    }
+  };
+
+  const fetchTechnicians = async () => {
+    try {
+      const res = await api.get('/users/technicians');
+      setTechnicians(res.data.technicians);
+    } catch (error) {
+      toast.error('Failed to load technicians');
+    }
+  };
+
+  useEffect(() => {
+    fetchLeads();
+    fetchTechnicians();
+  }, []);
+
+  // Handlers
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target;
+    setFormData({ ...formData, [name]: value });
+
+    if (name === 'customer_phone' && value.length >= 10) {
+      handleCustomerLookup(value);
+    }
+  };
+
+  const handleCustomerLookup = async (phone: string) => {
+    try {
+      const res = await api.get(`/leads/lookup?phone=${phone}`);
+      if (res.data.found) {
+        setCustomerInsight(res.data);
+        // Auto-fill details if customer found
+        setFormData(prev => ({
+          ...prev,
+          customer_name: res.data.customer.name,
+          customer_area: res.data.customer.area,
+          exact_address: res.data.customer.address
+        }));
+        toast.success(`Repeat Customer: ${res.data.customer.name} (${res.data.stats.jobCount} Jobs)`, {
+            icon: '🔄',
+            duration: 4000
+        });
+      } else {
+        setCustomerInsight(null);
+      }
+    } catch (e) {
+      console.error('Lookup error', e);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      await api.post('/leads', formData);
+      toast.success('Lead created successfully!');
+      setFormData({
+        customer_name: '', customer_phone: '', customer_area: '', exact_address: '', product_type: 'Fridge', problem_details: '',
+      });
+      fetchLeads();
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || 'Error creating lead');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAssign = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!assignModal.lead || !assignForm.technician_id) return;
+    
+    setAssigning(true);
+    try {
+      await api.patch(`/leads/${assignModal.lead.id}/assign`, assignForm);
+      toast.success('Lead assigned successfully!');
+      setAssignModal({ isOpen: false, lead: null });
+      fetchLeads(); // Refresh table
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || 'Error assigning lead');
+    } finally {
+      setAssigning(false);
+    }
+  };
+
+  const openAssignModal = (lead: Lead) => {
+    // Set default visit date to tomorrow at 10:00 AM for convenience
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(10, 0, 0, 0);
+    const formattedDate = tomorrow.toISOString().slice(0, 16);
+
+    setAssignModal({ isOpen: true, lead });
+    setAssignForm({ technician_id: '', visit_date: formattedDate });
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-200 flex flex-col font-sans selection:bg-indigo-500/30">
+      
+      {/* Dynamic Background Elements */}
+      <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
+        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full bg-indigo-600/10 blur-[120px]"></div>
+        <div className="absolute bottom-[-10%] right-[-10%] w-[30%] h-[30%] rounded-full bg-blue-600/10 blur-[100px]"></div>
+      </div>
+
+      {/* Glassmorphic Navbar */}
+      <motion.nav 
+        initial={{ y: -20, opacity: 0 }} animate={{ y: 0, opacity: 1 }}
+        className="bg-slate-900/50 backdrop-blur-xl border-b border-white/5 px-8 py-4 flex justify-between items-center sticky top-0 z-20"
+      >
+        <div className="flex items-center gap-4">
+          <div className="bg-gradient-to-br from-indigo-500 to-blue-600 p-2.5 rounded-xl shadow-lg shadow-indigo-500/20">
+            <PhoneCall size={24} className="text-white" />
+          </div>
+          <div>
+            <h1 className="text-xl font-bold text-white tracking-wide flex items-center gap-2">
+              Dispatch Center <Sparkles size={16} className="text-indigo-400" />
+            </h1>
+            <p className="text-xs text-slate-400 font-medium">Live Operations Control</p>
+          </div>
+        </div>
+        
+        <div className="flex items-center gap-6">
+          <div className="hidden md:flex items-center gap-3 bg-white/5 px-4 py-2 rounded-full border border-white/5">
+            <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)]"></div>
+            <span className="text-sm font-medium text-slate-300">Online</span>
+          </div>
+
+          <div className="hidden md:flex items-center gap-2">
+            <div className="w-8 h-8 bg-indigo-500 rounded-full flex items-center justify-center font-bold text-white shadow-lg">
+              {user?.name?.charAt(0) || 'U'}
+            </div>
+            <span className="font-medium text-slate-200">{user?.name}</span>
+          </div>
+
+          <button onClick={() => dispatch(logout())} className="flex items-center gap-2 bg-white/5 hover:bg-white/10 text-white px-5 py-2.5 rounded-xl transition-all duration-300 border border-white/10 hover:border-white/20 hover:scale-105">
+            <LogOut size={16} /> <span className="text-sm font-semibold">Sign Out</span>
+          </button>
+        </div>
+      </motion.nav>
+      
+      <main className="flex-1 p-6 md:p-8 max-w-[1800px] w-full mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8 relative z-10">
+        
+        {/* Left Column: Create Lead Form */}
+        <motion.div initial={{ x: -20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} transition={{ delay: 0.1 }} className="lg:col-span-4 flex flex-col h-full">
+          <div className="bg-slate-900/60 backdrop-blur-xl rounded-3xl border border-white/10 overflow-hidden flex flex-col flex-1 shadow-2xl">
+            <div className="px-8 py-6 border-b border-white/5 bg-gradient-to-r from-white/[0.02] to-transparent">
+              <h2 className="text-lg font-bold text-white flex items-center gap-3">
+                <div className="p-1.5 bg-indigo-500/20 rounded-lg"><Plus className="text-indigo-400" size={18} /></div>
+                New Service Request
+              </h2>
+            </div>
+            
+            <form onSubmit={handleSubmit} className="p-8 space-y-8 flex-1 flex flex-col">
+              <div className="space-y-5">
+                <div className="flex items-center gap-3 text-slate-400 border-b border-white/5 pb-2">
+                  <User size={16} className="text-indigo-400" />
+                  <h3 className="text-xs font-bold uppercase tracking-widest">Customer Details</h3>
+                </div>
+                
+                <div className="space-y-4">
+                  <div className="group relative">
+                    <input required type="text" name="customer_name" value={formData.customer_name} onChange={handleChange} className="w-full bg-slate-950/50 text-white px-4 py-3 rounded-xl border border-white/10 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all duration-300 peer placeholder-transparent" placeholder="Name" />
+                    <label className="absolute left-4 top-[-8px] bg-slate-900 px-1 text-xs font-medium text-slate-400 peer-focus:text-indigo-400 transition-all duration-300 peer-placeholder-shown:top-3.5 peer-placeholder-shown:text-sm peer-placeholder-shown:bg-transparent peer-focus:top-[-8px] peer-focus:text-xs peer-focus:bg-slate-900">Full Name</label>
+                  </div>
+                  <div className="group relative">
+                    <input required type="tel" name="customer_phone" value={formData.customer_phone} onChange={handleChange} className="w-full bg-slate-950/50 text-white px-4 py-3 rounded-xl border border-white/10 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all duration-300 peer placeholder-transparent" placeholder="Phone" />
+                    <label className="absolute left-4 top-[-8px] bg-slate-900 px-1 text-xs font-medium text-slate-400 peer-focus:text-indigo-400 transition-all duration-300 peer-placeholder-shown:top-3.5 peer-placeholder-shown:text-sm peer-placeholder-shown:bg-transparent peer-focus:top-[-8px] peer-focus:text-xs peer-focus:bg-slate-900">Phone Number</label>
+                  </div>
+                  <div className="group relative">
+                    <input required type="text" name="customer_area" value={formData.customer_area} onChange={handleChange} className="w-full bg-slate-950/50 text-white px-4 py-3 rounded-xl border border-white/10 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all duration-300 peer placeholder-transparent" placeholder="Area" />
+                    <label className="absolute left-4 top-[-8px] bg-slate-900 px-1 text-xs font-medium text-slate-400 peer-focus:text-indigo-400 transition-all duration-300 peer-placeholder-shown:top-3.5 peer-placeholder-shown:text-sm peer-placeholder-shown:bg-transparent peer-focus:top-[-8px] peer-focus:text-xs peer-focus:bg-slate-900">Area / City</label>
+                  </div>
+                  <div className="group relative">
+                    <textarea name="exact_address" value={formData.exact_address} onChange={handleChange} rows={2} className="w-full bg-slate-950/50 text-white px-4 py-3 rounded-xl border border-white/10 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all duration-300 resize-none peer placeholder-transparent" placeholder="Address"></textarea>
+                    <label className="absolute left-4 top-[-8px] bg-slate-900 px-1 text-xs font-medium text-slate-400 peer-focus:text-indigo-400 transition-all duration-300 peer-placeholder-shown:top-3.5 peer-placeholder-shown:text-sm peer-placeholder-shown:bg-transparent peer-focus:top-[-8px] peer-focus:text-xs peer-focus:bg-slate-900">Exact Address</label>
+                  </div>
+
+                  {/* Customer History Insights */}
+                  {customerInsight && (
+                    <motion.div 
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      className="bg-indigo-600/20 border border-indigo-500/30 rounded-2xl p-4 space-y-3"
+                    >
+                      <div className="flex justify-between items-start">
+                        <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest">Customer History</span>
+                        <span className="bg-indigo-500 text-white px-2 py-0.5 rounded text-[10px] font-bold">REPEAT</span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <p className="text-[10px] text-slate-500 font-bold uppercase">Total Spent</p>
+                          <p className="text-sm font-bold text-slate-200">Rs. {customerInsight.stats.totalSpent.toLocaleString()}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] text-slate-500 font-bold uppercase">Total Jobs</p>
+                          <p className="text-sm font-bold text-slate-200">{customerInsight.stats.jobCount} Jobs</p>
+                        </div>
+                      </div>
+                      <div className="pt-2 border-t border-indigo-500/20">
+                         <p className="text-[10px] text-slate-500 font-bold uppercase">Last Service</p>
+                         <p className="text-xs text-slate-300 font-medium">
+                            {new Date(customerInsight.stats.lastJobDate).toLocaleDateString()} - 
+                            <span className="text-indigo-400 ml-1 uppercase">{customerInsight.stats.lastJobStatus}</span>
+                         </p>
+                      </div>
+                    </motion.div>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-5 flex-1">
+                <div className="flex items-center gap-3 text-slate-400 border-b border-white/5 pb-2">
+                  <Settings size={16} className="text-indigo-400" />
+                  <h3 className="text-xs font-bold uppercase tracking-widest">Service Details</h3>
+                </div>
+                <div className="space-y-4">
+                  <div className="relative">
+                    <label className="block text-xs font-medium text-slate-400 mb-2 pl-1">Appliance Type</label>
+                    <select required name="product_type" value={formData.product_type} onChange={handleChange} className="w-full bg-slate-950/50 text-white px-4 py-3 rounded-xl border border-white/10 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all duration-300 appearance-none">
+                      <option value="Fridge">❄️ Refrigerator / Fridge</option>
+                      <option value="AC">💨 Air Conditioner</option>
+                      <option value="WashingMachine">🧺 Washing Machine</option>
+                      <option value="Microwave">♨️ Microwave</option>
+                      <option value="Other">🔧 Other Appliance</option>
+                    </select>
+                  </div>
+                  <div className="group relative">
+                    <textarea name="problem_details" value={formData.problem_details} onChange={handleChange} rows={3} className="w-full bg-slate-950/50 text-white px-4 py-3 rounded-xl border border-white/10 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all duration-300 resize-none peer placeholder-transparent" placeholder="Details"></textarea>
+                    <label className="absolute left-4 top-[-8px] bg-slate-900 px-1 text-xs font-medium text-slate-400 peer-focus:text-indigo-400 transition-all duration-300 peer-placeholder-shown:top-3.5 peer-placeholder-shown:text-sm peer-placeholder-shown:bg-transparent peer-focus:top-[-8px] peer-focus:text-xs peer-focus:bg-slate-900">Problem Description</label>
+                  </div>
+                </div>
+              </div>
+
+              <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} type="submit" disabled={loading} className="w-full mt-auto bg-gradient-to-r from-indigo-500 to-blue-600 hover:from-indigo-400 hover:to-blue-500 text-white font-bold py-4 px-4 rounded-xl shadow-[0_0_20px_rgba(99,102,241,0.3)] hover:shadow-[0_0_30px_rgba(99,102,241,0.5)] transition-all duration-300 flex items-center justify-center gap-2 disabled:opacity-50 disabled:pointer-events-none border border-indigo-400/20">
+                {loading ? <Loader2 className="animate-spin" size={20} /> : <Plus size={20} />}
+                {loading ? 'Processing...' : 'Dispatch Lead'}
+              </motion.button>
+            </form>
+          </div>
+        </motion.div>
+
+        {/* Right Column: Leads Table */}
+        <motion.div initial={{ x: 20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} transition={{ delay: 0.2 }} className="lg:col-span-8 flex flex-col h-full">
+          <div className="bg-slate-900/60 backdrop-blur-xl rounded-3xl border border-white/10 overflow-hidden flex flex-col h-[calc(100vh-140px)] shadow-2xl">
+            <div className="px-8 py-6 border-b border-white/5 bg-gradient-to-r from-transparent to-white/[0.02] flex justify-between items-center shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="p-1.5 bg-blue-500/20 rounded-lg"><Activity className="text-blue-400" size={18} /></div>
+                <h2 className="text-lg font-bold text-white">Live Operations Feed</h2>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 py-1.5 px-4 rounded-full text-xs font-bold tracking-wider">
+                  {leads.length} ACTIVE LEADS
+                </span>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-2">
+              {fetchingLeads ? (
+                <div className="h-full flex justify-center items-center"><Loader2 className="animate-spin text-indigo-500" size={40} /></div>
+              ) : leads.length === 0 ? (
+                <div className="h-full flex flex-col justify-center items-center text-slate-500">
+                  <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="p-6 bg-slate-800/50 rounded-full mb-6 border border-white/5">
+                    <ClipboardList size={48} className="text-slate-600" />
+                  </motion.div>
+                  <p className="text-xl font-medium text-slate-400">Queue is empty</p>
+                  <p className="text-sm mt-2 text-slate-600">Awaiting new service dispatches.</p>
+                </div>
+              ) : (
+                <div className="grid gap-3 p-4">
+                  <AnimatePresence>
+                    {leads.map((lead, idx) => (
+                      <motion.div 
+                        initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }} transition={{ delay: idx * 0.05 }}
+                        key={lead.id} 
+                        className="group bg-slate-950/40 hover:bg-slate-800/60 border border-white/5 hover:border-indigo-500/30 rounded-2xl p-5 flex items-center gap-6 transition-all duration-300"
+                      >
+                        {/* ID Block */}
+                        <div className="shrink-0 flex flex-col items-center justify-center bg-slate-900 border border-white/10 rounded-xl p-3 min-w-[110px]">
+                          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Lead ID</span>
+                          <span className="font-mono text-sm font-bold text-indigo-300">{lead.lead_id}</span>
+                        </div>
+
+                        {/* Customer Info */}
+                        <div className="flex-1 min-w-0">
+                          <h4 className="text-base font-bold text-slate-200 truncate">{lead.customer.name}</h4>
+                          <div className="flex items-center gap-2 mt-1.5 text-xs text-slate-400">
+                            <span className="flex items-center gap-1.5"><MapPin size={12} className="text-emerald-400/70" /> {lead.customer.area}</span>
+                            <span className="w-1 h-1 bg-slate-700 rounded-full"></span>
+                            <span className="font-mono text-slate-500">{lead.customer.phone}</span>
+                          </div>
+                        </div>
+
+                        {/* Product & Issue */}
+                        <div className="flex-1 hidden xl:block min-w-0">
+                          <div className="inline-flex items-center gap-2 bg-white/5 px-2.5 py-1 rounded-md text-xs font-semibold text-slate-300 border border-white/5 mb-1.5">
+                            {lead.product_type}
+                          </div>
+                          <p className="text-xs text-slate-500 truncate pr-4">{lead.problem_details || 'Standard inspection required.'}</p>
+                        </div>
+
+                        {/* Status & Actions */}
+                        <div className="shrink-0 flex flex-col items-end gap-3 min-w-[140px]">
+                          <span className={`px-3 py-1.5 rounded-lg text-xs font-bold tracking-wide shadow-sm border text-center w-full
+                            ${lead.status === 'New' 
+                              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 shadow-emerald-500/10' 
+                              : 'bg-blue-500/10 text-blue-400 border-blue-500/20 shadow-blue-500/10'}
+                          `}>
+                            {lead.status === 'New' ? '● NEW LEAD' : lead.status.toUpperCase()}
+                          </span>
+                          
+                          {lead.status === 'New' && (
+                            <button 
+                              onClick={() => openAssignModal(lead)}
+                              className="w-full bg-white/5 hover:bg-indigo-500/20 text-indigo-300 hover:text-indigo-200 text-xs font-bold py-1.5 rounded border border-white/10 hover:border-indigo-500/50 transition-colors"
+                            >
+                              Assign Technician
+                            </button>
+                          )}
+                        </div>
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
+                </div>
+              )}
+            </div>
+          </div>
+        </motion.div>
+
+      </main>
+
+      {/* Assign Modal Overlay */}
+      <AnimatePresence>
+        {assignModal.isOpen && assignModal.lead && (
+          <motion.div 
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm"
+          >
+            <motion.div 
+              initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 20 }}
+              className="bg-slate-900 border border-white/10 rounded-3xl w-full max-w-md overflow-hidden shadow-2xl"
+            >
+              <div className="px-6 py-5 border-b border-white/5 flex justify-between items-center bg-white/[0.02]">
+                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                  <Wrench className="text-indigo-400" size={18} />
+                  Dispatch Assignment
+                </h3>
+                <button onClick={() => setAssignModal({ isOpen: false, lead: null })} className="text-slate-400 hover:text-white transition-colors bg-white/5 hover:bg-white/10 p-1.5 rounded-lg">
+                  <X size={18} />
+                </button>
+              </div>
+
+              <form onSubmit={handleAssign} className="p-6 space-y-6">
+                
+                {/* Lead Summary inside Modal */}
+                <div className="bg-slate-950/50 border border-white/5 rounded-xl p-4 flex flex-col gap-2">
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">Target Lead</span>
+                    <span className="font-mono text-sm font-bold text-indigo-300">{assignModal.lead.lead_id}</span>
+                  </div>
+                  <div className="text-sm text-slate-300 font-medium">{assignModal.lead.customer.name}</div>
+                  <div className="text-xs text-slate-500 flex items-center gap-1"><MapPin size={12}/> {assignModal.lead.customer.area}</div>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-300 mb-2">Select Technician</label>
+                    <select 
+                      required 
+                      value={assignForm.technician_id} 
+                      onChange={(e) => setAssignForm({...assignForm, technician_id: e.target.value})}
+                      className="w-full bg-slate-950 text-white px-4 py-3 rounded-xl border border-white/10 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all duration-300 appearance-none"
+                    >
+                      <option value="" disabled>-- Choose a Technician --</option>
+                      {technicians.map(t => (
+                        <option key={t.id} value={t.id}>
+                          {t.name} {t.specialization ? `[${t.specialization}]` : ''} — {t.location_name || 'No Location'}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-300 mb-2 flex items-center gap-2">
+                      <Calendar size={14} className="text-indigo-400"/> Scheduled Visit
+                    </label>
+                    <input 
+                      type="datetime-local" 
+                      required
+                      value={assignForm.visit_date}
+                      onChange={(e) => setAssignForm({...assignForm, visit_date: e.target.value})}
+                      className="w-full bg-slate-950 text-white px-4 py-3 rounded-xl border border-white/10 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all duration-300"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex gap-3 pt-2">
+                  <button type="button" onClick={() => setAssignModal({ isOpen: false, lead: null })} className="flex-1 bg-white/5 hover:bg-white/10 text-white font-medium py-3 px-4 rounded-xl transition-colors border border-white/5">
+                    Cancel
+                  </button>
+                  <button type="submit" disabled={assigning} className="flex-1 bg-gradient-to-r from-indigo-500 to-blue-600 hover:from-indigo-400 hover:to-blue-500 text-white font-bold py-3 px-4 rounded-xl shadow-lg shadow-indigo-500/20 transition-all flex justify-center items-center gap-2 border border-indigo-400/20 disabled:opacity-50">
+                    {assigning ? <Loader2 className="animate-spin" size={18} /> : 'Confirm Dispatch'}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <style>{`
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.02); border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(99, 102, 241, 0.5); }
+      `}</style>
+    </div>
+  );
+};
+
+export default CallCenterDashboard;

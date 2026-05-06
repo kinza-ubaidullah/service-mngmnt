@@ -1,7 +1,13 @@
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import 'dotenv/config';
 
-const prisma = new PrismaClient({ url: process.env.DATABASE_URL });
+import { Pool } from 'pg';
+import { PrismaPg } from '@prisma/adapter-pg';
+
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const adapter = new PrismaPg(pool);
+const prisma = new PrismaClient({ adapter });
 
 async function main() {
   // Clear existing records if needed or just upsert
@@ -42,6 +48,23 @@ async function main() {
   });
   
   console.log({ team1, team2 });
+
+  // 3. Create a sample Technician
+  const techPassword = await bcrypt.hash('tech123', 10);
+  const tech = await prisma.user.upsert({
+    where: { email: 'tech1@example.com' },
+    update: {},
+    create: {
+      name: 'John Technician',
+      email: 'tech1@example.com',
+      phone: '03001122334',
+      password_hash: techPassword,
+      role: 'TECHNICIAN',
+      team_id: team1.id,
+      is_active: true,
+    },
+  });
+  console.log({ tech });
 }
 
 main()
