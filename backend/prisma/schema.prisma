@@ -3,7 +3,8 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "mysql"
+  url      = env("DATABASE_URL")
 }
 
 // ================== ENUMS ==================
@@ -100,7 +101,7 @@ model Lead {
   problem_details   String?  @db.Text
   product_image     String?
   house_image       String?
-  item_pictures     String[] @default([])
+  item_pictures     Json?
   exact_address     String?  @db.Text
 
   status            JobStatus @default(New)
