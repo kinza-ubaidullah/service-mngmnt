@@ -61,3 +61,32 @@ export const updateWorkshopStatus = async (req: Request, res: Response) => {
     res.status(500).json({ message: 'Failed to update workshop job' });
   }
 };
+export const deleteWorkshopJob = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const jobId = parseInt(id as string);
+
+    // Get the job first to find the lead
+    const job = await prisma.workshopJob.findUnique({ where: { id: jobId } });
+    if (!job) {
+      res.status(404).json({ message: 'Workshop job not found' });
+      return;
+    }
+
+    // Use transaction to ensure data consistency
+    await prisma.$transaction([
+      // 1. Delete the workshop job
+      prisma.workshopJob.delete({ where: { id: jobId } }),
+      // 2. Reset the lead status back to Assigned (so it returns to the technician list)
+      prisma.lead.update({
+        where: { id: job.lead_id },
+        data: { status: 'Assigned' }
+      })
+    ]);
+
+    res.json({ message: 'Workshop record removed and lead returned to technician' });
+  } catch (error) {
+    console.error('Delete workshop job error:', error);
+    res.status(500).json({ message: 'Failed to remove workshop record' });
+  }
+};

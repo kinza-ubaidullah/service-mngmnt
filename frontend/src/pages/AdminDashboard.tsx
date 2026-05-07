@@ -5,7 +5,7 @@ import { logout } from '../store/slices/authSlice';
 import { 
   LogOut, LayoutDashboard, Users, ClipboardList, 
   Wrench, IndianRupee, AlertCircle,
-  Activity, ArrowUpRight, Clock, Settings, Loader2, Download, RotateCcw, Trash2
+  Activity, ArrowUpRight, Clock, Settings, Loader2, Download, RotateCcw, Trash2, Menu, X
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../services/api';
@@ -16,6 +16,7 @@ import WorkshopModule from '../components/WorkshopModule';
 import FinanceModule from '../components/FinanceModule';
 import StaffModule from '../components/StaffModule';
 import SettingsModule from '../components/SettingsModule';
+import LeadsModule from '../components/LeadsModule';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
 const AdminDashboard = () => {
@@ -76,6 +77,8 @@ const AdminDashboard = () => {
     );
   }
 
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
   const navItems = [
     { icon: LayoutDashboard, label: 'Overview' },
     { icon: ClipboardList, label: 'Service Leads' },
@@ -86,22 +89,38 @@ const AdminDashboard = () => {
   ];
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-200 flex font-sans">
+    <div className="min-h-screen bg-slate-950 text-slate-200 flex font-sans overflow-hidden">
       
-      {/* Sidebar (Desktop) */}
-      <aside className="w-64 bg-slate-900/50 border-r border-white/5 hidden lg:flex flex-col sticky top-0 h-screen">
-        <div className="p-8 flex items-center gap-3">
-          <div className="bg-indigo-500 p-2 rounded-xl shadow-lg shadow-indigo-500/20">
-            <LayoutDashboard size={24} className="text-white" />
+      {/* Mobile Overlay */}
+      {mobileMenuOpen && (
+        <div 
+          className="fixed inset-0 bg-black/60 z-40 lg:hidden"
+          onClick={() => setMobileMenuOpen(false)}
+        />
+      )}
+
+      {/* Sidebar */}
+      <aside className={`fixed lg:sticky top-0 h-screen w-64 bg-slate-900 border-r border-white/5 flex flex-col z-50 transition-transform duration-300 ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
+        <div className="p-8 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="bg-indigo-500 p-2 rounded-xl shadow-lg shadow-indigo-500/20">
+              <LayoutDashboard size={24} className="text-white" />
+            </div>
+            <h1 className="text-xl font-bold text-white tracking-tight">ServiceOS</h1>
           </div>
-          <h1 className="text-xl font-bold text-white tracking-tight">ServiceOS</h1>
+          <button className="lg:hidden text-slate-400" onClick={() => setMobileMenuOpen(false)}>
+            <X size={24} />
+          </button>
         </div>
 
-        <nav className="flex-1 px-4 space-y-2">
+        <nav className="flex-1 px-4 space-y-2 overflow-y-auto">
           {navItems.map((item, idx) => (
             <button 
               key={idx}
-              onClick={() => setActiveTab(item.label)}
+              onClick={() => {
+                setActiveTab(item.label);
+                setMobileMenuOpen(false);
+              }}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300
                 ${activeTab === item.label ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'}
               `}
@@ -124,17 +143,22 @@ const AdminDashboard = () => {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
+      <main className="flex-1 flex flex-col min-w-0 overflow-hidden h-screen">
         
         {/* Top Header */}
-        <header className="h-20 bg-slate-900/30 backdrop-blur-md border-b border-white/5 flex items-center justify-between px-8">
-          <div>
-            <h2 className="text-lg font-bold text-white">Dashboard Overview</h2>
-            <p className="text-xs text-slate-400 font-medium">Welcome back, {user?.name}</p>
+        <header className="h-20 bg-slate-900/30 backdrop-blur-md border-b border-white/5 flex items-center justify-between px-4 lg:px-8 shrink-0">
+          <div className="flex items-center gap-4">
+            <button className="lg:hidden text-slate-400 hover:text-white" onClick={() => setMobileMenuOpen(true)}>
+              <Menu size={24} />
+            </button>
+            <div>
+              <h2 className="text-lg font-bold text-white">Dashboard Overview</h2>
+              <p className="text-xs text-slate-400 font-medium hidden sm:block">Welcome back, {user?.name}</p>
+            </div>
           </div>
           <div className="flex items-center gap-4">
-            <div className="bg-indigo-500/10 text-indigo-400 px-4 py-2 rounded-full border border-indigo-500/20 text-xs font-bold flex items-center gap-2">
-              <Activity size={14} className="animate-pulse" /> Live Stats
+            <div className="bg-indigo-500/10 text-indigo-400 px-3 py-1.5 lg:px-4 lg:py-2 rounded-full border border-indigo-500/20 text-[10px] lg:text-xs font-bold flex items-center gap-2">
+              <Activity size={14} className="animate-pulse" /> <span className="hidden sm:inline">Live Stats</span>
             </div>
           </div>
         </header>
@@ -406,6 +430,8 @@ const AdminDashboard = () => {
             </div>
           </motion.div>
             </>
+          ) : activeTab === 'Service Leads' ? (
+            <LeadsModule />
           ) : activeTab === 'Workshop' ? (
             <WorkshopModule />
           ) : activeTab === 'Finance' ? (

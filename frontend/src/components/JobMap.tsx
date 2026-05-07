@@ -43,13 +43,30 @@ const JobMap: React.FC<JobMapProps> = ({ leads, technicians = [] }) => {
             return (
                 <Marker key={`lead-${lead.id}`} position={pos}>
                     <Popup className="custom-popup">
-                        <div className="p-1">
-                            <p className="font-bold text-slate-900">{lead.customer.name}</p>
-                            <p className="text-xs text-slate-600">{lead.product_type}</p>
-                            <div className={`mt-1 inline-block px-2 py-0.5 rounded text-[10px] font-bold text-white
-                                ${lead.status === 'New' ? 'bg-emerald-500' : 'bg-blue-500'}
-                            `}>
-                                {lead.status}
+                        <div className="p-2 min-w-[150px]">
+                            {lead.item_pictures && lead.item_pictures.length > 0 && (
+                                <div className="mb-2 w-full h-24 overflow-hidden rounded-lg bg-slate-100">
+                                    <img 
+                                        src={lead.item_pictures[0]} 
+                                        alt="appliance" 
+                                        className="w-full h-full object-cover"
+                                    />
+                                    {lead.item_pictures.length > 1 && (
+                                        <div className="absolute top-3 right-3 bg-black/60 text-white text-[8px] font-bold px-1.5 py-0.5 rounded">
+                                            +{lead.item_pictures.length - 1}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                            <p className="font-bold text-slate-900 leading-tight">{lead.customer.name}</p>
+                            <p className="text-xs text-slate-500 font-medium">{lead.product_type}</p>
+                            <div className="mt-2 flex justify-between items-center">
+                                <span className={`px-2 py-0.5 rounded text-[9px] font-bold text-white uppercase tracking-wider
+                                    ${lead.status === 'New' ? 'bg-emerald-500' : lead.status === 'Completed' ? 'bg-indigo-500' : 'bg-blue-500'}
+                                `}>
+                                    {lead.status}
+                                </span>
+                                <span className="text-[10px] font-mono text-slate-400 font-bold">{lead.lead_id}</span>
                             </div>
                         </div>
                     </Popup>
@@ -63,13 +80,37 @@ const JobMap: React.FC<JobMapProps> = ({ leads, technicians = [] }) => {
               key={`tech-${tech.id}`} 
               position={[tech.lat, tech.lng]}
             >
-                <Popup>
-                    <div className="p-1">
-                        <p className="font-bold text-indigo-600">Technician: {tech.name}</p>
-                        <p className="text-[10px] text-slate-500 uppercase font-black">{tech.specialization || 'General'}</p>
-                        <div className="mt-2 flex items-center gap-1 text-[9px] font-bold text-emerald-600">
-                           <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></div> ACTIVE NOW
+                <Popup className="tech-popup">
+                    <div className="p-2 min-w-[200px]">
+                        <div className="flex justify-between items-start mb-2">
+                            <div>
+                                <p className="font-bold text-indigo-600 leading-none">{tech.name}</p>
+                                <p className="text-[9px] text-slate-500 uppercase font-black mt-1">{tech.specialization || 'General'}</p>
+                            </div>
+                            <div className="flex items-center gap-1 text-[8px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-full border border-emerald-100">
+                               <div className="w-1 h-1 bg-emerald-500 rounded-full animate-pulse"></div> ACTIVE
+                            </div>
                         </div>
+
+                        {tech.assigned_jobs?.length > 0 ? (
+                            <div className="mt-3 space-y-2">
+                                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-100 pb-1">Current Assignments</p>
+                                {tech.assigned_jobs.map((job: any) => (
+                                    <div key={job.id} className="bg-slate-50 rounded-lg p-2 border border-slate-100">
+                                        <div className="flex justify-between items-center mb-1">
+                                            <span className="text-[9px] font-mono font-bold text-indigo-400">{job.lead_id}</span>
+                                            <span className="text-[8px] font-black uppercase text-blue-500 bg-blue-50 px-1 rounded">{job.status}</span>
+                                        </div>
+                                        <p className="text-[10px] font-bold text-slate-700">{job.customer.name}</p>
+                                        <p className="text-[9px] text-slate-500 truncate">{job.product_type} - {job.customer.area}</p>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="mt-3 py-2 text-center bg-slate-50 rounded-lg border border-dashed border-slate-200">
+                                <p className="text-[9px] font-bold text-slate-400 uppercase">No active jobs</p>
+                            </div>
+                        )}
                     </div>
                 </Popup>
             </Marker>

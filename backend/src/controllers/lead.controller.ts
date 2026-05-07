@@ -39,7 +39,8 @@ export const createLead = async (req: Request, res: Response) => {
       exact_address, 
       google_map_link, 
       product_type, 
-      problem_details 
+      problem_details,
+      item_pictures 
     } = req.body;
 
     const user = (req as any).user;
@@ -58,6 +59,12 @@ export const createLead = async (req: Request, res: Response) => {
           exact_address,
           google_map_link
         }
+      });
+    } else {
+      // Update existing customer address if provided
+      await prisma.customer.update({
+        where: { id: customer.id },
+        data: { exact_address, area: customer_area }
       });
     }
 
@@ -81,6 +88,8 @@ export const createLead = async (req: Request, res: Response) => {
         customer_id: customer.id,
         product_type,
         problem_details,
+        item_pictures: item_pictures || [],
+        exact_address,
         assigned_by: user.id, // Who created it
         status: 'New',
         is_warranty_claim: !!activeWarranty

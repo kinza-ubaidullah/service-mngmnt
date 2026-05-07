@@ -47,6 +47,7 @@ const CallCenterDashboard = () => {
     exact_address: '',
     product_type: 'Fridge',
     problem_details: '',
+    item_pictures: [] as string[],
   });
 
   // Assign Modal States
@@ -124,7 +125,7 @@ const CallCenterDashboard = () => {
       await api.post('/leads', formData);
       toast.success('Lead created successfully!');
       setFormData({
-        customer_name: '', customer_phone: '', customer_area: '', exact_address: '', product_type: 'Fridge', problem_details: '',
+        customer_name: '', customer_phone: '', customer_area: '', exact_address: '', product_type: 'Fridge', problem_details: '', item_pictures: [],
       });
       fetchLeads();
     } catch (error: any) {
@@ -237,11 +238,35 @@ const CallCenterDashboard = () => {
                   </div>
                   <div className="group relative">
                     <input required type="text" name="customer_area" value={formData.customer_area} onChange={handleChange} className="w-full bg-slate-950/50 text-white px-4 py-3 rounded-xl border border-white/10 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all duration-300 peer placeholder-transparent" placeholder="Area" />
-                    <label className="absolute left-4 top-[-8px] bg-slate-900 px-1 text-xs font-medium text-slate-400 peer-focus:text-indigo-400 transition-all duration-300 peer-placeholder-shown:top-3.5 peer-placeholder-shown:text-sm peer-placeholder-shown:bg-transparent peer-focus:top-[-8px] peer-focus:text-xs peer-focus:bg-slate-900">Area / City</label>
+                    <label className="absolute left-4 top-[-8px] bg-slate-900 px-1 text-xs font-medium text-slate-400 peer-focus:text-indigo-400 transition-all duration-300 peer-placeholder-shown:top-3.5 peer-placeholder-shown:text-sm peer-placeholder-shown:bg-transparent peer-focus:top-[-8px] peer-focus:text-xs peer-focus:bg-slate-900">Area Name</label>
                   </div>
                   <div className="group relative">
-                    <textarea name="exact_address" value={formData.exact_address} onChange={handleChange} rows={2} className="w-full bg-slate-950/50 text-white px-4 py-3 rounded-xl border border-white/10 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all duration-300 resize-none peer placeholder-transparent" placeholder="Address"></textarea>
-                    <label className="absolute left-4 top-[-8px] bg-slate-900 px-1 text-xs font-medium text-slate-400 peer-focus:text-indigo-400 transition-all duration-300 peer-placeholder-shown:top-3.5 peer-placeholder-shown:text-sm peer-placeholder-shown:bg-transparent peer-focus:top-[-8px] peer-focus:text-xs peer-focus:bg-slate-900">Exact Address</label>
+                    <label className="block text-xs font-bold text-slate-500 mb-2 pl-1">Item Pictures (Upload from device)</label>
+                    <div className="flex flex-col gap-2">
+                      <input 
+                        type="file" 
+                        multiple 
+                        accept="image/*"
+                        className="w-full bg-slate-950/50 text-slate-400 text-xs px-4 py-3 rounded-xl border border-white/10 outline-none file:mr-4 file:py-1 file:px-3 file:rounded-full file:border-0 file:text-[10px] file:font-bold file:bg-indigo-500/20 file:text-indigo-400 hover:file:bg-indigo-500/30 transition-all cursor-pointer" 
+                        onChange={async (e) => {
+                          const files = Array.from(e.target.files || []);
+                          const base64Promises = files.map(file => {
+                            return new Promise((resolve) => {
+                              const reader = new FileReader();
+                              reader.onloadend = () => resolve(reader.result as string);
+                              reader.readAsDataURL(file);
+                            });
+                          });
+                          const results = await Promise.all(base64Promises);
+                          setFormData({...formData, item_pictures: results as string[]});
+                        }}
+                      />
+                      {formData.item_pictures.length > 0 && (
+                        <p className="text-[10px] text-emerald-400 font-bold pl-1 flex items-center gap-1">
+                          ● {formData.item_pictures.length} Images Selected
+                        </p>
+                      )}
+                    </div>
                   </div>
 
                   {/* Customer History Insights */}
@@ -310,7 +335,7 @@ const CallCenterDashboard = () => {
 
         {/* Right Column: Leads Table */}
         <motion.div initial={{ x: 20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} transition={{ delay: 0.2 }} className="lg:col-span-8 flex flex-col h-full">
-          <div className="bg-slate-900/60 backdrop-blur-xl rounded-3xl border border-white/10 overflow-hidden flex flex-col h-[calc(100vh-140px)] shadow-2xl">
+          <div className="bg-slate-900/60 backdrop-blur-xl rounded-3xl border border-white/10 overflow-hidden flex flex-col lg:h-[calc(100vh-140px)] min-h-[600px] shadow-2xl">
             <div className="px-8 py-6 border-b border-white/5 bg-gradient-to-r from-transparent to-white/[0.02] flex justify-between items-center shrink-0">
               <div className="flex items-center gap-3">
                 <div className="p-1.5 bg-blue-500/20 rounded-lg"><Activity className="text-blue-400" size={18} /></div>

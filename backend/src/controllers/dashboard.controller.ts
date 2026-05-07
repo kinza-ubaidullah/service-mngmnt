@@ -31,7 +31,7 @@ export const getAdminStats = async (req: Request, res: Response) => {
       }
     });
 
-    // Fetch active technicians with locations
+    // Fetch active technicians with locations and their current assignments
     const technicians = await prisma.user.findMany({
       where: {
         role: 'TECHNICIAN',
@@ -43,7 +43,15 @@ export const getAdminStats = async (req: Request, res: Response) => {
         name: true,
         lat: true,
         lng: true,
-        specialization: true
+        specialization: true,
+        assigned_jobs: {
+          where: {
+            status: { in: ['Assigned', 'InProgress', 'Reopened'] }
+          },
+          include: {
+            customer: true
+          }
+        }
       }
     });
 

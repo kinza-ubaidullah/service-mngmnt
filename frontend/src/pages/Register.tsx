@@ -11,6 +11,8 @@ const Register = () => {
   const token = searchParams.get('token');
 
   const [loading, setLoading] = useState(false);
+  const [validating, setValidating] = useState(true);
+  const [role, setRole] = useState<string>('');
   const [success, setSuccess] = useState(false);
   const [form, setForm] = useState({
     name: '',
@@ -21,10 +23,23 @@ const Register = () => {
   });
 
   useEffect(() => {
-    if (!token) {
-      toast.error('Invalid or missing invite link');
-      navigate('/login');
-    }
+    const validate = async () => {
+      if (!token) {
+        toast.error('Invalid or missing invite link');
+        navigate('/login');
+        return;
+      }
+      try {
+        const res = await api.get(`/users/invite/${token}`);
+        setRole(res.data.role);
+      } catch (error) {
+        toast.error('This invite link is invalid or has expired');
+        navigate('/login');
+      } finally {
+        setValidating(false);
+      }
+    };
+    validate();
   }, [token, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -46,11 +61,21 @@ const Register = () => {
       setSuccess(true);
       toast.success('Registration successful!');
     } catch (error: any) {
-      toast.error(error.response?.data?.message || 'Registration failed');
+      console.error('Registration Error:', error.response?.data);
+      toast.error(error.response?.data?.message || 'Registration failed. Check if phone/email already exists.');
     } finally {
       setLoading(false);
     }
   };
+
+  if (validating) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-center">
+        <Loader2 className="text-indigo-500 animate-spin mb-4" size={40} />
+        <p className="text-slate-400 font-bold tracking-widest uppercase text-xs">Validating Invite Token...</p>
+      </div>
+    );
+  }
 
   if (success) {
     return (
@@ -76,6 +101,8 @@ const Register = () => {
     );
   }
 
+  const roleName = role.replace('_', ' ');
+
   return (
     <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6 relative overflow-hidden font-sans">
       {/* Background Orbs */}
@@ -92,15 +119,15 @@ const Register = () => {
             <Wrench size={32} className="text-white" />
           </div>
           <div>
-            <h1 className="text-4xl font-black text-white tracking-tight">Join ServicePro</h1>
-            <p className="text-indigo-400 font-bold text-sm tracking-widest uppercase">Member Registration <Sparkles size={14} className="inline ml-1" /></p>
+            <h1 className="text-4xl font-black text-white tracking-tight leading-none capitalize">Join as {roleName}</h1>
+            <p className="text-indigo-400 font-bold text-xs tracking-[0.2em] uppercase mt-2">Secure Member Onboarding <Sparkles size={14} className="inline ml-1" /></p>
           </div>
         </div>
 
         <div className="bg-slate-900/50 backdrop-blur-2xl border border-white/10 rounded-[3rem] p-8 md:p-12 shadow-2xl relative overflow-hidden">
           <div className="absolute top-0 right-0 p-8">
-            <div className="w-12 h-12 bg-white/5 rounded-full border border-white/10 flex items-center justify-center">
-              <User size={20} className="text-slate-500" />
+            <div className="w-12 h-12 bg-indigo-500/10 rounded-full border border-indigo-500/20 flex items-center justify-center">
+              <User size={20} className="text-indigo-400" />
             </div>
           </div>
 

@@ -285,6 +285,23 @@ const StaffModule = () => {
                           >
                             {user.is_active ? 'Deactivate' : 'Activate'}
                           </button>
+                          <button
+                            onClick={async () => {
+                              if (window.confirm(`Are you sure you want to PERMANENTLY delete ${user.name}? This action cannot be undone.`)) {
+                                try {
+                                  await api.delete(`/users/${user.id}`);
+                                  toast.success('User deleted successfully');
+                                  fetchData();
+                                } catch (error: any) {
+                                  toast.error(error.response?.data?.message || 'Failed to delete user');
+                                }
+                              }
+                            }}
+                            className="p-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg border border-red-500/20 transition-all"
+                            title="Delete User"
+                          >
+                            <Trash2 size={13} />
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -356,7 +373,6 @@ const StaffModule = () => {
                 <select value={newUser.role} onChange={(e) => setNewUser({...newUser, role: e.target.value})} className="w-full bg-slate-950 text-white px-4 py-3 rounded-xl border border-white/10 outline-none appearance-none">
                   <option value="CALL_CENTER">Call Center Agent</option>
                   <option value="TECHNICIAN">Technician</option>
-                  <option value="WORKSHOP_MANAGER">Workshop Manager</option>
                   <option value="ADMIN">Admin</option>
                 </select>
               </div>
@@ -411,7 +427,6 @@ const StaffModule = () => {
                 <select value={inviteRole} onChange={(e) => setInviteRole(e.target.value)} className="w-full bg-slate-950 text-white px-4 py-3 rounded-xl border border-white/10 outline-none appearance-none">
                   <option value="TECHNICIAN">Technician</option>
                   <option value="CALL_CENTER">Call Center Agent</option>
-                  <option value="WORKSHOP_MANAGER">Workshop Manager</option>
                 </select>
               </div>
 

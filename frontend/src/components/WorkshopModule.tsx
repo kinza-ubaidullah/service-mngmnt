@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Wrench, Clock, CheckCircle2, Truck, AlertCircle, RefreshCw } from 'lucide-react';
+import { Wrench, Clock, CheckCircle2, Truck, AlertCircle, RefreshCw, Trash2 } from 'lucide-react';
 import api from '../services/api';
 import toast from 'react-hot-toast';
 
@@ -11,7 +11,7 @@ const WorkshopModule = () => {
   const fetchWorkshopJobs = async () => {
     try {
       setLoading(true);
-      const res = await api.get('/workshop');
+      const res = await api.get('/workshop/jobs');
       setJobs(res.data.jobs);
     } catch (error) {
       toast.error('Failed to load workshop jobs');
@@ -26,7 +26,7 @@ const WorkshopModule = () => {
 
   const updateStatus = async (id: number, newStatus: string) => {
     try {
-      await api.patch(`/workshop/${id}/status`, { status: newStatus });
+      await api.patch(`/workshop/jobs/${id}/status`, { status: newStatus });
       toast.success(`Job marked as ${newStatus}`);
       fetchWorkshopJobs();
     } catch (error) {
@@ -118,17 +118,23 @@ const WorkshopModule = () => {
                       </span>
                     </td>
                     <td className="py-4 text-right">
-                      <select 
-                        className="bg-slate-950 text-white text-xs px-3 py-2 rounded-xl border border-white/10 outline-none"
-                        value={job.status}
-                        onChange={(e) => updateStatus(job.id, e.target.value)}
-                      >
-                        <option value="Received">Received</option>
-                        <option value="WorkStarted">Work Started</option>
-                        <option value="WaitingForParts">Waiting for Parts</option>
-                        <option value="Ready">Ready</option>
-                        <option value="Delivered">Delivered</option>
-                      </select>
+                      <div className="flex items-center justify-end gap-2">
+                        <button 
+                          onClick={async () => {
+                            if (window.confirm('Are you sure you want to remove this machine from workshop records?')) {
+                              try {
+                                await api.delete(`/workshop/jobs/${job.id}`);
+                                toast.success('Workshop record removed');
+                                fetchWorkshopJobs();
+                              } catch { toast.error('Failed to remove record'); }
+                            }
+                          }}
+                          className="p-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-xl border border-red-500/20 transition-all"
+                          title="Remove from Workshop"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );

@@ -136,8 +136,30 @@ export const registerViaInvite = async (req: Request, res: Response) => {
     });
 
     res.json({ message: 'Registration successful', user: { id: user.id, name: user.name, role: user.role } });
+  } catch (error: any) {
+    console.error('Registration error detail:', error);
+    if (error.code === 'P2002') {
+      const field = error.meta?.target?.[0] || 'Email or Phone';
+      res.status(400).json({ message: `${field} is already registered. Please use a unique one.` });
+    } else {
+      res.status(500).json({ message: 'Registration failed: ' + (error.message || 'Internal error') });
+    }
+  }
+};
+
+export const getInviteDetails = async (req: Request, res: Response) => {
+  try {
+    const { token } = req.params;
+    const invite = await prisma.inviteToken.findUnique({ where: { token: String(token) } });
+    
+    if (!invite || invite.is_used || invite.expires_at < new Date()) {
+      res.status(400).json({ message: 'Invalid or expired invite token' });
+      return;
+    }
+
+    res.json({ role: invite.role });
   } catch (error) {
-    res.status(500).json({ message: 'Registration failed' });
+    res.status(500).json({ message: 'Failed to fetch invite details' });
   }
 };
 
@@ -192,6 +214,46 @@ export const updateProfile = async (req: Request, res: Response) => {
       message: 'Failed to update profile', 
       error: error.message 
     });
+  }
+};
+
+export const deleteUser = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = parseInt(id as string);
+    const adminId = (req as any).user.id;
+
+    if (userId === adminId) {
+      res.status(400).json({ message: 'Security Alert: You cannot delete your own admin account.' });
+      return;
+    }
+
+    // Handle dependencies before deletion
+    await prisma.$transaction([
+      // Unassign leads
+      prisma.lead.updateMany({
+        where: { assigned_to: userId },
+        data: { assigned_to: null, status: 'New' } // Reset status to New if technician is deleted
+      }),
+      // Set creator/assigner to null if needed (if your schema allows)
+      prisma.lead.updateMany({
+        where: { assigned_by: userId },
+        data: { assigned_by: null }
+      }),
+      // Delete expenses linked to this user (standard cleanup)
+      prisma.expense.deleteMany({
+        where: { user_id: userId }
+      }),
+      // Finally delete the user
+      prisma.user.delete({
+        where: { id: userId }
+      })
+    ]);
+
+    res.json({ message: 'User deleted successfully' });
+  } catch (error: any) {
+    console.error('Delete user error:', error);
+    res.status(500).json({ message: 'Failed to delete user: ' + (error.message || 'Unknown error') });
   }
 };
 

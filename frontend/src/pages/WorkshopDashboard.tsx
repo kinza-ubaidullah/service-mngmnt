@@ -63,10 +63,18 @@ const WorkshopDashboard = () => {
     }
   };
 
-  const filteredJobs = jobs.filter(job => 
-    job.lead.lead_id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    job.lead.customer.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredJobs = jobs.filter(job => {
+    const matchesSearch = job.lead.lead_id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          job.lead.customer.name.toLowerCase().includes(searchQuery.toLowerCase());
+    
+    if (activeTab === 'all') return matchesSearch;
+    
+    if (activeTab === 'received') return matchesSearch && job.status === 'Received';
+    if (activeTab === 'ongoing') return matchesSearch && job.status === 'WorkStarted';
+    if (activeTab === 'ready') return matchesSearch && job.status === 'Ready';
+    
+    return matchesSearch;
+  });
 
   if (loading) {
     return (

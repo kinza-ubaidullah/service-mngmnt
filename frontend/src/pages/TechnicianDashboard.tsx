@@ -20,6 +20,7 @@ interface Lead {
   problem_details: string;
   created_at: string;
   visit_date: string;
+  item_pictures?: string[];
   customer: {
     name: string;
     phone: string;
@@ -41,8 +42,9 @@ const TechnicianDashboard = () => {
   const dispatch = useDispatch();
   const user = useSelector((state: RootState) => state.auth.user);
 
-  const [activeTab, setActiveTab] = useState<'tasks' | 'wallet' | 'profile'>('tasks');
+  const [activeTab, setActiveTab] = useState<'tasks' | 'wallet' | 'profile' | 'workshop'>('tasks');
   const [jobs, setJobs] = useState<Lead[]>([]);
+  const [workshopJobs, setWorkshopJobs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedJob, setSelectedJob] = useState<Lead | null>(null);
   const [outcomeModalOpen, setOutcomeModalOpen] = useState(false);
@@ -95,10 +97,31 @@ const TechnicianDashboard = () => {
     }
   };
 
+  const fetchWorkshopJobs = async () => {
+    try {
+      const res = await api.get('/workshop/jobs');
+      setWorkshopJobs(res.data.jobs);
+    } catch (error) {
+      console.error('Failed to load workshop jobs');
+    }
+  };
+
   useEffect(() => {
     fetchJobs();
     fetchWalletData();
+    fetchWorkshopJobs();
   }, []);
+
+  const updateWorkshopStatus = async (jobId: number, status: string) => {
+    try {
+      await api.patch(`/workshop/jobs/${jobId}/status`, { status });
+      toast.success(`Machine is now ${status}`);
+      fetchWorkshopJobs();
+      fetchJobs();
+    } catch (error) {
+      toast.error('Failed to update workshop status');
+    }
+  };
 
   const handleOutcomeSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -263,8 +286,16 @@ const TechnicianDashboard = () => {
             <ClipboardCheck size={18} /> Tasks
           </button>
           <button 
+            onClick={() => setActiveTab('workshop')}
+            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-[10px] sm:text-sm transition-all
+              ${activeTab === 'workshop' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' : 'text-slate-500 hover:text-slate-300'}
+            `}
+          >
+            <Package size={18} /> Workshop
+          </button>
+          <button 
             onClick={() => setActiveTab('wallet')}
-            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm transition-all
+            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-[10px] sm:text-sm transition-all
               ${activeTab === 'wallet' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' : 'text-slate-500 hover:text-slate-300'}
             `}
           >
@@ -272,7 +303,7 @@ const TechnicianDashboard = () => {
           </button>
           <button 
             onClick={() => setActiveTab('profile')}
-            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm transition-all
+            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-[10px] sm:text-sm transition-all
               ${activeTab === 'profile' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' : 'text-slate-500 hover:text-slate-300'}
             `}
           >
@@ -284,8 +315,10 @@ const TechnicianDashboard = () => {
           <>
             <div className="mb-6 flex justify-between items-end">
               <div>
-                <h2 className="text-2xl font-bold text-white">My Tasks</h2>
-                <p className="text-sm text-slate-400">{jobs.filter(j => j.status === 'Assigned').length} Pending Dispatch</p>
+                <h2 className="text-2xl font-bold text-white">Active Tasks</h2>
+                <p className="text-sm text-slate-400">
+                  {jobs.filter(j => j.status === 'Assigned' || j.status === 'InProgress' || j.status === 'Reopened').length} pending jobs
+                </p>
               </div>
               <button onClick={fetchJobs} className="p-2 text-emerald-400 hover:bg-emerald-500/10 rounded-lg transition">
                 <Clock size={20} />
@@ -296,18 +329,20 @@ const TechnicianDashboard = () => {
               <div className="h-64 flex justify-center items-center">
                 <Loader2 className="animate-spin text-emerald-500" size={32} />
               </div>
-            ) : jobs.length === 0 ? (
+            ) : jobs.filter(j => j.status !== 'Completed' && j.status !== 'PickedForWorkshop').length === 0 ? (
               <div className="bg-slate-900/50 border border-white/5 rounded-3xl p-12 text-center">
                 <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-4">
                   <ClipboardCheck size={32} className="text-slate-600" />
                 </div>
-                <h3 className="text-white font-bold mb-1">No Jobs Found</h3>
-                <p className="text-sm text-slate-500">You're all caught up! New tasks will appear here.</p>
+                <h3 className="text-white font-bold mb-1">All Caught Up!</h3>
+                <p className="text-sm text-slate-500">You have no active tasks at the moment.</p>
               </div>
             ) : (
               <div className="space-y-4">
                 <AnimatePresence mode="popLayout">
-                  {jobs.map((job, idx) => (
+                  {jobs
+                    .filter(j => j.status !== 'Completed' && j.status !== 'PickedForWorkshop')
+                    .map((job, idx) => (
                     <motion.div
                       key={job.id}
                       initial={{ opacity: 0, y: 10 }}
@@ -358,8 +393,7 @@ const TechnicianDashboard = () => {
                           </a>
                         )}
                       </div>
-
-                      <div className="grid grid-cols-2 gap-3 pt-3 border-t border-white/5">
+                      <div className="grid grid-cols-2 gap-3 pt-3 border-t border-white/5 mb-4">
                         <div className="flex flex-col gap-0.5">
                           <span className="text-[10px] font-bold text-slate-500 uppercase">Appliance</span>
                           <span className="text-sm font-semibold text-slate-200">{job.product_type}</span>
@@ -371,12 +405,95 @@ const TechnicianDashboard = () => {
                           </span>
                         </div>
                       </div>
+
+                      {/* Item Pictures Preview */}
+                      {job.item_pictures && job.item_pictures.length > 0 && (
+                        <div className="flex gap-2 mb-4 overflow-x-auto pb-1 custom-scrollbar">
+                           {job.item_pictures.map((pic: string, pIdx: number) => (
+                             <img 
+                               key={pIdx} 
+                               src={pic} 
+                               alt="item" 
+                               className="w-12 h-12 rounded-lg object-cover border border-white/10 shrink-0"
+                             />
+                           ))}
+                        </div>
+                      )}
                     </motion.div>
                   ))}
                 </AnimatePresence>
               </div>
             )}
           </>
+        ) : activeTab === 'workshop' ? (
+          /* WORKSHOP TAB */
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
+            <div className="mb-6">
+               <h2 className="text-2xl font-bold text-white">Workshop Inventory</h2>
+               <p className="text-sm text-slate-400">{workshopJobs.filter((j:any) => j.status !== 'Ready').length} Machines under repair</p>
+            </div>
+
+            {workshopJobs.length === 0 ? (
+               <div className="bg-slate-900/50 border border-white/5 rounded-3xl p-12 text-center">
+                 <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-4">
+                   <Package size={32} className="text-slate-600" />
+                 </div>
+                 <h3 className="text-white font-bold mb-1">Workshop Empty</h3>
+                 <p className="text-sm text-slate-500">No machines have been picked up for repair yet.</p>
+               </div>
+            ) : (
+              <div className="space-y-4">
+                {workshopJobs.map((job:any, idx:number) => (
+                  <motion.div 
+                    key={job.id}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: idx * 0.1 }}
+                    className="bg-slate-900/60 border border-white/10 rounded-2xl p-5"
+                  >
+                    <div className="flex justify-between items-start mb-4">
+                       <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest bg-white/5 px-2 py-0.5 rounded">
+                          {job.lead.lead_id}
+                       </span>
+                       <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase
+                          ${job.status === 'Ready' ? 'bg-emerald-500/20 text-emerald-400' : 
+                            job.status === 'WorkStarted' ? 'bg-blue-500/20 text-blue-400' : 'bg-slate-500/20 text-slate-400'}
+                       `}>
+                          {job.status}
+                       </span>
+                    </div>
+
+                    <h3 className="text-lg font-bold text-white mb-1">{job.lead.product_type}</h3>
+                    <p className="text-xs text-slate-400 mb-4">{job.lead.customer.name} - {job.lead.customer.area}</p>
+
+                    <div className="flex gap-2">
+                       {job.status === 'Received' && (
+                         <button 
+                           onClick={() => updateWorkshopStatus(job.id, 'WorkStarted')}
+                           className="flex-1 bg-blue-500 text-white text-xs font-bold py-3 rounded-xl shadow-lg shadow-blue-500/20"
+                         >
+                           Start Repair
+                         </button>
+                       )}
+                       {job.status === 'WorkStarted' && (
+                         <button 
+                           onClick={() => updateWorkshopStatus(job.id, 'Ready')}
+                           className="flex-1 bg-emerald-500 text-white text-xs font-bold py-3 rounded-xl shadow-lg shadow-emerald-500/20"
+                         >
+                           Mark Ready
+                         </button>
+                       )}
+                       {job.status === 'Ready' && (
+                         <div className="flex-1 bg-emerald-500/10 text-emerald-400 text-center py-3 rounded-xl border border-emerald-500/20 text-[10px] font-black uppercase">
+                            Ready for Delivery
+                         </div>
+                       )}
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
+            )}
+          </motion.div>
         ) : activeTab === 'wallet' ? (
           /* WALLET TAB */
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
