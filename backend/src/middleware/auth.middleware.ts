@@ -1,8 +1,9 @@
 import type { Request, Response, NextFunction } from 'express';
-import { verifyToken } from '../utils/jwt.utils.js';
-import { prisma } from '../utils/prisma.js';
+import { verifyToken } from '../utils/jwt.utils';
+import { prisma } from '../utils/prisma';
 
 export const authenticate = async (req: Request, res: Response, next: NextFunction) => {
+  console.log('Authenticating request to:', req.url);
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {

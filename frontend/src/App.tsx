@@ -43,15 +43,26 @@ function App() {
   // Initialize user on refresh if token exists
   useEffect(() => {
     const initAuth = async () => {
+      console.log('Initializing Auth... Token:', !!token);
       if (token) {
         try {
+          console.log('Fetching user data...');
           const response = await api.get('/auth/me');
-          dispatch(setUser(response.data.user));
+          console.log('Auth response:', response.data);
+          if (response.data && response.data.user) {
+            dispatch(setUser(response.data.user));
+            console.log('User set successfully');
+          } else {
+            console.error('Invalid user data received:', response.data);
+            dispatch(logout());
+          }
         } catch (error) {
+          console.error('Auth initialization failed:', error);
           dispatch(logout());
         }
       }
       setLoading(false);
+      console.log('Auth initialization complete. Loading: false');
     };
     initAuth();
   }, [dispatch, token]);
