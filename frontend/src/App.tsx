@@ -18,12 +18,19 @@ const RootRedirect = () => {
   const { user, isAuthenticated, token } = useSelector((state: RootState) => state.auth);
   
   if (!token) return <Navigate to="/login" replace />;
-  if (!isAuthenticated || !user) return null; // Wait for initAuth
+  if (!isAuthenticated || !user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-950">
+        <div className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    );
+  }
   
   switch (user.role) {
     case 'ADMIN': return <Navigate to="/admin" replace />;
     case 'CALL_CENTER': return <Navigate to="/callcenter" replace />;
     case 'TECHNICIAN': return <Navigate to="/tech" replace />;
+    case 'WORKSHOP_MANAGER': return <Navigate to="/workshop" replace />;
     default: return <Navigate to="/login" replace />;
   }
 };
