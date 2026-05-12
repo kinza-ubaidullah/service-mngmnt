@@ -83,13 +83,13 @@ function App() {
           />
           <Route 
             path="/register" 
-            element={token && isAuthenticated ? <Navigate to="/" replace /> : <Register />} 
+            element={isAuthenticated ? <Navigate to="/" replace /> : <Register />} 
           />
 
           {/* Root redirect based on role */}
           <Route 
             path="/" 
-            element={<RootRedirect />} 
+            element={isAuthenticated ? <RootRedirect /> : <Navigate to="/login" replace />} 
           />
 
           {/* Admin Routes */}
