@@ -38,13 +38,20 @@ export const login = async (req: Request, res: Response) => {
     // Generate token
     const token = signToken({ id: user.id, role: user.role });
 
-    // Remove password_hash from response
-    const { password_hash, ...userWithoutPassword } = user;
+    console.log('Login successful for user:', user.email, 'Role:', user.role);
 
     res.json({
       message: 'Login successful',
       token,
-      user: userWithoutPassword
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        role: user.role,
+        is_active: user.is_active,
+        team_id: user.team_id
+      }
     });
   } catch (error) {
     console.error('Login error:', error);
@@ -55,8 +62,17 @@ export const login = async (req: Request, res: Response) => {
 export const getMe = async (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
-    const { password_hash, ...userWithoutPassword } = user;
-    res.json({ user: userWithoutPassword });
+    res.json({ 
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        role: user.role,
+        is_active: user.is_active,
+        team_id: user.team_id
+      }
+    });
   } catch (error) {
     res.status(500).json({ message: 'Internal server error' });
   }
