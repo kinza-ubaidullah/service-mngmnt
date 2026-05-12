@@ -40,35 +40,36 @@ function App() {
   const { isAuthenticated, token } = useSelector((state: RootState) => state.auth);
   const [loading, setLoading] = useState(true);
 
-  // Initialize user on refresh if token exists
   useEffect(() => {
     const initAuth = async () => {
-      console.log('Initializing Auth... Token:', !!token);
-      if (token) {
+      console.log('--- Auth Init Start ---');
+      if (token && !isAuthenticated) {
         try {
-          console.log('Fetching user data...');
           const response = await api.get('/auth/me');
-          console.log('Auth response:', response.data);
-          if (response.data && response.data.user) {
+          if (response.data?.user) {
             dispatch(setUser(response.data.user));
-            console.log('User set successfully');
-          } else {
-            console.error('Invalid user data received:', response.data);
-            dispatch(logout());
+            console.log('User initialized:', response.data.user.role);
           }
         } catch (error) {
-          console.error('Auth initialization failed:', error);
+          console.error('Auth Init Error:', error);
           dispatch(logout());
         }
       }
       setLoading(false);
-      console.log('Auth initialization complete. Loading: false');
+      console.log('--- Auth Init End ---');
     };
     initAuth();
-  }, [dispatch, token]);
+  }, [dispatch, token, isAuthenticated]);
 
   if (loading) {
-    return <div className="min-h-screen flex items-center justify-center bg-slate-50"><div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div></div>;
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-950 text-white font-bold">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+          <p className="animate-pulse">Loading ServiceOS...</p>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -77,20 +78,11 @@ function App() {
       <Router>
         <Routes>
           {/* Public Routes */}
-          <Route 
-            path="/login" 
-            element={isAuthenticated ? <Navigate to="/" replace /> : <Login />} 
-          />
-          <Route 
-            path="/register" 
-            element={isAuthenticated ? <Navigate to="/" replace /> : <Register />} 
-          />
+          <Route path="/login" element={isAuthenticated ? <Navigate to="/" replace /> : <Login />} />
+          <Route path="/register" element={isAuthenticated ? <Navigate to="/" replace /> : <Register />} />
 
-          {/* Root redirect based on role */}
-          <Route 
-            path="/" 
-            element={isAuthenticated ? <RootRedirect /> : <Navigate to="/login" replace />} 
-          />
+          {/* Role-based Redirection at Root */}
+          <Route path="/" element={isAuthenticated ? <RootRedirect /> : <Navigate to="/login" replace />} />
 
           {/* Admin Routes */}
           <Route 
@@ -122,8 +114,6 @@ function App() {
               </ProtectedRoute>
             } 
           />
-
-
 
           {/* Catch All */}
           <Route path="*" element={<Navigate to="/" replace />} />
