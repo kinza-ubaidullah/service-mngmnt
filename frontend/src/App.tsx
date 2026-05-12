@@ -57,7 +57,7 @@ function App() {
           const response = await api.get('/auth/me');
           if (response.data?.user) {
             dispatch(setUser(response.data.user));
-            console.log('User initialized:', response.data.user.role);
+            console.log('User initialized:', response.data.user?.role);
           }
         } catch (error) {
           console.error('Auth Init Error:', error);

@@ -15,9 +15,10 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles 
     return <Navigate to="/login" replace />;
   }
 
-  if (allowedRoles && user && !allowedRoles.includes(user.role)) {
+  if (allowedRoles && user && !allowedRoles.includes(user?.role || '')) {
     // If authenticated but unauthorized role, redirect to their respective dashboard
-    switch (user.role) {
+    const role = user?.role;
+    switch (role) {
       case 'ADMIN': return <Navigate to="/admin" replace />;
       case 'CALL_CENTER': return <Navigate to="/callcenter" replace />;
       case 'TECHNICIAN': return <Navigate to="/tech" replace />;

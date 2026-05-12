@@ -243,11 +243,11 @@ const StaffModule = () => {
                       </td>
                       <td className="py-3">
                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border
-                          ${user.role === 'ADMIN' ? 'bg-purple-500/20 text-purple-400 border-purple-500/30' :
-                            user.role === 'TECHNICIAN' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' :
-                            user.role === 'CALL_CENTER' ? 'bg-blue-500/20 text-blue-400 border-blue-500/30' :
+                          ${user?.role === 'ADMIN' ? 'bg-purple-500/20 text-purple-400 border-purple-500/30' :
+                            user?.role === 'TECHNICIAN' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' :
+                            user?.role === 'CALL_CENTER' ? 'bg-blue-500/20 text-blue-400 border-blue-500/30' :
                             'bg-amber-500/20 text-amber-400 border-amber-500/30'}`}>
-                          {user.role.replace('_', ' ')}
+                          {user?.role?.replace('_', ' ') || 'UNKNOWN'}
                         </span>
                       </td>
                       <td className="py-3 text-slate-400 text-sm">{user.phone}</td>
