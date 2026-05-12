@@ -38,7 +38,13 @@ export const login = async (req: Request, res: Response) => {
     // Generate token
     const token = signToken({ id: user.id, role: user.role });
 
-    console.log('Login successful for user:', user.email, 'Role:', user.role);
+    console.log('Login successful for user:', user.email);
+    console.log('Role from database:', user.role);
+    console.log('User object being sent:', {
+      id: user.id,
+      role: user.role,
+      email: user.email
+    });
 
     res.json({
       message: 'Login successful',

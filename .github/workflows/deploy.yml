@@ -59,4 +59,5 @@ jobs:
             git pull origin main
             npm install --production
             npx prisma db push
+            npm run build
             touch tmp/restart.txt

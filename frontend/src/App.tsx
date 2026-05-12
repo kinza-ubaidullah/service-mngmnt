@@ -12,6 +12,7 @@ import Register from './pages/Register';
 import AdminDashboard from './pages/AdminDashboard';
 import CallCenterDashboard from './pages/CallCenterDashboard';
 import TechnicianDashboard from './pages/TechnicianDashboard';
+import WorkshopDashboard from './pages/WorkshopDashboard';
 import ProtectedRoute from './components/ProtectedRoute';
 
 const RootRedirect = () => {
@@ -120,6 +121,16 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={['TECHNICIAN', 'ADMIN']}>
                 <TechnicianDashboard />
+              </ProtectedRoute>
+            } 
+          />
+
+          {/* Workshop Routes */}
+          <Route 
+            path="/workshop/*" 
+            element={
+              <ProtectedRoute allowedRoles={['WORKSHOP_MANAGER', 'ADMIN']}>
+                <WorkshopDashboard />
               </ProtectedRoute>
             } 
           />

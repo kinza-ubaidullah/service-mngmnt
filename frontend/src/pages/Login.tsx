@@ -24,7 +24,14 @@ const Login = () => {
     try {
       console.log('Attempting login for:', email);
       const response = await api.post('/auth/login', { email, password });
+      console.log('Login API Full Response:', response.data);
+      
       const { user, token } = response.data;
+
+      if (!user || !user.role) {
+        console.error('User or Role missing in response:', { user });
+        throw new Error('Invalid response from server: Missing user role');
+      }
 
       // Update Redux state and localStorage
       dispatch(setCredentials({ user, token }));
@@ -33,7 +40,7 @@ const Login = () => {
 
       // Delay navigation slightly to ensure state is committed
       setTimeout(() => {
-        const role = user?.role;
+        const role = user.role;
         console.log('Login successful, navigating for role:', role);
         
         switch (role) {
@@ -42,8 +49,9 @@ const Login = () => {
           case 'TECHNICIAN': navigate('/tech'); break;
           case 'WORKSHOP_MANAGER': navigate('/workshop'); break;
           default: 
-            console.error('Invalid user role after login:', role);
-            navigate('/');
+            console.error('Unexpected user role after login:', role);
+            toast.error('Access denied: Unknown role');
+            navigate('/login');
         }
       }, 100);
       
