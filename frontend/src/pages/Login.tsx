@@ -33,12 +33,17 @@ const Login = () => {
 
       // Delay navigation slightly to ensure state is committed
       setTimeout(() => {
-        switch (user.role) {
+        const role = user?.role;
+        console.log('Login successful, navigating for role:', role);
+        
+        switch (role) {
           case 'ADMIN': navigate('/admin'); break;
           case 'CALL_CENTER': navigate('/callcenter'); break;
           case 'TECHNICIAN': navigate('/tech'); break;
           case 'WORKSHOP_MANAGER': navigate('/workshop'); break;
-          default: navigate('/');
+          default: 
+            console.error('Invalid user role after login:', role);
+            navigate('/');
         }
       }, 100);
       
