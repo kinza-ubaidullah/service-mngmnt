@@ -79,7 +79,7 @@ function App() {
           {/* Public Routes */}
           <Route 
             path="/login" 
-            element={token && isAuthenticated ? <Navigate to="/" replace /> : <Login />} 
+            element={isAuthenticated ? <Navigate to="/" replace /> : <Login />} 
           />
           <Route 
             path="/register" 
