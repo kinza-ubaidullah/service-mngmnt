@@ -1,30 +1,45 @@
-import { prisma } from '../src/utils/prisma.js';
+import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 
-async function main() {
-  const salt = await bcrypt.genSalt(10);
-  const password_hash = await bcrypt.hash('admin123', salt);
+const prisma = new PrismaClient();
 
-  const user = await prisma.user.upsert({
-    where: { phone: '0000000000' },
-    update: {
-      email: 'admin@example.com',
-      password_hash,
-      is_active: true
-    },
-    create: {
-      name: 'Super Admin',
-      email: 'admin@example.com',
-      phone: '0000000000',
-      password_hash,
-      role: 'ADMIN',
-      is_active: true
-    }
+async function debug() {
+  const user = await prisma.user.findUnique({
+    where: { email: 'admin@example.com' }
   });
 
-  console.log('User updated/created successfully:', user.email);
+  if (!user) {
+    console.log('User NOT found. Creating it now...');
+    const password_hash = await bcrypt.hash('admin123', 10);
+    const newUser = await prisma.user.create({
+      data: {
+        name: 'System Admin',
+        email: 'admin@example.com',
+        phone: '1234567890',
+        password_hash,
+        role: 'ADMIN',
+        is_active: true,
+      }
+    });
+    console.log('Admin user created successfully:', newUser.email);
+  } else {
+    console.log('User found:', user.email);
+    console.log('Checking password "admin123"...');
+    const isValid = await bcrypt.compare('admin123', user.password_hash);
+    console.log('Password valid?', isValid);
+    
+    if (!isValid) {
+      console.log('Updating password to "admin123"...');
+      const password_hash = await bcrypt.hash('admin123', 10);
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { password_hash }
+      });
+      console.log('Password updated.');
+    }
+  }
 }
 
-main()
-  .catch(console.error)
+debug()
+  .catch(e => console.error(e))
   .finally(() => prisma.$disconnect());
