@@ -12,6 +12,7 @@ enum Role {
   ADMIN
   CALL_CENTER
   TECHNICIAN
+  WORKSHOP_MANAGER
 }
 
 enum JobStatus {
