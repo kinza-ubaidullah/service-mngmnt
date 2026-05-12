@@ -16,9 +16,13 @@ const Login = () => {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loading) return; // Prevent double submission
+    
     setLoading(true);
+    toast.dismiss(); // Clear existing toasts
 
     try {
+      console.log('Attempting login for:', email);
       const response = await api.post('/auth/login', { email, password });
       const { user, token } = response.data;
 
@@ -27,21 +31,19 @@ const Login = () => {
 
       toast.success('Login Successful!');
 
-      // Role-based redirection
-      switch (user.role) {
-        case 'ADMIN':
-          navigate('/admin');
-          break;
-        case 'CALL_CENTER':
-          navigate('/callcenter');
-          break;
-        case 'TECHNICIAN':
-          navigate('/tech');
-          break;
-        default:
-          navigate('/');
-      }
+      // Delay navigation slightly to ensure state is committed
+      setTimeout(() => {
+        switch (user.role) {
+          case 'ADMIN': navigate('/admin'); break;
+          case 'CALL_CENTER': navigate('/callcenter'); break;
+          case 'TECHNICIAN': navigate('/tech'); break;
+          case 'WORKSHOP_MANAGER': navigate('/workshop'); break;
+          default: navigate('/');
+        }
+      }, 100);
+      
     } catch (error: any) {
+      console.error('Login error details:', error.response?.data || error.message);
       toast.error(error.response?.data?.message || 'Login failed. Try again.');
     } finally {
       setLoading(false);
