@@ -29,6 +29,7 @@ const AdminDashboard = () => {
   const [loading, setLoading] = useState(true);
 
   const [activeTab, setActiveTab] = useState('Overview');
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const fetchData = async () => {
     try {
@@ -37,9 +38,9 @@ const AdminDashboard = () => {
         api.get('/finance/technician-report'),
         api.get('/finance/chart-data')
       ]);
-      setData(statsRes.data);
-      setEarningsReport(earningsRes.data.report);
-      setChartData(chartRes.data.chartData);
+      setData(statsRes.data || { stats: { revenue: 0, newLeads: 0, assignedJobs: 0, workshopJobs: 0 }, recentLeads: [], technicians: [] });
+      setEarningsReport(earningsRes.data?.report || []);
+      setChartData(chartRes.data?.chartData || []);
     } catch (error) {
       toast.error('Failed to load dashboard data');
     } finally {
@@ -76,8 +77,6 @@ const AdminDashboard = () => {
       </div>
     );
   }
-
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const navItems = [
     { icon: LayoutDashboard, label: 'Overview' },
@@ -171,10 +170,10 @@ const AdminDashboard = () => {
               {/* Stats Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             {[
-              { label: 'Total Revenue', value: `PKR ${data.stats.revenue}`, icon: IndianRupee, color: 'text-indigo-400', bg: 'bg-indigo-500/10', trend: '+12%' },
-              { label: 'New Leads', value: data.stats.newLeads, icon: ClipboardList, color: 'text-emerald-400', bg: 'bg-emerald-500/10', trend: 'Fresh' },
-              { label: 'Field Jobs', value: data.stats.assignedJobs, icon: Activity, color: 'text-blue-400', bg: 'bg-blue-500/10', trend: 'In Progress' },
-              { label: 'Workshop Jobs', value: data.stats.workshopJobs, icon: Wrench, color: 'text-amber-400', bg: 'bg-amber-500/10', trend: 'Repairing' },
+              { label: 'Total Revenue', value: `PKR ${data?.stats?.revenue || 0}`, icon: IndianRupee, color: 'text-indigo-400', bg: 'bg-indigo-500/10', trend: '+12%' },
+              { label: 'New Leads', value: data?.stats?.newLeads || 0, icon: ClipboardList, color: 'text-emerald-400', bg: 'bg-emerald-500/10', trend: 'Fresh' },
+              { label: 'Field Jobs', value: data?.stats?.assignedJobs || 0, icon: Activity, color: 'text-blue-400', bg: 'bg-blue-500/10', trend: 'In Progress' },
+              { label: 'Workshop Jobs', value: data?.stats?.workshopJobs || 0, icon: Wrench, color: 'text-amber-400', bg: 'bg-amber-500/10', trend: 'Repairing' },
             ].map((stat, idx) => (
               <motion.div 
                 key={idx}
@@ -227,7 +226,7 @@ const AdminDashboard = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5">
-                    {data.recentLeads.map((lead: any, idx: number) => (
+                    {(data?.recentLeads || []).map((lead: any, idx: number) => (
                       <tr key={idx} className="group hover:bg-white/[0.02] transition-colors cursor-pointer">
                         <td className="px-8 py-5">
                           <span className="font-mono text-sm font-bold text-indigo-300">{lead.lead_id}</span>
@@ -402,7 +401,7 @@ const AdminDashboard = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
-                  {earningsReport.map((tech: any) => (
+                  {(earningsReport || []).map((tech: any) => (
                     <tr key={tech.id} className="hover:bg-white/[0.01] transition-colors group">
                       <td className="px-8 py-6">
                         <div className="flex items-center gap-3">

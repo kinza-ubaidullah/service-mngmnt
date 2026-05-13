@@ -5,7 +5,11 @@ import toast from 'react-hot-toast';
 import api from '../services/api';
 import { motion } from 'framer-motion';
 
+import { setUser, logout, setCredentials } from '../store/slices/authSlice';
+import { useDispatch } from 'react-redux';
+
 const Register = () => {
+  const dispatch = useDispatch();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const token = searchParams.get('token');
@@ -23,6 +27,7 @@ const Register = () => {
   });
 
   useEffect(() => {
+    dispatch(logout()); // Auto-logout existing user
     const validate = async () => {
       if (!token) {
         toast.error('Invalid or missing invite link');
@@ -51,15 +56,27 @@ const Register = () => {
 
     setLoading(true);
     try {
-      await api.post('/users/invite/register', {
-        token,
-        name: form.name,
-        email: form.email,
-        phone: form.phone,
-        password: form.password
+      const response = await api.post('/users/invite/register', {
+        ...form,
+        token
       });
-      setSuccess(true);
+
       toast.success('Registration successful!');
+      
+      const { user, token: authToken } = response.data;
+      if (user && authToken) {
+        dispatch(setCredentials({ user, token: authToken }));
+        const role = user.role;
+        switch (role) {
+          case 'ADMIN': navigate('/admin'); break;
+          case 'CALL_CENTER': navigate('/callcenter'); break;
+          case 'TECHNICIAN': navigate('/tech'); break;
+          case 'WORKSHOP_MANAGER': navigate('/workshop'); break;
+          default: navigate('/');
+        }
+      } else {
+        setSuccess(true);
+      }
     } catch (error: any) {
       console.error('Registration Error:', error.response?.data);
       toast.error(error.response?.data?.message || 'Registration failed. Check if phone/email already exists.');
@@ -101,7 +118,7 @@ const Register = () => {
     );
   }
 
-  const roleName = role.replace('_', ' ');
+  const roleName = (role || '').replace('_', ' ');
 
   return (
     <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6 relative overflow-hidden font-sans">

@@ -51,25 +51,34 @@ function App() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let isMounted = true;
+    
     const initAuth = async () => {
-      console.log('--- Auth Init Start ---');
-      if (token && !isAuthenticated) {
+      if (token && !isAuthenticated && isMounted) {
+        console.log('--- Auth Init Start ---');
         try {
           const response = await api.get('/auth/me');
-          if (response.data?.user) {
+          if (response.data?.user && isMounted) {
             dispatch(setUser(response.data.user));
             console.log('User initialized:', response.data.user?.role);
           }
         } catch (error) {
           console.error('Auth Init Error:', error);
-          dispatch(logout());
+          if (isMounted) dispatch(logout());
         }
       }
-      setLoading(false);
-      console.log('--- Auth Init End ---');
+      
+      if (isMounted && loading) {
+        setLoading(false);
+      }
     };
+
     initAuth();
-  }, [dispatch, token, isAuthenticated]);
+    
+    return () => {
+      isMounted = false;
+    };
+  }, [dispatch, token, isAuthenticated]); // loading removed from deps
 
   if (loading) {
     return (
@@ -89,7 +98,7 @@ function App() {
         <Routes>
           {/* Public Routes */}
           <Route path="/login" element={isAuthenticated ? <Navigate to="/" replace /> : <Login />} />
-          <Route path="/register" element={isAuthenticated ? <Navigate to="/" replace /> : <Register />} />
+          <Route path="/register" element={<Register />} />
 
           {/* Role-based Redirection at Root */}
           <Route path="/" element={isAuthenticated ? <RootRedirect /> : <Navigate to="/login" replace />} />

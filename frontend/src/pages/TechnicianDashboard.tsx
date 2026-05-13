@@ -5,7 +5,7 @@ import { logout, setUser } from '../store/slices/authSlice';
 import { 
   LogOut, Wrench, MapPin, Clock, ClipboardCheck, 
   ChevronRight, CheckCircle2, Package, Wallet, Plus,
-  Loader2, Sparkles, X, IndianRupee, Info, User, TrendingDown, History, Download
+  Loader2, Sparkles, X, CreditCard, Info, User, TrendingDown, History, Download
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../services/api';
@@ -39,8 +39,21 @@ interface Expense {
 }
 
 const TechnicianDashboard = () => {
+  console.log('--- TechnicianDashboard Rendering ---');
   const dispatch = useDispatch();
   const user = useSelector((state: RootState) => state.auth.user);
+  const isAuthenticated = useSelector((state: RootState) => state.auth.isAuthenticated);
+
+  console.log('Tech Auth State:', { isAuthenticated, role: user?.role });
+
+  if (!isAuthenticated || !user) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-center">
+        <Loader2 className="text-emerald-500 animate-spin mb-4" size={40} />
+        <p className="text-slate-400 font-bold tracking-widest uppercase text-xs">Authenticating Technician...</p>
+      </div>
+    );
+  }
 
   const [activeTab, setActiveTab] = useState<'tasks' | 'wallet' | 'profile' | 'workshop'>('tasks');
   const [jobs, setJobs] = useState<Lead[]>([]);
@@ -74,7 +87,7 @@ const TechnicianDashboard = () => {
   const fetchJobs = async () => {
     try {
       const res = await api.get('/leads/technician/my-jobs');
-      setJobs(res.data.leads);
+      setJobs(res.data.leads || []);
     } catch (error) {
       toast.error('Failed to load your jobs');
     } finally {
@@ -89,9 +102,9 @@ const TechnicianDashboard = () => {
         api.get('/expenses/my-expenses'),
         api.get('/finance/my-summary')
       ]);
-      setWalletSummary(summaryRes.data.summary);
-      setExpenses(expensesRes.data.expenses);
-      setEarningsSummary(earningsRes.data);
+      setWalletSummary(summaryRes.data.summary || { balance: 0, totalCollected: 0, totalSpent: 0 });
+      setExpenses(expensesRes.data.expenses || []);
+      setEarningsSummary(earningsRes.data || { commission: 0, rate: 0 });
     } catch (error) {
       console.error('Wallet fetch error', error);
     }
@@ -100,7 +113,7 @@ const TechnicianDashboard = () => {
   const fetchWorkshopJobs = async () => {
     try {
       const res = await api.get('/workshop/jobs');
-      setWorkshopJobs(res.data.jobs);
+      setWorkshopJobs(res.data.jobs || []);
     } catch (error) {
       console.error('Failed to load workshop jobs');
     }
@@ -377,13 +390,13 @@ const TechnicianDashboard = () => {
                         </div>
                       </div>
 
-                      <h3 className="text-lg font-bold text-white mb-1">{job.customer.name}</h3>
+                      <h3 className="text-lg font-bold text-white mb-1">{job.customer?.name}</h3>
                       <div className="flex items-center gap-2 text-slate-400 text-sm mb-3">
                         <MapPin size={14} className="text-emerald-500/70" />
-                        <span className="truncate flex-1">{job.customer.area}</span>
-                        {job.customer.google_map_link && (
+                        <span className="truncate flex-1">{job.customer?.area}</span>
+                        {job.customer?.google_map_link && (
                           <a 
-                            href={job.customer.google_map_link} 
+                            href={job.customer?.google_map_link} 
                             target="_blank" 
                             rel="noopener noreferrer"
                             onClick={(e) => e.stopPropagation()}
@@ -463,8 +476,8 @@ const TechnicianDashboard = () => {
                        </span>
                     </div>
 
-                    <h3 className="text-lg font-bold text-white mb-1">{job.lead.product_type}</h3>
-                    <p className="text-xs text-slate-400 mb-4">{job.lead.customer.name} - {job.lead.customer.area}</p>
+                    <h3 className="text-lg font-bold text-white mb-1">{job.lead?.product_type}</h3>
+                    <p className="text-xs text-slate-400 mb-4">{job.lead?.customer?.name} - {job.lead?.customer?.area}</p>
 
                     <div className="flex gap-2">
                        {job.status === 'Received' && (
@@ -698,10 +711,10 @@ const TechnicianDashboard = () => {
               <form onSubmit={handleOutcomeSubmit} className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
                 <div className="p-4 bg-white/5 rounded-2xl border border-white/5 space-y-2">
                   <div className="flex items-center gap-2 text-sm font-bold text-slate-300">
-                    <User size={14} className="text-emerald-400" /> {selectedJob.customer.name}
+                    <User size={14} className="text-emerald-400" /> {selectedJob.customer?.name}
                   </div>
                   <div className="flex items-start gap-2 text-xs text-slate-400">
-                    <MapPin size={14} className="text-emerald-500/50 mt-0.5" /> {selectedJob.customer.exact_address}
+                    <MapPin size={14} className="text-emerald-500/50 mt-0.5" /> {selectedJob.customer?.exact_address}
                   </div>
                 </div>
 
@@ -758,7 +771,7 @@ const TechnicianDashboard = () => {
 
                   <div className="grid grid-cols-2 gap-4">
                     <div className="group relative">
-                      <div className="absolute left-4 top-3 text-slate-500"><IndianRupee size={14}/></div>
+                      <div className="absolute left-4 top-3.5 text-slate-500"><CreditCard size={14}/></div>
                       <input 
                         type="number"
                         value={outcomeData.collected_amount}
@@ -825,7 +838,7 @@ const TechnicianDashboard = () => {
               <form onSubmit={handleExpenseSubmit} className="p-6 space-y-6">
                 <div className="space-y-4">
                   <div className="group relative">
-                    <div className="absolute left-4 top-3.5 text-slate-500"><IndianRupee size={16}/></div>
+                    <div className="absolute left-4 top-3.5 text-slate-500"><CreditCard size={16}/></div>
                     <input 
                       type="number" 
                       required

@@ -1,5 +1,8 @@
 import type { Request, Response } from 'express';
-import { prisma } from '../utils/prisma.js';
+import { prisma } from '../utils/prisma';
+import { signToken } from '../utils/jwt.utils';
+import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 
 export const getTechnicians = async (req: Request, res: Response) => {
   try {
@@ -30,7 +33,6 @@ export const getTechnicians = async (req: Request, res: Response) => {
   }
 };
 
-import bcrypt from 'bcryptjs';
 
 export const createUser = async (req: Request, res: Response) => {
   try {
@@ -90,22 +92,25 @@ export const toggleUserActive = async (req: Request, res: Response) => {
   }
 };
 
-import crypto from 'crypto';
 
 export const generateInviteLink = async (req: Request, res: Response) => {
   try {
-    const { role } = req.body; // TECHNICIAN or CALL_CENTER
+    const { role } = req.body; 
+    console.log('Backend: Generating invite for role:', role);
+    
     const token = crypto.randomBytes(16).toString('hex');
     const expires_at = new Date();
-    expires_at.setDate(expires_at.getDate() + 7); // 7 days expiry
+    expires_at.setFullYear(expires_at.getFullYear() + 100); 
 
-    await prisma.inviteToken.create({
-      data: { token, role, expires_at }
+    const invite = await prisma.inviteToken.create({
+      data: { token, role: role as any, expires_at }
     });
+    console.log('Backend: Invite created in DB:', invite);
 
     const inviteLink = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/register?token=${token}`;
     res.json({ inviteLink, token });
   } catch (error) {
+    console.error('Invite generation error:', error);
     res.status(500).json({ message: 'Failed to generate invite link' });
   }
 };
@@ -118,7 +123,7 @@ export const registerViaInvite = async (req: Request, res: Response) => {
       where: { token }
     });
 
-    if (!invite || invite.is_used || invite.expires_at < new Date()) {
+    if (!invite || invite.expires_at < new Date()) {
       res.status(400).json({ message: 'Invalid or expired invite token' });
       return;
     }
@@ -130,12 +135,13 @@ export const registerViaInvite = async (req: Request, res: Response) => {
       data: { name, email, phone, password_hash, role: invite.role }
     });
 
-    await prisma.inviteToken.update({
-      where: { id: invite.id },
-      data: { is_used: true }
-    });
+    const jwtToken = signToken({ id: user.id, email: user.email, role: user.role });
 
-    res.json({ message: 'Registration successful', user: { id: user.id, name: user.name, role: user.role } });
+    res.json({ 
+      message: 'Registration successful', 
+      user: { id: user.id, name: user.name, role: user.role },
+      token: jwtToken
+    });
   } catch (error: any) {
     console.error('Registration error detail:', error);
     if (error.code === 'P2002') {
@@ -152,7 +158,7 @@ export const getInviteDetails = async (req: Request, res: Response) => {
     const { token } = req.params;
     const invite = await prisma.inviteToken.findUnique({ where: { token: String(token) } });
     
-    if (!invite || invite.is_used || invite.expires_at < new Date()) {
+    if (!invite || invite.expires_at < new Date()) {
       res.status(400).json({ message: 'Invalid or expired invite token' });
       return;
     }

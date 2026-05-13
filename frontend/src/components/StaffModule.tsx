@@ -61,11 +61,14 @@ const StaffModule = () => {
   };
 
   const handleGenerateInvite = async () => {
+    console.log('Generating invite for role:', inviteRole);
     setSaving(true);
     try {
       const res = await api.post('/users/invite', { role: inviteRole });
+      console.log('Invite generated successfully:', res.data);
       setGeneratedLink(res.data.inviteLink);
-    } catch (error) {
+    } catch (error: any) {
+      console.error('Invite generation failed:', error.response?.data || error.message);
       toast.error('Failed to generate invite link');
     } finally {
       setSaving(false);

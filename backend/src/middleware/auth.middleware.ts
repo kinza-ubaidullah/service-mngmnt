@@ -37,6 +37,7 @@ export const authorizeRole = (roles: string[]) => {
   return (req: Request, res: Response, next: NextFunction) => {
     const user = (req as any).user;
     if (!user || !roles.includes(user.role)) {
+      console.log(`Forbidden: User role "${user?.role}" not in allowed roles:`, roles);
       res.status(403).json({ message: 'Forbidden. You do not have permission to perform this action.' });
       return;
     }

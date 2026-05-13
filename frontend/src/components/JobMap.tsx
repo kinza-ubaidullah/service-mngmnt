@@ -75,10 +75,10 @@ const JobMap: React.FC<JobMapProps> = ({ leads, technicians = [] }) => {
         })}
 
         {/* Render Technicians */}
-        {technicians.map((tech) => (
+        {technicians?.filter(t => t.lat && t.lng).map((tech) => (
             <Marker 
               key={`tech-${tech.id}`} 
-              position={[tech.lat, tech.lng]}
+              position={[Number(tech.lat), Number(tech.lng)]}
             >
                 <Popup className="tech-popup">
                     <div className="p-2 min-w-[200px]">
