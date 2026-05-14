@@ -64,8 +64,6 @@ jobs:
             git checkout main
             git pull origin main
             cd backend
-            npm install --production
-            npx prisma generate
-            npm run build
+            # Note: Run 'npm install' and 'npm run build' via cPanel Node.js Selector to avoid symlink errors
             mkdir -p tmp
             touch tmp/restart.txt
