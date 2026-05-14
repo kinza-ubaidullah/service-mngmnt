@@ -8,8 +8,8 @@
     "build": "prisma generate && tsc",
     "generate": "prisma generate",
     "db-push": "prisma db push",
-    "start": "node dist/index.js",
-    "seed": "node dist/seed.js"
+    "seed": "node dist/seed.js",
+    "start": "node dist/index.js"
   },
   "keywords": [],
   "author": "",
