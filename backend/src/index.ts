@@ -34,16 +34,16 @@ import financialRoutes from './routes/financial.routes';
 import workshopRoutes from './routes/workshop.routes';
 import teamRoutes from './routes/team.routes';
 
-app.use('/api/auth', authRoutes);
-app.use('/api/leads', leadRoutes);
-app.use('/api/users', userRoutes);
-app.use('/api/dashboard', dashboardRoutes);
-app.use('/api/expenses', expenseRoutes);
-app.use('/api/finance', financialRoutes);
-app.use('/api/workshop', workshopRoutes);
-app.use('/api/teams', teamRoutes);
+app.use('/auth', authRoutes);
+app.use('/leads', leadRoutes);
+app.use('/users', userRoutes);
+app.use('/dashboard', dashboardRoutes);
+app.use('/expenses', expenseRoutes);
+app.use('/finance', financialRoutes);
+app.use('/workshop', workshopRoutes);
+app.use('/teams', teamRoutes);
 
-app.get('/api/health', (req, res) => {
+app.get('/health', (req, res) => {
   res.json({ status: 'ok', message: 'Server is healthy' });
 });
 
