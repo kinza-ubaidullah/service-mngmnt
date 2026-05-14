@@ -77,5 +77,5 @@ jobs:
           password: ${{ secrets.SSH_PASSWORD }}
           port: 21098
           script: |
-            mkdir -p service-mngmnt/backend/tmp
-            touch service-mngmnt/backend/tmp/restart.txt
+            mkdir -p public_html/api.aljaroshi.com/tmp
+            touch public_html/api.aljaroshi.com/tmp/restart.txt
