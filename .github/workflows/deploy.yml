@@ -65,7 +65,7 @@ jobs:
           port: 21098
           timeout: 60s
           source: "backend/dist/**,backend/prisma/**,backend/package.json,backend/package-lock.json,backend/.htaccess"
-          target: "service-mngmnt/backend/"
+          target: "public_html/api.aljaroshi.com/"
           strip_components: 1
 
       # --- RESTART SERVER ---
