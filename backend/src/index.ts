@@ -13,6 +13,7 @@ app.use(cors({
   origin: [
     'https://crm.aljaroshi.com', 
     'https://www.crm.aljaroshi.com',
+    'https://api.aljaroshi.com',
     'http://crm.aljaroshi.com', 
     'http://localhost:5173'
   ],
