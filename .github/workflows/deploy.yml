@@ -61,7 +61,7 @@ jobs:
           password: ${{ secrets.FTP_PASSWORD }}
           # Hum sirf dist, prisma, package.json bhej rahe hain
           local-dir: ./backend/
-          server-dir: /service-mngmnt/backend/
+          server-dir: service-mngmnt/backend/
           exclude: |
             node_modules/**
             src/**
