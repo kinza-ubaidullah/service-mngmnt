@@ -4,7 +4,7 @@ import type { RootState } from '../store';
 import { logout } from '../store/slices/authSlice';
 import { 
   LogOut, LayoutDashboard, Users, ClipboardList, 
-  Wrench, IndianRupee, AlertCircle,
+  Wrench, DollarSign, AlertCircle,
   Activity, ArrowUpRight, Clock, Settings, Loader2, Download, RotateCcw, Trash2, Menu, X
 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -83,7 +83,7 @@ const AdminDashboard = () => {
     { icon: ClipboardList, label: 'Service Leads' },
     { icon: Wrench, label: 'Workshop' },
     { icon: Users, label: 'Staff Management' },
-    { icon: IndianRupee, label: 'Finance' },
+    { icon: DollarSign, label: 'Finance' },
     { icon: Settings, label: 'Settings' },
   ];
 
@@ -163,14 +163,14 @@ const AdminDashboard = () => {
         </header>
 
         {/* Scrollable Content */}
-        <div className="flex-1 overflow-y-auto p-8 space-y-8">
+        <div className="flex-1 overflow-y-auto p-4 lg:p-8 space-y-6 lg:space-y-8">
           
           {activeTab === 'Overview' ? (
             <>
               {/* Stats Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-6">
             {[
-              { label: 'Total Revenue', value: `PKR ${data?.stats?.revenue || 0}`, icon: IndianRupee, color: 'text-indigo-400', bg: 'bg-indigo-500/10', trend: '+12%' },
+              { label: 'Total Revenue', value: `$${data?.stats?.revenue || 0}`, icon: DollarSign, color: 'text-indigo-400', bg: 'bg-indigo-500/10', trend: '+12%' },
               { label: 'New Leads', value: data?.stats?.newLeads || 0, icon: ClipboardList, color: 'text-emerald-400', bg: 'bg-emerald-500/10', trend: 'Fresh' },
               { label: 'Field Jobs', value: data?.stats?.assignedJobs || 0, icon: Activity, color: 'text-blue-400', bg: 'bg-blue-500/10', trend: 'In Progress' },
               { label: 'Workshop Jobs', value: data?.stats?.workshopJobs || 0, icon: Wrench, color: 'text-amber-400', bg: 'bg-amber-500/10', trend: 'Repairing' },
@@ -180,7 +180,7 @@ const AdminDashboard = () => {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: idx * 0.1 }}
-                className="bg-slate-900/60 border border-white/5 p-6 rounded-[2rem] hover:border-white/10 transition-all group relative overflow-hidden"
+                className="bg-slate-900/60 border border-white/5 p-4 lg:p-6 rounded-[1.5rem] lg:rounded-[2rem] hover:border-white/10 transition-all group relative overflow-hidden"
               >
                 <div className={`absolute -right-4 -top-4 w-24 h-24 rounded-full ${stat.bg} blur-3xl opacity-50 transition-all group-hover:scale-150`}></div>
                 <div className="flex justify-between items-start relative z-10">
@@ -193,18 +193,18 @@ const AdminDashboard = () => {
                 </div>
                 <div className="mt-6 relative z-10">
                   <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">{stat.label}</p>
-                  <h3 className="text-2xl font-black text-white mt-1">{stat.value}</h3>
+                  <h3 className="text-lg lg:text-2xl font-black text-white mt-1">{stat.value}</h3>
                 </div>
               </motion.div>
             ))}
           </div>
 
           {/* Activity Section */}
-          <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 lg:gap-8">
             
             {/* Recent Leads Table */}
-            <div className="xl:col-span-2 bg-slate-900/60 border border-white/5 rounded-[2.5rem] overflow-hidden flex flex-col shadow-2xl">
-              <div className="p-8 border-b border-white/5 flex justify-between items-center bg-gradient-to-r from-white/[0.02] to-transparent">
+            <div className="xl:col-span-2 bg-slate-900/60 border border-white/5 rounded-[2rem] overflow-hidden flex flex-col shadow-2xl">
+              <div className="p-5 lg:p-8 border-b border-white/5 flex justify-between items-center bg-gradient-to-r from-white/[0.02] to-transparent">
                 <h3 className="text-lg font-bold text-white flex items-center gap-3">
                   <Clock size={20} className="text-indigo-400" />
                   Recent Operations
@@ -218,29 +218,29 @@ const AdminDashboard = () => {
                 <table className="w-full text-left">
                   <thead>
                     <tr className="text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-white/5">
-                      <th className="px-8 py-4">Lead ID</th>
-                      <th className="px-8 py-4">Customer</th>
-                      <th className="px-8 py-4">Product</th>
-                      <th className="px-8 py-4">Status</th>
-                      <th className="px-8 py-4 text-right">Technician</th>
+                      <th className="px-4 lg:px-8 py-4">Lead ID</th>
+                      <th className="px-4 lg:px-8 py-4">Customer</th>
+                      <th className="px-4 lg:px-8 py-4 hidden md:table-cell">Product</th>
+                      <th className="px-4 lg:px-8 py-4">Status</th>
+                      <th className="px-4 lg:px-8 py-4 text-right hidden sm:table-cell">Technician</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5">
                     {(data?.recentLeads || []).map((lead: any, idx: number) => (
-                      <tr key={idx} className="group hover:bg-white/[0.02] transition-colors cursor-pointer">
+                      <tr key={idx} className="group hover:bg-white/[0.02] transition-colors cursor-pointer text-sm">
                         <td className="px-8 py-5">
                           <span className="font-mono text-sm font-bold text-indigo-300">{lead.lead_id}</span>
                         </td>
-                        <td className="px-8 py-5">
+                        <td className="px-4 lg:px-8 py-4">
                           <div className="text-sm font-bold text-slate-200">{lead.customer.name}</div>
                           <div className="text-[10px] text-slate-500 mt-0.5">{lead.customer.area}</div>
                         </td>
-                        <td className="px-8 py-5">
+                        <td className="px-4 lg:px-8 py-4 hidden md:table-cell">
                           <span className="text-xs font-semibold text-slate-400 bg-white/5 px-2 py-1 rounded border border-white/5">
                             {lead.product_type}
                           </span>
                         </td>
-                        <td className="px-8 py-5">
+                        <td className="px-4 lg:px-8 py-4">
                           <div className="flex items-center gap-3">
                             <span className={`px-3 py-1.5 rounded-lg text-[10px] font-bold tracking-wide border
                               ${lead.status === 'New' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 
@@ -304,7 +304,7 @@ const AdminDashboard = () => {
                             </div>
                           </div>
                         </td>
-                        <td className="px-8 py-5 text-right text-xs font-bold text-slate-500 group-hover:text-indigo-400 transition-colors">
+                        <td className="px-4 lg:px-8 py-4 text-right text-xs font-bold text-slate-500 group-hover:text-indigo-400 transition-colors hidden sm:table-cell">
                           {lead.technician?.name || 'Unassigned'}
                         </td>
                       </tr>
@@ -315,7 +315,7 @@ const AdminDashboard = () => {
             </div>
 
             {/* NEW: Map Visualization */}
-            <div className="xl:col-span-3 h-[400px]">
+            <div className="xl:col-span-3 h-[300px] lg:h-[400px]">
               <JobMap leads={data.recentLeads} technicians={data.technicians} />
             </div>
 
@@ -324,7 +324,7 @@ const AdminDashboard = () => {
             {/* Quick Actions / Alerts */}
             <div className="space-y-6">
               {/* Financial Performance Chart */}
-              <div className="bg-slate-900/60 border border-white/5 rounded-[2.5rem] p-8 shadow-2xl">
+              <div className="bg-slate-900/60 border border-white/5 rounded-[2rem] p-5 lg:p-8 shadow-2xl">
                 <h3 className="text-sm font-bold text-white uppercase tracking-widest flex items-center gap-2 mb-6">
                   <Activity size={16} className="text-indigo-400" />
                   Weekly Performance
@@ -347,7 +347,7 @@ const AdminDashboard = () => {
                 </div>
               </div>
 
-              <div className="bg-slate-900/60 border border-white/5 rounded-[2.5rem] p-8 space-y-6">
+              <div className="bg-slate-900/60 border border-white/5 rounded-[2rem] p-5 lg:p-8 space-y-6">
                 <h3 className="text-sm font-bold text-white uppercase tracking-widest flex items-center gap-2">
                   <AlertCircle size={16} className="text-amber-400" />
                   Attention Needed
@@ -378,10 +378,10 @@ const AdminDashboard = () => {
             animate={{ opacity: 1, y: 0 }}
             className="bg-slate-900/40 backdrop-blur-xl border border-white/10 rounded-[2.5rem] overflow-hidden shadow-2xl"
           >
-            <div className="p-8 border-b border-white/5 flex justify-between items-center bg-white/[0.02]">
+            <div className="p-5 lg:p-8 border-b border-white/5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 bg-white/[0.02]">
               <div className="flex items-center gap-4">
                 <div className="bg-blue-500/20 p-3 rounded-2xl text-blue-400">
-                  <IndianRupee size={24} />
+                  <DollarSign size={24} />
                 </div>
                 <div>
                   <h3 className="text-xl font-bold text-white">Technician Earnings & Commissions</h3>
@@ -394,16 +394,16 @@ const AdminDashboard = () => {
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-white/[0.02]">
-                    <th className="px-8 py-5 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Technician</th>
-                    <th className="px-8 py-5 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-center">Jobs Done</th>
-                    <th className="px-8 py-5 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Gross Revenue</th>
-                    <th className="px-8 py-5 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Commission Earned</th>
+                    <th className="px-4 lg:px-8 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Technician</th>
+                    <th className="px-4 lg:px-8 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-center">Jobs</th>
+                    <th className="px-4 lg:px-8 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest hidden sm:table-cell">Revenue</th>
+                    <th className="px-4 lg:px-8 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Commission</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
                   {(earningsReport || []).map((tech: any) => (
                     <tr key={tech.id} className="hover:bg-white/[0.01] transition-colors group">
-                      <td className="px-8 py-6">
+                      <td className="px-4 lg:px-8 py-4">
                         <div className="flex items-center gap-3">
                           <div className="w-10 h-10 rounded-full bg-blue-500/10 flex items-center justify-center text-blue-400 font-bold border border-blue-500/20">
                             {tech.name.charAt(0)}
@@ -411,16 +411,16 @@ const AdminDashboard = () => {
                           <span className="font-bold text-slate-200">{tech.name}</span>
                         </div>
                       </td>
-                      <td className="px-8 py-6 text-center">
+                      <td className="px-4 lg:px-8 py-4 text-center">
                         <span className="bg-slate-800 text-slate-300 px-3 py-1 rounded-full text-xs font-bold border border-slate-700">
                           {tech.jobCount} Jobs
                         </span>
                       </td>
-                      <td className="px-8 py-6">
-                        <span className="text-sm font-bold text-slate-300">Rs. {tech.totalRevenue.toLocaleString()}</span>
+                      <td className="px-4 lg:px-8 py-4 hidden sm:table-cell">
+                        <span className="text-sm font-bold text-slate-300">$ {tech.totalRevenue.toLocaleString()}</span>
                       </td>
-                      <td className="px-8 py-6">
-                        <span className="text-sm font-black text-emerald-400">Rs. {tech.totalCommission.toLocaleString()}</span>
+                      <td className="px-4 lg:px-8 py-4">
+                        <span className="text-sm font-black text-emerald-400">$ {tech.totalCommission.toLocaleString()}</span>
                       </td>
                     </tr>
                   ))}

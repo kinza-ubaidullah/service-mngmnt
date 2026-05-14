@@ -5,7 +5,7 @@ interface User {
   name: string;
   email: string | null;
   phone: string;
-  role: 'ADMIN' | 'CALL_CENTER' | 'TECHNICIAN' | 'WORKSHOP_MANAGER';
+  role: 'ADMIN' | 'CALL_CENTER' | 'TECHNICIAN';
   team_id: number | null;
   location_name?: string;
   lat?: number | null;

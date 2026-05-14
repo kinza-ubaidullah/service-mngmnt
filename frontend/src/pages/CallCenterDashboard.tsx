@@ -175,7 +175,7 @@ const CallCenterDashboard = () => {
       {/* Glassmorphic Navbar */}
       <motion.nav 
         initial={{ y: -20, opacity: 0 }} animate={{ y: 0, opacity: 1 }}
-        className="bg-slate-900/50 backdrop-blur-xl border-b border-white/5 px-8 py-4 flex justify-between items-center sticky top-0 z-20"
+        className="bg-slate-900/50 backdrop-blur-xl border-b border-white/5 px-4 lg:px-8 py-4 flex justify-between items-center sticky top-0 z-20"
       >
         <div className="flex items-center gap-4">
           <div className="bg-gradient-to-br from-indigo-500 to-blue-600 p-2.5 rounded-xl shadow-lg shadow-indigo-500/20">
@@ -208,7 +208,7 @@ const CallCenterDashboard = () => {
         </div>
       </motion.nav>
       
-      <main className="flex-1 p-6 md:p-8 max-w-[1800px] w-full mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8 relative z-10">
+      <main className="flex-1 p-3 lg:p-6 md:p-8 max-w-[1800px] w-full mx-auto grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-8 relative z-10">
         
         {/* Left Column: Create Lead Form */}
         <motion.div initial={{ x: -20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} transition={{ delay: 0.1 }} className="lg:col-span-4 flex flex-col h-full">
@@ -283,7 +283,7 @@ const CallCenterDashboard = () => {
                       <div className="grid grid-cols-2 gap-4">
                         <div>
                           <p className="text-[10px] text-slate-500 font-bold uppercase">Total Spent</p>
-                          <p className="text-sm font-bold text-slate-200">Rs. {customerInsight.stats.totalSpent.toLocaleString()}</p>
+                          <p className="text-sm font-bold text-slate-200">$ {customerInsight.stats.totalSpent.toLocaleString()}</p>
                         </div>
                         <div>
                           <p className="text-[10px] text-slate-500 font-bold uppercase">Total Jobs</p>
@@ -335,7 +335,7 @@ const CallCenterDashboard = () => {
 
         {/* Right Column: Leads Table */}
         <motion.div initial={{ x: 20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} transition={{ delay: 0.2 }} className="lg:col-span-8 flex flex-col h-full">
-          <div className="bg-slate-900/60 backdrop-blur-xl rounded-3xl border border-white/10 overflow-hidden flex flex-col lg:h-[calc(100vh-140px)] min-h-[600px] shadow-2xl">
+          <div className="bg-slate-900/60 backdrop-blur-xl rounded-3xl border border-white/10 overflow-hidden flex flex-col lg:h-[calc(100vh-140px)] min-h-[400px] shadow-2xl">
             <div className="px-8 py-6 border-b border-white/5 bg-gradient-to-r from-transparent to-white/[0.02] flex justify-between items-center shrink-0">
               <div className="flex items-center gap-3">
                 <div className="p-1.5 bg-blue-500/20 rounded-lg"><Activity className="text-blue-400" size={18} /></div>

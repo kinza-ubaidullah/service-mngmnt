@@ -187,7 +187,7 @@ const StaffModule = () => {
                     {team.payment_model?.salary && (
                       <div className="flex justify-between text-slate-300">
                         <span className="text-slate-500">Fixed Salary:</span> 
-                        <span className="font-bold">Rs. {team.payment_model.salary}</span>
+                        <span className="font-bold">$ {team.payment_model.salary}</span>
                       </div>
                     )}
                     {team.payment_model?.rate && (
@@ -231,10 +231,10 @@ const StaffModule = () => {
                 <thead>
                   <tr className="border-b border-white/10 text-xs uppercase tracking-widest text-slate-500">
                     <th className="pb-4 font-bold">Name</th>
-                    <th className="pb-4 font-bold">Role</th>
-                    <th className="pb-4 font-bold">Contact</th>
+                    <th className="pb-4 font-bold hidden sm:table-cell">Role</th>
+                    <th className="pb-4 font-bold hidden md:table-cell">Contact</th>
                     <th className="pb-4 font-bold">Status</th>
-                    <th className="pb-4 font-bold text-right">Team / Action</th>
+                    <th className="pb-4 font-bold text-right">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
@@ -244,7 +244,7 @@ const StaffModule = () => {
                         <div className="font-bold text-slate-200">{user.name}</div>
                         <div className="text-xs text-slate-600">{user.email}</div>
                       </td>
-                      <td className="py-3">
+                      <td className="py-3 hidden sm:table-cell">
                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border
                           ${user?.role === 'ADMIN' ? 'bg-purple-500/20 text-purple-400 border-purple-500/30' :
                             user?.role === 'TECHNICIAN' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' :
@@ -253,7 +253,7 @@ const StaffModule = () => {
                           {user?.role?.replace('_', ' ') || 'UNKNOWN'}
                         </span>
                       </td>
-                      <td className="py-3 text-slate-400 text-sm">{user.phone}</td>
+                      <td className="py-3 text-slate-400 text-sm hidden md:table-cell">{user.phone}</td>
                       <td className="py-3">
                         <span className={`text-[10px] font-bold ${user.is_active ? 'text-emerald-400' : 'text-rose-400'}`}>
                           {user.is_active ? '● Active' : '● Inactive'}

@@ -12,7 +12,6 @@ import Register from './pages/Register';
 import AdminDashboard from './pages/AdminDashboard';
 import CallCenterDashboard from './pages/CallCenterDashboard';
 import TechnicianDashboard from './pages/TechnicianDashboard';
-import WorkshopDashboard from './pages/WorkshopDashboard';
 import ProtectedRoute from './components/ProtectedRoute';
 
 const RootRedirect = () => {
@@ -38,7 +37,6 @@ const RootRedirect = () => {
     case 'ADMIN': return <Navigate to="/admin" replace />;
     case 'CALL_CENTER': return <Navigate to="/callcenter" replace />;
     case 'TECHNICIAN': return <Navigate to="/tech" replace />;
-    case 'WORKSHOP_MANAGER': return <Navigate to="/workshop" replace />;
     default: 
       console.warn('Unknown role detected:', role);
       return <Navigate to="/login" replace />;
@@ -134,15 +132,7 @@ function App() {
             } 
           />
 
-          {/* Workshop Routes */}
-          <Route 
-            path="/workshop/*" 
-            element={
-              <ProtectedRoute allowedRoles={['WORKSHOP_MANAGER', 'ADMIN']}>
-                <WorkshopDashboard />
-              </ProtectedRoute>
-            } 
-          />
+
 
           {/* Catch All */}
           <Route path="*" element={<Navigate to="/" replace />} />

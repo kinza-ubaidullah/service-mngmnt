@@ -24,7 +24,6 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles 
       case 'ADMIN': targetPath = '/admin'; break;
       case 'CALL_CENTER': targetPath = '/callcenter'; break;
       case 'TECHNICIAN': targetPath = '/tech'; break;
-      case 'WORKSHOP_MANAGER': targetPath = '/workshop'; break;
     }
 
     if (location.pathname === targetPath) {

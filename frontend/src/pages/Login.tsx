@@ -47,7 +47,6 @@ const Login = () => {
           case 'ADMIN': navigate('/admin'); break;
           case 'CALL_CENTER': navigate('/callcenter'); break;
           case 'TECHNICIAN': navigate('/tech'); break;
-          case 'WORKSHOP_MANAGER': navigate('/workshop'); break;
           default: 
             console.error('Unexpected user role after login:', role);
             toast.error('Access denied: Unknown role');

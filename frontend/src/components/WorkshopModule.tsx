@@ -54,7 +54,7 @@ const WorkshopModule = () => {
   return (
     <div className="space-y-6">
       {/* Header Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
           { label: 'Total Received', value: jobs.length, icon: Wrench, color: 'text-slate-400' },
           { label: 'Work Started', value: jobs.filter(j => j.status === 'WorkStarted').length, icon: Clock, color: 'text-blue-400' },
@@ -89,8 +89,8 @@ const WorkshopModule = () => {
             <thead>
               <tr className="border-b border-white/10 text-xs uppercase tracking-widest text-slate-500">
                 <th className="pb-4 font-bold">Job ID</th>
-                <th className="pb-4 font-bold">Appliance & Customer</th>
-                <th className="pb-4 font-bold text-center">Day Count</th>
+                <th className="pb-4 font-bold">Details</th>
+                <th className="pb-4 font-bold text-center hidden sm:table-cell">Days</th>
                 <th className="pb-4 font-bold">Status</th>
                 <th className="pb-4 font-bold text-right">Actions</th>
               </tr>
@@ -107,7 +107,7 @@ const WorkshopModule = () => {
                       <p className="font-bold text-white text-sm">{job.lead.product_type}</p>
                       <p className="text-xs text-slate-500">{job.lead.customer.name}</p>
                     </td>
-                    <td className="py-4 text-center">
+                    <td className="py-4 text-center hidden sm:table-cell">
                       <span className={`px-3 py-1 rounded-full text-xs font-bold border ${days > 3 ? 'bg-red-500/20 text-red-400 border-red-500/30' : 'bg-slate-800 text-slate-400 border-slate-700'}`}>
                         Day {days} {days > 3 && <AlertCircle size={12} className="inline ml-1 mb-0.5"/>}
                       </span>
@@ -119,6 +119,24 @@ const WorkshopModule = () => {
                     </td>
                     <td className="py-4 text-right">
                       <div className="flex items-center justify-end gap-2">
+                        {job.status === 'Received' && (
+                          <button 
+                            onClick={() => updateStatus(job.id, 'WorkStarted')}
+                            className="p-2 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 rounded-xl border border-blue-500/20 transition-all"
+                            title="Start Repair"
+                          >
+                            <Clock size={16} />
+                          </button>
+                        )}
+                        {job.status === 'WorkStarted' && (
+                          <button 
+                            onClick={() => updateStatus(job.id, 'Ready')}
+                            className="p-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 rounded-xl border border-emerald-500/20 transition-all"
+                            title="Mark Ready"
+                          >
+                            <CheckCircle2 size={16} />
+                          </button>
+                        )}
                         <button 
                           onClick={async () => {
                             if (window.confirm('Are you sure you want to remove this machine from workshop records?')) {

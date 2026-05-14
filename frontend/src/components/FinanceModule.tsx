@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { IndianRupee, TrendingDown, Plus, Loader2, RefreshCw } from 'lucide-react';
+import { DollarSign, TrendingDown, Plus, Loader2, RefreshCw } from 'lucide-react';
 import api from '../services/api';
 import toast from 'react-hot-toast';
 
@@ -62,25 +62,25 @@ const FinanceModule = () => {
   return (
     <div className="space-y-6">
       {/* Financial Overview Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 lg:gap-6">
         <div className="bg-gradient-to-br from-indigo-600 to-blue-700 rounded-[2rem] p-8 text-white relative overflow-hidden shadow-xl">
           <div className="absolute -right-8 -bottom-8 w-40 h-40 bg-white/10 rounded-full blur-3xl"></div>
           <p className="text-indigo-100 text-xs font-bold uppercase tracking-widest mb-2 opacity-80">Total Business Revenue</p>
-          <h3 className="text-4xl font-black mb-2">Rs. {stats?.revenue?.toLocaleString() || 0}</h3>
+          <h3 className="text-3xl lg:text-4xl font-black mb-2">$ {stats?.revenue?.toLocaleString() || 0}</h3>
           <p className="text-xs text-indigo-200">Total revenue generated from all completed jobs</p>
         </div>
         
         <div className="bg-gradient-to-br from-rose-500 to-red-600 rounded-[2rem] p-8 text-white relative overflow-hidden shadow-xl">
           <div className="absolute -right-8 -bottom-8 w-40 h-40 bg-white/10 rounded-full blur-3xl"></div>
           <p className="text-rose-100 text-xs font-bold uppercase tracking-widest mb-2 opacity-80">Total Reinvestments</p>
-          <h3 className="text-4xl font-black mb-2">Rs. {totalReinvested.toLocaleString()}</h3>
+          <h3 className="text-3xl lg:text-4xl font-black mb-2">$ {totalReinvested.toLocaleString()}</h3>
           <p className="text-xs text-rose-200">Capital spent on business growth and operations</p>
         </div>
 
         <div className="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-[2rem] p-8 text-white relative overflow-hidden shadow-xl">
           <div className="absolute -right-8 -bottom-8 w-40 h-40 bg-white/10 rounded-full blur-3xl"></div>
           <p className="text-emerald-100 text-xs font-bold uppercase tracking-widest mb-2 opacity-80">Net Available Balance</p>
-          <h3 className="text-4xl font-black mb-2">Rs. {availableBalance.toLocaleString()}</h3>
+          <h3 className="text-3xl lg:text-4xl font-black mb-2">$ {availableBalance.toLocaleString()}</h3>
           <p className="text-xs text-emerald-200">Total Revenue minus Total Reinvestments</p>
         </div>
       </div>
@@ -120,7 +120,7 @@ const FinanceModule = () => {
                   </td>
                   <td className="py-4 text-sm text-slate-400 max-w-xs truncate">{item.description}</td>
                   <td className="py-4 text-right">
-                    <span className="text-sm font-black text-rose-400">- Rs. {Number(item.amount).toLocaleString()}</span>
+                    <span className="text-sm font-black text-rose-400">- $ {Number(item.amount).toLocaleString()}</span>
                   </td>
                 </tr>
               ))}
@@ -142,7 +142,7 @@ const FinanceModule = () => {
             <h3 className="text-xl font-bold text-white mb-6">Add Business Reinvestment</h3>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="group relative">
-                <div className="absolute left-4 top-3 text-slate-500"><IndianRupee size={16}/></div>
+                <div className="absolute left-4 top-3 text-slate-500"><DollarSign size={16}/></div>
                 <input required type="number" value={formData.amount} onChange={(e) => setFormData({...formData, amount: e.target.value})} className="w-full bg-slate-950 text-white pl-10 pr-4 py-3 rounded-xl border border-white/10 outline-none" placeholder="Amount" />
               </div>
               <div className="group relative">

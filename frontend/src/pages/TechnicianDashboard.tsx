@@ -5,7 +5,8 @@ import { logout, setUser } from '../store/slices/authSlice';
 import { 
   LogOut, Wrench, MapPin, Clock, ClipboardCheck, 
   ChevronRight, CheckCircle2, Package, Wallet, Plus,
-  Loader2, Sparkles, X, CreditCard, Info, User, TrendingDown, History, Download
+  Loader2, Sparkles, X, CreditCard, Info, User, TrendingDown, History, Download,
+  AlertCircle, Search, Filter, Activity
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../services/api';
@@ -59,6 +60,8 @@ const TechnicianDashboard = () => {
   const [jobs, setJobs] = useState<Lead[]>([]);
   const [workshopJobs, setWorkshopJobs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [workshopSearch, setWorkshopSearch] = useState('');
+  const [workshopFilter, setWorkshopFilter] = useState('all');
   const [selectedJob, setSelectedJob] = useState<Lead | null>(null);
   const [outcomeModalOpen, setOutcomeModalOpen] = useState(false);
   
@@ -261,7 +264,7 @@ const TechnicianDashboard = () => {
         </div>
       </motion.nav>
 
-      <main className="flex-1 p-4 max-w-lg mx-auto w-full relative z-10 pb-24">
+      <main className="flex-1 p-4 max-w-4xl mx-auto w-full relative z-10 pb-24">
         
         {/* Profile Completion Warning */}
         {(!user?.location_name || !user?.specialization) && activeTab !== 'profile' && (
@@ -441,9 +444,38 @@ const TechnicianDashboard = () => {
         ) : activeTab === 'workshop' ? (
           /* WORKSHOP TAB */
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
-            <div className="mb-6">
-               <h2 className="text-2xl font-bold text-white">Workshop Inventory</h2>
-               <p className="text-sm text-slate-400">{workshopJobs.filter((j:any) => j.status !== 'Ready').length} Machines under repair</p>
+            <div className="flex justify-between items-end mb-6">
+               <div>
+                  <h2 className="text-2xl font-bold text-white tracking-tight">Workshop Management</h2>
+                  <p className="text-sm text-slate-400">{workshopJobs.filter((j:any) => j.status !== 'Ready').length} units in progress</p>
+               </div>
+               <div className="bg-amber-500/10 text-amber-500 px-3 py-1.5 rounded-full border border-amber-500/20 text-[10px] font-black flex items-center gap-1.5">
+                 <Activity size={12} className="animate-pulse" /> LIVE
+               </div>
+            </div>
+
+            {/* Search & Filter */}
+            <div className="flex gap-2">
+              <div className="relative flex-1 group">
+                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-emerald-400 transition-colors" />
+                <input 
+                  type="text" 
+                  placeholder="Search Job ID or Name..."
+                  value={workshopSearch}
+                  onChange={(e) => setWorkshopSearch(e.target.value)}
+                  className="w-full bg-slate-900/50 border border-white/5 rounded-xl py-2.5 pl-10 pr-4 text-xs outline-none focus:border-emerald-500/50 transition-all"
+                />
+              </div>
+              <select 
+                value={workshopFilter}
+                onChange={(e) => setWorkshopFilter(e.target.value)}
+                className="bg-slate-900/50 border border-white/5 rounded-xl px-3 py-2.5 text-xs text-slate-300 outline-none focus:border-emerald-500/50"
+              >
+                <option value="all">All Status</option>
+                <option value="Received">Received</option>
+                <option value="WorkStarted">Repairing</option>
+                <option value="Ready">Ready</option>
+              </select>
             </div>
 
             {workshopJobs.length === 0 ? (
@@ -456,54 +488,74 @@ const TechnicianDashboard = () => {
                </div>
             ) : (
               <div className="space-y-4">
-                {workshopJobs.map((job:any, idx:number) => (
-                  <motion.div 
-                    key={job.id}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: idx * 0.1 }}
-                    className="bg-slate-900/60 border border-white/10 rounded-2xl p-5"
-                  >
-                    <div className="flex justify-between items-start mb-4">
-                       <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest bg-white/5 px-2 py-0.5 rounded">
-                          {job.lead.lead_id}
-                       </span>
-                       <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase
-                          ${job.status === 'Ready' ? 'bg-emerald-500/20 text-emerald-400' : 
-                            job.status === 'WorkStarted' ? 'bg-blue-500/20 text-blue-400' : 'bg-slate-500/20 text-slate-400'}
-                       `}>
-                          {job.status}
-                       </span>
-                    </div>
-
-                    <h3 className="text-lg font-bold text-white mb-1">{job.lead?.product_type}</h3>
-                    <p className="text-xs text-slate-400 mb-4">{job.lead?.customer?.name} - {job.lead?.customer?.area}</p>
-
-                    <div className="flex gap-2">
-                       {job.status === 'Received' && (
-                         <button 
-                           onClick={() => updateWorkshopStatus(job.id, 'WorkStarted')}
-                           className="flex-1 bg-blue-500 text-white text-xs font-bold py-3 rounded-xl shadow-lg shadow-blue-500/20"
-                         >
-                           Start Repair
-                         </button>
-                       )}
-                       {job.status === 'WorkStarted' && (
-                         <button 
-                           onClick={() => updateWorkshopStatus(job.id, 'Ready')}
-                           className="flex-1 bg-emerald-500 text-white text-xs font-bold py-3 rounded-xl shadow-lg shadow-emerald-500/20"
-                         >
-                           Mark Ready
-                         </button>
-                       )}
-                       {job.status === 'Ready' && (
-                         <div className="flex-1 bg-emerald-500/10 text-emerald-400 text-center py-3 rounded-xl border border-emerald-500/20 text-[10px] font-black uppercase">
-                            Ready for Delivery
+                {workshopJobs
+                  .filter(job => {
+                    const matchesSearch = job.lead.lead_id.toLowerCase().includes(workshopSearch.toLowerCase()) || 
+                                         job.lead.customer.name.toLowerCase().includes(workshopSearch.toLowerCase());
+                    const matchesFilter = workshopFilter === 'all' || job.status === workshopFilter;
+                    return matchesSearch && matchesFilter;
+                  })
+                  .map((job:any, idx:number) => {
+                  const days = Math.floor((new Date().getTime() - new Date(job.received_date).getTime()) / (1000 * 3600 * 24)) + 1;
+                  return (
+                    <motion.div 
+                      key={job.id}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: idx * 0.05 }}
+                      className="bg-slate-900/60 backdrop-blur-xl border border-white/10 rounded-2xl p-5 hover:border-emerald-500/30 transition-all"
+                    >
+                      <div className="flex justify-between items-start mb-4">
+                         <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest bg-white/5 px-2 py-0.5 rounded">
+                               {job.lead.lead_id}
+                            </span>
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase
+                               ${job.status === 'Ready' ? 'bg-emerald-500/20 text-emerald-400' : 
+                                 job.status === 'WorkStarted' ? 'bg-blue-500/20 text-blue-400' : 'bg-slate-500/20 text-slate-400'}
+                            `}>
+                               {job.status}
+                            </span>
                          </div>
-                       )}
-                    </div>
-                  </motion.div>
-                ))}
+                         <div className={`text-[10px] font-bold px-2 py-0.5 rounded border ${days > 3 ? 'bg-red-500/10 text-red-400 border-red-500/20' : 'bg-white/5 text-slate-500 border-white/5'}`}>
+                            Day {days}
+                         </div>
+                      </div>
+
+                      <div className="mb-4">
+                        <h3 className="text-lg font-bold text-white mb-0.5">{job.lead?.product_type}</h3>
+                        <p className="text-xs text-slate-400 flex items-center gap-2">
+                           <User size={12} className="text-emerald-500/50" /> {job.lead?.customer?.name}
+                        </p>
+                        <p className="text-xs text-slate-500 mt-1 line-clamp-2 italic">"{job.lead?.problem_details}"</p>
+                      </div>
+
+                      <div className="flex gap-2">
+                         {job.status === 'Received' && (
+                           <button 
+                             onClick={() => updateWorkshopStatus(job.id, 'WorkStarted')}
+                             className="flex-1 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold py-3 rounded-xl shadow-lg shadow-blue-600/20 transition-all flex items-center justify-center gap-2"
+                           >
+                             <Activity size={14} /> Start Repair
+                           </button>
+                         )}
+                         {job.status === 'WorkStarted' && (
+                           <button 
+                             onClick={() => updateWorkshopStatus(job.id, 'Ready')}
+                             className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold py-3 rounded-xl shadow-lg shadow-emerald-600/20 transition-all flex items-center justify-center gap-2"
+                           >
+                             <CheckCircle2 size={14} /> Mark as Ready
+                           </button>
+                         )}
+                         {job.status === 'Ready' && (
+                           <div className="flex-1 bg-emerald-500/10 text-emerald-400 text-center py-3 rounded-xl border border-emerald-500/20 text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2">
+                              <Package size={14} /> Awaiting Delivery Pickup
+                           </div>
+                         )}
+                      </div>
+                    </motion.div>
+                  );
+                })}
               </div>
             )}
           </motion.div>
@@ -518,18 +570,18 @@ const TechnicianDashboard = () => {
                 <div className="absolute -right-8 -bottom-8 w-40 h-40 bg-white/20 rounded-full blur-3xl"></div>
                 <p className="text-emerald-100 text-[10px] font-bold uppercase tracking-widest mb-1 opacity-80">Current Cash in Hand</p>
                 <h3 className="text-4xl font-black mb-6">
-                  <span className="text-xl mr-1 opacity-70">PKR</span>
+                  <span className="text-xl mr-1 opacity-70">USD</span>
                   {walletSummary?.balance || 0}
                 </h3>
                 
                 <div className="grid grid-cols-2 gap-4 border-t border-white/10 pt-6">
                   <div>
                     <p className="text-[10px] font-bold text-emerald-100 uppercase opacity-60">Collected</p>
-                    <p className="text-lg font-bold">Rs. {walletSummary?.totalCollected || 0}</p>
+                    <p className="text-lg font-bold">$ {walletSummary?.totalCollected || 0}</p>
                   </div>
                   <div>
                     <p className="text-[10px] font-bold text-emerald-100 uppercase opacity-60">Spent</p>
-                    <p className="text-lg font-bold">Rs. {walletSummary?.totalSpent || 0}</p>
+                    <p className="text-lg font-bold">$ {walletSummary?.totalSpent || 0}</p>
                   </div>
                 </div>
               </div>
@@ -542,7 +594,7 @@ const TechnicianDashboard = () => {
                   <span className="bg-white/20 px-2 py-0.5 rounded-full text-[10px] font-bold">Rate: {earningsSummary?.rate || 10}%</span>
                 </div>
                 <h3 className="text-4xl font-black mb-6">
-                  <span className="text-xl mr-1 opacity-70">PKR</span>
+                  <span className="text-xl mr-1 opacity-70">USD</span>
                   {earningsSummary?.commission || 0}
                 </h3>
                 
@@ -594,7 +646,7 @@ const TechnicianDashboard = () => {
                       </div>
                     </div>
                     <div className="text-right">
-                      <p className="text-sm font-black text-white">- Rs. {exp.amount}</p>
+                      <p className="text-sm font-black text-white">- $ {exp.amount}</p>
                       <p className="text-[10px] text-slate-600 truncate max-w-[100px]">{exp.description}</p>
                     </div>
                   </motion.div>
