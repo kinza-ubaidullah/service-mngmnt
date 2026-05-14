@@ -1,0 +1,198 @@
+generator client {
+  provider = "prisma-client-js"
+  binaryTargets = ["native", "rhel-openssl-1.0.x", "rhel-openssl-1.1.x", "rhel-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ================== ENUMS ==================
+enum Role {
+  ADMIN
+  CALL_CENTER
+  TECHNICIAN
+  WORKSHOP_MANAGER
+}
+
+enum JobStatus {
+  New
+  Assigned
+  InProgress
+  Completed
+  Cancelled
+  InspectionCompleted
+  PickedForWorkshop
+  Reopened
+  Complaint
+}
+
+enum WorkshopStatus {
+  Received
+  WorkStarted
+  WaitingForParts
+  WaitingForApproval
+  Ready
+  Delivered
+  Cancelled
+}
+
+// ================== MODELS ==================
+model User {
+  id            Int      @id @default(autoincrement())
+  name          String
+  email         String?  @unique
+  phone         String   @unique
+  password_hash String
+  role          Role
+  team_id       Int?
+  team          Team?    @relation(fields: [team_id], references: [id])
+  is_active     Boolean  @default(true)
+  
+  // Profile Fields
+  profile_picture String?
+  location_name   String?
+  lat             Float?
+  lng             Float?
+  specialization  String?
+  address         String?
+
+  created_at    DateTime @default(now())
+
+  assigned_jobs Lead[]   @relation("AssignedTo")
+  created_leads Lead[]   @relation("CreatedBy")   // Changed name
+  expenses      Expense[]
+
+  @@map("users")
+}
+
+model Team {
+  id            Int      @id @default(autoincrement())
+  name          String
+  contact       String?
+  payment_model Json?    // Better for flexibility
+  created_at    DateTime @default(now())
+
+  users         User[]
+  leads         Lead[]
+  @@map("teams")
+}
+
+model Customer {
+  id              Int      @id @default(autoincrement())
+  name            String
+  phone           String   @unique
+  area            String?
+  exact_address   String?
+  google_map_link String?
+  created_at      DateTime @default(now())
+
+  leads           Lead[]
+  @@map("customers")
+}
+
+model Lead {
+  id                Int      @id @default(autoincrement())
+  lead_id           String   @unique   // e.g. 03MAY26001
+
+  customer_id       Int
+  customer          Customer @relation(fields: [customer_id], references: [id])
+
+  product_type      String
+  problem_details   String?  @db.Text
+  product_image     String?
+  house_image       String?
+  item_pictures     Json?
+  exact_address     String?  @db.Text
+
+  status            JobStatus @default(New)
+  is_warranty_claim Boolean   @default(false)
+
+  assigned_to       Int?
+  technician        User?    @relation("AssignedTo", fields: [assigned_to], references: [id])
+
+  assigned_by       Int?
+  assigned_by_user  User?    @relation("CreatedBy", fields: [assigned_by], references: [id])  // Fixed
+
+  assigned_at       DateTime?
+  visit_date        DateTime?
+
+  actual_problem    String?  @db.Text
+  repair_details    String?  @db.Text
+  total_amount      Decimal? @db.Decimal(10, 2)
+  collected_amount  Decimal? @db.Decimal(10, 2) @default(0)
+
+  warranty_months   Int      @default(1)
+  warranty_start    DateTime?
+  warranty_end      DateTime?
+
+  team_id           Int?
+  team              Team?    @relation(fields: [team_id], references: [id])
+
+  created_at        DateTime @default(now())
+  updated_at        DateTime @updatedAt
+
+  history           JobHistory[]
+  workshop_job      WorkshopJob?
+
+  @@map("leads")
+}
+
+model JobHistory {
+  id            Int       @id @default(autoincrement())
+  lead_id       Int
+  lead          Lead      @relation(fields: [lead_id], references: [id])
+  action        String
+  performed_by  Int?
+  old_status    JobStatus?
+  new_status    JobStatus?
+  notes         String?
+  timestamp     DateTime  @default(now())
+
+  @@map("job_history")
+}
+
+model WorkshopJob {
+  id                 Int           @id @default(autoincrement())
+  lead_id            Int           @unique
+  lead               Lead          @relation(fields: [lead_id], references: [id])
+
+  received_date      DateTime      @default(now())
+  received_by        Int?
+  promised_delivery  DateTime?
+  priority           String        @default("Normal")
+  status             WorkshopStatus @default(Received)
+  current_day_count  Int           @default(0)
+  notes              String?       @db.Text
+
+  delivered_at       DateTime?
+  delivered_by       Int?
+
+  @@map("workshop_jobs")
+}
+
+// New Model (Phase 2 ke liye zaroori)
+model Expense {
+  id          Int      @id @default(autoincrement())
+  user_id     Int
+  user        User     @relation(fields: [user_id], references: [id])
+  lead_id     Int?
+  amount      Decimal  @db.Decimal(10, 2)
+  category    String   // Petrol, Food, Parts, Transport, Other
+  description String?
+  date        DateTime @default(now())
+
+  @@map("expenses")
+}
+
+model InviteToken {
+  id         Int      @id @default(autoincrement())
+  token      String   @unique
+  role       Role
+  expires_at DateTime
+  is_used    Boolean  @default(false)
+  created_at DateTime @default(now())
+
+  @@map("invite_tokens")
+}

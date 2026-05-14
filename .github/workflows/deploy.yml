@@ -14,39 +14,32 @@ jobs:
         uses: actions/checkout@v4
 
       # --- FRONTEND BUILD ---
-      - name: Set up Node.js (Frontend)
+      - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
 
-      - name: Install Frontend Dependencies
-        working-directory: ./frontend
-        run: npm install
-
       - name: Build Frontend
         working-directory: ./frontend
-        run: npm run build
+        run: |
+          npm install
+          npm run build
         env:
           VITE_API_URL: ${{ secrets.VITE_API_URL }}
 
       # --- BACKEND BUILD ---
-      - name: Install Backend Dependencies
+      - name: Build Backend
         working-directory: ./backend
-        run: npm install
-
-      - name: Generate Prisma Client
-        working-directory: ./backend
-        run: npx prisma generate
-
-      - name: Build Backend (TypeScript to JS)
-        working-directory: ./backend
-        run: npm run build
+        run: |
+          npm install
+          npx prisma generate
+          npm run build
 
       # --- DEPLOY FRONTEND ---
       - name: Deploy Frontend via SFTP
         uses: appleboy/scp-action@v0.1.7
         with:
-          host: "198.187.29.126"
+          host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USERNAME }}
           password: ${{ secrets.SSH_PASSWORD }}
           port: 21098
@@ -55,11 +48,11 @@ jobs:
           target: "public_html/crm.aljaroshi.com/"
           strip_components: 2
 
-      # --- DEPLOY BACKEND (Only necessary files) ---
+      # --- DEPLOY BACKEND ---
       - name: Deploy Backend via SFTP
         uses: appleboy/scp-action@v0.1.7
         with:
-          host: "198.187.29.126"
+          host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USERNAME }}
           password: ${{ secrets.SSH_PASSWORD }}
           port: 21098
@@ -68,8 +61,8 @@ jobs:
           target: "public_html/api.aljaroshi.com/"
           strip_components: 1
 
-      # --- RESTART SERVER ---
-      - name: Restart Node.js App via SSH
+      # --- SERVER COMMANDS (Restart & DB Sync) ---
+      - name: Restart & Sync Database via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SSH_HOST }}
@@ -80,5 +73,9 @@ jobs:
             cd public_html/api.aljaroshi.com/
             npm install --production
             npx prisma generate
+            # Database sync (Important for scratch deployment)
+            npx prisma db push --accept-data-loss
+            # Restart Passenger
             mkdir -p tmp
             touch tmp/restart.txt
+
