@@ -1,0 +1,10 @@
+import type { Request, Response } from 'express';
+export declare const getTechnicians: (req: Request, res: Response) => Promise<void>;
+export declare const createUser: (req: Request, res: Response) => Promise<void>;
+export declare const getAllUsers: (req: Request, res: Response) => Promise<void>;
+export declare const toggleUserActive: (req: Request, res: Response) => Promise<void>;
+export declare const generateInviteLink: (req: Request, res: Response) => Promise<void>;
+export declare const registerViaInvite: (req: Request, res: Response) => Promise<void>;
+export declare const getInviteDetails: (req: Request, res: Response) => Promise<void>;
+export declare const updateProfile: (req: Request, res: Response) => Promise<void>;
+export declare const deleteUser: (req: Request, res: Response) => Promise<void>;

@@ -1,0 +1,9 @@
+import type { Request, Response } from 'express';
+export declare const getLeads: (req: Request, res: Response) => Promise<void>;
+export declare const createLead: (req: Request, res: Response) => Promise<void>;
+export declare const assignLead: (req: Request, res: Response) => Promise<void>;
+export declare const getMyJobs: (req: Request, res: Response) => Promise<void>;
+export declare const updateLeadOutcome: (req: Request, res: Response) => Promise<void>;
+export declare const reopenLead: (req: Request, res: Response) => Promise<void>;
+export declare const lookupCustomer: (req: Request, res: Response) => Promise<void>;
+export declare const deleteLead: (req: Request, res: Response) => Promise<void>;
