@@ -77,5 +77,8 @@ jobs:
           password: ${{ secrets.SSH_PASSWORD }}
           port: 21098
           script: |
-            mkdir -p public_html/api.aljaroshi.com/tmp
-            touch public_html/api.aljaroshi.com/tmp/restart.txt
+            cd public_html/api.aljaroshi.com/
+            npm install --production
+            npx prisma generate
+            mkdir -p tmp
+            touch tmp/restart.txt
