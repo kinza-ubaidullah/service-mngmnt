@@ -107,7 +107,8 @@ export const generateInviteLink = async (req: Request, res: Response) => {
     });
     console.log('Backend: Invite created in DB:', invite);
 
-    const inviteLink = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/register?token=${token}`;
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const inviteLink = `${frontendUrl.replace(/\/$/, '')}/register?token=${token}`;
     res.json({ inviteLink, token });
   } catch (error) {
     console.error('Invite generation error:', error);
