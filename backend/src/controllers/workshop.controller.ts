@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express';
-import { prisma } from '../utils/prisma.js';
+import { prisma } from '../utils/prisma';
 import { WorkshopStatus } from '@prisma/client';
 
 export const getWorkshopJobs = async (req: Request, res: Response) => {

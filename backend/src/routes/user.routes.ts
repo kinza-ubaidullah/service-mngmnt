@@ -9,8 +9,8 @@ import {
   updateProfile,
   deleteUser,
   getInviteDetails
-} from '../controllers/user.controller.js';
-import { authenticate, authorizeRole } from '../middleware/auth.middleware.js';
+} from '../controllers/user.controller';
+import { authenticate, authorizeRole } from '../middleware/auth.middleware';
 
 const router = Router();
 

@@ -1,7 +1,7 @@
 import type { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
-import { signToken } from '../utils/jwt.utils.js';
-import { prisma } from '../utils/prisma.js';
+import { signToken } from '../utils/jwt.utils';
+import { prisma } from '../utils/prisma';
 
 export const login = async (req: Request, res: Response) => {
   try {

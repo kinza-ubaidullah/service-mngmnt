@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import { getLeads, createLead, assignLead, getMyJobs, updateLeadOutcome, reopenLead, lookupCustomer, deleteLead } from '../controllers/lead.controller.js';
-import { authenticate, authorizeRole } from '../middleware/auth.middleware.js';
+import { getLeads, createLead, assignLead, getMyJobs, updateLeadOutcome, reopenLead, lookupCustomer, deleteLead } from '../controllers/lead.controller';
+import { authenticate, authorizeRole } from '../middleware/auth.middleware';
 
 const router = Router();
 

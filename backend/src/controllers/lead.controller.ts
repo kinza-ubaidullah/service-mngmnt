@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express';
-import { prisma } from '../utils/prisma.js';
-import { generateLeadId } from '../utils/idGenerator.js';
+import { prisma } from '../utils/prisma';
+import { generateLeadId } from '../utils/idGenerator';
 import { JobStatus } from '@prisma/client';
 
 // Get all leads (with filters)

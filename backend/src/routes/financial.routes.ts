@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import { getTechnicianEarnings, getMyEarningsSummary, getFinancialChartData, getReinvestments, addReinvestment } from '../controllers/financial.controller.js';
-import { authenticate, authorizeRole } from '../middleware/auth.middleware.js';
+import { getTechnicianEarnings, getMyEarningsSummary, getFinancialChartData, getReinvestments, addReinvestment } from '../controllers/financial.controller';
+import { authenticate, authorizeRole } from '../middleware/auth.middleware';
 
 const router = Router();
 

@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import { getTeams, createTeam, updateTeam, assignUserToTeam, deleteTeam } from '../controllers/team.controller.js';
-import { authenticate, authorizeRole } from '../middleware/auth.middleware.js';
+import { getTeams, createTeam, updateTeam, assignUserToTeam, deleteTeam } from '../controllers/team.controller';
+import { authenticate, authorizeRole } from '../middleware/auth.middleware';
 
 const router = Router();
 

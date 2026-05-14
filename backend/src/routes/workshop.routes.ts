@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import { getWorkshopJobs, updateWorkshopStatus, deleteWorkshopJob } from '../controllers/workshop.controller.js';
-import { authenticate, authorizeRole } from '../middleware/auth.middleware.js';
+import { getWorkshopJobs, updateWorkshopStatus, deleteWorkshopJob } from '../controllers/workshop.controller';
+import { authenticate, authorizeRole } from '../middleware/auth.middleware';
 
 const router = Router();
 
