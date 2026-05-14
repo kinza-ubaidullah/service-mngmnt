@@ -10,7 +10,12 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 app.use(cors({
-  origin: ['https://crm.aljaroshi.com', 'http://crm.aljaroshi.com', 'http://localhost:5173'],
+  origin: [
+    'https://crm.aljaroshi.com', 
+    'https://www.crm.aljaroshi.com',
+    'http://crm.aljaroshi.com', 
+    'http://localhost:5173'
+  ],
   credentials: true
 }));
 app.use(helmet({
@@ -34,14 +39,15 @@ import financialRoutes from './routes/financial.routes';
 import workshopRoutes from './routes/workshop.routes';
 import teamRoutes from './routes/team.routes';
 
-app.use('/auth', authRoutes);
-app.use('/leads', leadRoutes);
-app.use('/users', userRoutes);
-app.use('/dashboard', dashboardRoutes);
-app.use('/expenses', expenseRoutes);
-app.use('/finance', financialRoutes);
-app.use('/workshop', workshopRoutes);
-app.use('/teams', teamRoutes);
+// Support both prefixed and non-prefixed routes for maximum compatibility
+app.use(['/api/auth', '/auth'], authRoutes);
+app.use(['/api/leads', '/leads'], leadRoutes);
+app.use(['/api/users', '/users'], userRoutes);
+app.use(['/api/dashboard', '/dashboard'], dashboardRoutes);
+app.use(['/api/expenses', '/expenses'], expenseRoutes);
+app.use(['/api/finance', '/finance'], financialRoutes);
+app.use(['/api/workshop', '/workshop'], workshopRoutes);
+app.use(['/api/teams', '/teams'], teamRoutes);
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', message: 'Server is healthy' });
@@ -50,3 +56,5 @@ app.get('/health', (req, res) => {
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
+
+export default app;
