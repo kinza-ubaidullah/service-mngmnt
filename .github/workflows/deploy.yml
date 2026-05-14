@@ -56,9 +56,10 @@ jobs:
           port: 21098
           script: |
             if [ ! -d "service-mngmnt" ]; then
-              git clone https://github.com/${{ github.repository }}.git service-mngmnt
+              git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git service-mngmnt
             fi
             cd service-mngmnt
+            git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
             git fetch origin main
             git checkout main
             git pull origin main
