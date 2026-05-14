@@ -55,9 +55,16 @@ jobs:
           password: ${{ secrets.SSH_PASSWORD }}
           port: 21098
           script: |
-            cd service-mngmnt/backend
+            if [ ! -d "service-mngmnt" ]; then
+              git clone https://github.com/${{ github.repository }}.git service-mngmnt
+            fi
+            cd service-mngmnt
+            git fetch origin main
+            git checkout main
             git pull origin main
+            cd backend
             npm install --production
-            npx prisma db push
+            npx prisma generate
             npm run build
+            mkdir -p tmp
             touch tmp/restart.txt
