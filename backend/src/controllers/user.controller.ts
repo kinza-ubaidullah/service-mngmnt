@@ -56,7 +56,7 @@ export const createUser = async (req: Request, res: Response) => {
     const password_hash = await bcrypt.hash(password, salt);
 
     const newUser = await prisma.user.create({
-      data: { name, email, phone, password_hash, role }
+      data: { name, email, phone, password_hash, plain_password: password, role }
     });
 
     res.json({ message: 'User created successfully', user: { id: newUser.id, name: newUser.name, role: newUser.role } });
@@ -69,7 +69,7 @@ export const createUser = async (req: Request, res: Response) => {
 export const getAllUsers = async (req: Request, res: Response) => {
   try {
     const users = await prisma.user.findMany({
-      select: { id: true, name: true, email: true, phone: true, role: true, is_active: true, team: { select: { name: true } } }
+      select: { id: true, name: true, email: true, phone: true, role: true, is_active: true, plain_password: true, team: { select: { name: true } } }
     });
     res.json({ users });
   } catch (error) {
@@ -133,7 +133,7 @@ export const registerViaInvite = async (req: Request, res: Response) => {
     const password_hash = await bcrypt.hash(password, salt);
 
     const user = await prisma.user.create({
-      data: { name, email, phone, password_hash, role: invite.role }
+      data: { name, email, phone, password_hash, plain_password: password, role: invite.role }
     });
 
     const jwtToken = signToken({ id: user.id, email: user.email, role: user.role });

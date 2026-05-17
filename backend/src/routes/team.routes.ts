@@ -5,7 +5,7 @@ import { authenticate, authorizeRole } from '../middleware/auth.middleware';
 const router = Router();
 
 router.use(authenticate);
-router.use(authorizeRole(['ADMIN']));
+router.use(authorizeRole(['ADMIN', 'CALL_CENTER']));
 
 router.get('/', getTeams);
 router.post('/', createTeam);

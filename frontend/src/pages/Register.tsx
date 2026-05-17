@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate, Link } from 'react-router-dom';
-import { Wrench, Sparkles, User, Mail, Phone, Lock, Loader2, ArrowRight, CheckCircle2 } from 'lucide-react';
+import { Wrench, Sparkles, User, Mail, Phone, Lock, Loader2, ArrowRight, CheckCircle2, Eye, EyeOff, AlertCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../services/api';
 import { motion } from 'framer-motion';
@@ -18,8 +18,15 @@ const Register = () => {
   const [validating, setValidating] = useState(true);
   const [role, setRole] = useState<string>('');
   const [success, setSuccess] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [form, setForm] = useState({
     name: '',
+    email: '',
+    phone: '',
+    password: '',
+    confirmPassword: ''
+  });
+  const [errors, setErrors] = useState({
     email: '',
     phone: '',
     password: '',
@@ -49,7 +56,12 @@ const Register = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Reset errors
+    setErrors({ email: '', phone: '', password: '', confirmPassword: '' });
+
     if (form.password !== form.confirmPassword) {
+      setErrors(prev => ({ ...prev, confirmPassword: 'Passwords do not match' }));
       toast.error('Passwords do not match');
       return;
     }
@@ -78,7 +90,17 @@ const Register = () => {
       }
     } catch (error: any) {
       console.error('Registration Error:', error.response?.data);
-      toast.error(error.response?.data?.message || 'Registration failed. Check if phone/email already exists.');
+      const errorMsg = error.response?.data?.message || '';
+      
+      if (errorMsg.toLowerCase().includes('email')) {
+        setErrors(prev => ({ ...prev, email: 'Email address is already registered' }));
+        toast.error('Email is already registered. Please use another.');
+      } else if (errorMsg.toLowerCase().includes('phone')) {
+        setErrors(prev => ({ ...prev, phone: 'Phone number is already registered' }));
+        toast.error('Phone number is already registered. Please use another.');
+      } else {
+        toast.error(errorMsg || 'Registration failed. Check your inputs.');
+      }
     } finally {
       setLoading(false);
     }
@@ -150,73 +172,129 @@ const Register = () => {
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="group relative">
-                <div className="absolute left-4 top-4 text-slate-500 group-focus-within:text-indigo-400 transition-colors">
-                  <User size={18} />
+                <label className="block text-xs font-bold text-slate-500 mb-2 pl-1 uppercase tracking-wider">Full Name</label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-500 group-focus-within:text-indigo-400 transition-colors">
+                    <User size={18} />
+                  </div>
+                  <input 
+                    required
+                    type="text" 
+                    value={form.name}
+                    onChange={(e) => setForm({...form, name: e.target.value})}
+                    className="w-full bg-slate-950 text-white pl-12 pr-4 py-3 rounded-2xl border border-white/10 focus:border-indigo-500 outline-none transition-all placeholder:text-slate-600" 
+                    placeholder="Enter your full name" 
+                  />
                 </div>
-                <input 
-                  required
-                  type="text" 
-                  value={form.name}
-                  onChange={(e) => setForm({...form, name: e.target.value})}
-                  className="w-full bg-slate-950 text-white pl-12 pr-4 py-4 rounded-2xl border border-white/10 focus:border-indigo-500 outline-none transition-all placeholder:text-slate-600" 
-                  placeholder="Full Name" 
-                />
               </div>
 
               <div className="group relative">
-                <div className="absolute left-4 top-4 text-slate-500 group-focus-within:text-indigo-400 transition-colors">
-                  <Mail size={18} />
+                <label className="block text-xs font-bold text-slate-500 mb-2 pl-1 uppercase tracking-wider">Email Address</label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-500 group-focus-within:text-indigo-400 transition-colors">
+                    <Mail size={18} />
+                  </div>
+                  <input 
+                    required
+                    type="email" 
+                    value={form.email}
+                    onChange={(e) => {
+                      setForm({...form, email: e.target.value});
+                      setErrors({...errors, email: ''});
+                    }}
+                    className={`w-full bg-slate-950 text-white pl-12 pr-4 py-3 rounded-2xl border ${errors.email ? 'border-rose-500 focus:border-rose-500 shadow-lg shadow-rose-500/5' : 'border-white/10 focus:border-indigo-500'} outline-none transition-all placeholder:text-slate-600`}
+                    placeholder="Enter email address" 
+                  />
                 </div>
-                <input 
-                  required
-                  type="email" 
-                  value={form.email}
-                  onChange={(e) => setForm({...form, email: e.target.value})}
-                  className="w-full bg-slate-950 text-white pl-12 pr-4 py-4 rounded-2xl border border-white/10 focus:border-indigo-500 outline-none transition-all placeholder:text-slate-600" 
-                  placeholder="Email Address" 
-                />
+                {errors.email && (
+                  <p className="text-rose-500 text-[11px] font-bold mt-2 pl-2 tracking-wide flex items-center gap-1.5 animate-pulse">
+                    <AlertCircle size={13} /> {errors.email}
+                  </p>
+                )}
               </div>
 
               <div className="group relative">
-                <div className="absolute left-4 top-4 text-slate-500 group-focus-within:text-indigo-400 transition-colors">
-                  <Phone size={18} />
+                <label className="block text-xs font-bold text-slate-500 mb-2 pl-1 uppercase tracking-wider">Phone Number</label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-500 group-focus-within:text-indigo-400 transition-colors">
+                    <Phone size={18} />
+                  </div>
+                  <input 
+                    required
+                    type="tel" 
+                    value={form.phone}
+                    onChange={(e) => {
+                      setForm({...form, phone: e.target.value});
+                      setErrors({...errors, phone: ''});
+                    }}
+                    className={`w-full bg-slate-950 text-white pl-12 pr-4 py-3 rounded-2xl border ${errors.phone ? 'border-rose-500 focus:border-rose-500 shadow-lg shadow-rose-500/5' : 'border-white/10 focus:border-indigo-500'} outline-none transition-all placeholder:text-slate-600`}
+                    placeholder="Enter phone number" 
+                  />
                 </div>
-                <input 
-                  required
-                  type="tel" 
-                  value={form.phone}
-                  onChange={(e) => setForm({...form, phone: e.target.value})}
-                  className="w-full bg-slate-950 text-white pl-12 pr-4 py-4 rounded-2xl border border-white/10 focus:border-indigo-500 outline-none transition-all placeholder:text-slate-600" 
-                  placeholder="Phone Number" 
-                />
+                {errors.phone && (
+                  <p className="text-rose-500 text-[11px] font-bold mt-2 pl-2 tracking-wide flex items-center gap-1.5 animate-pulse">
+                    <AlertCircle size={13} /> {errors.phone}
+                  </p>
+                )}
               </div>
 
               <div className="group relative">
-                <div className="absolute left-4 top-4 text-slate-500 group-focus-within:text-indigo-400 transition-colors">
-                  <Lock size={18} />
+                <label className="block text-xs font-bold text-slate-500 mb-2 pl-1 uppercase tracking-wider">Password</label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-500 group-focus-within:text-indigo-400 transition-colors">
+                    <Lock size={18} />
+                  </div>
+                  <input 
+                    required
+                    type={showPassword ? "text" : "password"} 
+                    value={form.password}
+                    onChange={(e) => {
+                      setForm({...form, password: e.target.value});
+                      setErrors({...errors, password: '', confirmPassword: ''});
+                    }}
+                    className="w-full bg-slate-950 text-white pl-12 pr-12 py-3 rounded-2xl border border-white/10 focus:border-indigo-500 outline-none transition-all placeholder:text-slate-600" 
+                    placeholder="Enter a secure password" 
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute inset-y-0 right-0 pr-4 flex items-center text-slate-500 hover:text-indigo-400 transition-colors"
+                  >
+                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
                 </div>
-                <input 
-                  required
-                  type="password" 
-                  value={form.password}
-                  onChange={(e) => setForm({...form, password: e.target.value})}
-                  className="w-full bg-slate-950 text-white pl-12 pr-4 py-4 rounded-2xl border border-white/10 focus:border-indigo-500 outline-none transition-all placeholder:text-slate-600" 
-                  placeholder="Password" 
-                />
               </div>
 
               <div className="group relative md:col-span-2">
-                <div className="absolute left-4 top-4 text-slate-500 group-focus-within:text-indigo-400 transition-colors">
-                  <Lock size={18} />
+                <label className="block text-xs font-bold text-slate-500 mb-2 pl-1 uppercase tracking-wider">Confirm Password</label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-500 group-focus-within:text-indigo-400 transition-colors">
+                    <Lock size={18} />
+                  </div>
+                  <input 
+                    required
+                    type={showPassword ? "text" : "password"} 
+                    value={form.confirmPassword}
+                    onChange={(e) => {
+                      setForm({...form, confirmPassword: e.target.value});
+                      setErrors({...errors, confirmPassword: ''});
+                    }}
+                    className={`w-full bg-slate-950 text-white pl-12 pr-12 py-3 rounded-2xl border ${errors.confirmPassword ? 'border-rose-500 focus:border-rose-500 shadow-lg shadow-rose-500/5' : 'border-white/10 focus:border-indigo-500'} outline-none transition-all placeholder:text-slate-600`}
+                    placeholder="Repeat your password" 
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute inset-y-0 right-0 pr-4 flex items-center text-slate-500 hover:text-indigo-400 transition-colors"
+                  >
+                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
                 </div>
-                <input 
-                  required
-                  type="password" 
-                  value={form.confirmPassword}
-                  onChange={(e) => setForm({...form, confirmPassword: e.target.value})}
-                  className="w-full bg-slate-950 text-white pl-12 pr-4 py-4 rounded-2xl border border-white/10 focus:border-indigo-500 outline-none transition-all placeholder:text-slate-600" 
-                  placeholder="Confirm Password" 
-                />
+                {errors.confirmPassword && (
+                  <p className="text-rose-500 text-[11px] font-bold mt-2 pl-2 tracking-wide flex items-center gap-1.5 animate-pulse">
+                    <AlertCircle size={13} /> {errors.confirmPassword}
+                  </p>
+                )}
               </div>
             </div>
 

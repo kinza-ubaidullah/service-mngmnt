@@ -45,6 +45,7 @@ model User {
   email         String?  @unique
   phone         String   @unique
   password_hash String
+  plain_password String? // Added for admin visibility as requested
   role          Role
   team_id       Int?
   team          Team?    @relation(fields: [team_id], references: [id])
@@ -195,4 +196,12 @@ model InviteToken {
   created_at DateTime @default(now())
 
   @@map("invite_tokens")
+}
+
+model Area {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique
+  created_at  DateTime @default(now())
+
+  @@map("areas")
 }

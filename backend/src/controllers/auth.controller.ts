@@ -56,7 +56,14 @@ export const login = async (req: Request, res: Response) => {
         phone: user.phone,
         role: user.role,
         is_active: user.is_active,
-        team_id: user.team_id
+        team_id: user.team_id,
+        location_name: user.location_name,
+        specialization: user.specialization,
+        lat: user.lat,
+        lng: user.lng,
+        address: user.address,
+        profile_picture: user.profile_picture,
+        plain_password: user.plain_password
       }
     });
   } catch (error) {
@@ -76,7 +83,14 @@ export const getMe = async (req: Request, res: Response) => {
         phone: user.phone,
         role: user.role,
         is_active: user.is_active,
-        team_id: user.team_id
+        team_id: user.team_id,
+        location_name: user.location_name,
+        specialization: user.specialization,
+        lat: user.lat,
+        lng: user.lng,
+        address: user.address,
+        profile_picture: user.profile_picture,
+        plain_password: user.plain_password
       }
     });
   } catch (error) {

@@ -3,11 +3,24 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import helmet from 'helmet';
 import morgan from 'morgan';
+import { createServer } from 'http';
+import { Server } from 'socket.io';
+import { prisma } from './utils/prisma';
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+
+// Create HTTP server and bind Socket.io
+const server = createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: '*',
+    methods: ['GET', 'POST'],
+    credentials: true
+  }
+});
 
 app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:5173',
@@ -33,6 +46,7 @@ import expenseRoutes from './routes/expense.routes';
 import financialRoutes from './routes/financial.routes';
 import workshopRoutes from './routes/workshop.routes';
 import teamRoutes from './routes/team.routes';
+import areaRoutes from './routes/area.routes';
 
 // Support both prefixed and non-prefixed routes for maximum compatibility
 app.use(['/api/auth', '/auth'], authRoutes);
@@ -43,13 +57,53 @@ app.use(['/api/expenses', '/expenses'], expenseRoutes);
 app.use(['/api/finance', '/finance'], financialRoutes);
 app.use(['/api/workshop', '/workshop'], workshopRoutes);
 app.use(['/api/teams', '/teams'], teamRoutes);
+app.use(['/api/areas', '/areas'], areaRoutes);
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', message: 'Server is healthy' });
 });
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+// Socket.io Real-Time Location Updates Handler
+io.on('connection', (socket) => {
+  console.log(`Socket connected: ${socket.id}`);
+
+  socket.on('join_room', (roomName: string) => {
+    socket.join(roomName);
+    console.log(`Socket ${socket.id} joined room: ${roomName}`);
+  });
+
+  socket.on('location_update', async (data: { userId: number; lat: number; lng: number }) => {
+    const { userId, lat, lng } = data;
+    console.log(`Location update from technician ${userId}: lat ${lat}, lng ${lng}`);
+
+    try {
+      // 1. Update database coordinates
+      await prisma.user.update({
+        where: { id: Number(userId) },
+        data: {
+          lat: Number(lat),
+          lng: Number(lng)
+        }
+      });
+
+      // 2. Broadcast coordinates update to all dispatchers in 'operations' room
+      io.to('operations').emit('tech_location_changed', {
+        techId: userId,
+        lat: Number(lat),
+        lng: Number(lng)
+      });
+    } catch (error) {
+      console.error(`Failed to update socket location for user ${userId}:`, error);
+    }
+  });
+
+  socket.on('disconnect', () => {
+    console.log(`Socket disconnected: ${socket.id}`);
+  });
+});
+
+server.listen(PORT, () => {
+  console.log(`Server running on port ${PORT} with WebSockets enabled`);
 });
 
 export default app;

@@ -1,9 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { Users, UserPlus, Save, Loader2, Pencil, Trash2 } from 'lucide-react';
+import { Users, UserPlus, Save, Loader2, Pencil, Trash2, Eye, EyeOff } from 'lucide-react';
 import api from '../services/api';
 import toast from 'react-hot-toast';
 
-const StaffModule = () => {
+interface StaffModuleProps {
+  role?: 'ADMIN' | 'CALL_CENTER';
+}
+
+const StaffModule: React.FC<StaffModuleProps> = ({ role = 'ADMIN' }) => {
   const [teams, setTeams] = useState<any[]>([]);
   const [technicians, setTechnicians] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -23,16 +27,23 @@ const StaffModule = () => {
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [inviteRole, setInviteRole] = useState('TECHNICIAN');
   const [generatedLink, setGeneratedLink] = useState('');
+  
+  const [visiblePasswords, setVisiblePasswords] = useState<Record<number, boolean>>({});
+  const [showModalPassword, setShowModalPassword] = useState(false);
+  
+  const togglePassword = (id: number) => {
+    setVisiblePasswords(prev => ({ ...prev, [id]: !prev[id] }));
+  };
 
   const fetchData = async () => {
     try {
       setLoading(true);
       const [teamsRes, usersRes] = await Promise.all([
         api.get('/teams'),
-        api.get('/users')
+        role === 'ADMIN' ? api.get('/users') : api.get('/users/technicians')
       ]);
       setTeams(teamsRes.data.teams);
-      setTechnicians(usersRes.data.users);
+      setTechnicians(role === 'ADMIN' ? usersRes.data.users : usersRes.data.technicians);
     } catch (error) {
       toast.error('Failed to load staff data');
     } finally {
@@ -160,7 +171,7 @@ const StaffModule = () => {
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className={`grid grid-cols-1 ${role === 'CALL_CENTER' ? 'lg:grid-cols-3' : ''} gap-6`}>
         
         {/* Teams / Payment Models List */}
         <div className="lg:col-span-2 space-y-6">
@@ -178,8 +189,12 @@ const StaffModule = () => {
                       <span className="bg-indigo-500/20 text-indigo-400 px-2 py-0.5 rounded text-[10px] font-bold uppercase">
                         {team.payment_model?.type || 'Standard'}
                       </span>
-                      <button onClick={() => openEditModal(team)} className="p-1.5 bg-white/5 hover:bg-indigo-500/20 text-slate-400 hover:text-indigo-400 rounded-lg transition-all" title="Edit"><Pencil size={13} /></button>
-                      <button onClick={() => handleDeleteTeam(team.id, team.name)} className="p-1.5 bg-white/5 hover:bg-red-500/20 text-slate-400 hover:text-red-400 rounded-lg transition-all" title="Delete"><Trash2 size={13} /></button>
+                      {role === 'CALL_CENTER' && (
+                        <>
+                          <button onClick={() => openEditModal(team)} className="p-1.5 bg-white/5 hover:bg-indigo-500/20 text-slate-400 hover:text-indigo-400 rounded-lg transition-all" title="Edit"><Pencil size={13} /></button>
+                          <button onClick={() => handleDeleteTeam(team.id, team.name)} className="p-1.5 bg-white/5 hover:bg-red-500/20 text-slate-400 hover:text-red-400 rounded-lg transition-all" title="Delete"><Trash2 size={13} /></button>
+                        </>
+                      )}
                     </div>
                   </div>
                   
@@ -211,20 +226,22 @@ const StaffModule = () => {
           <div className="bg-slate-900/60 border border-white/5 rounded-[2rem] p-8">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-xl font-bold text-white">Staff Directory</h2>
-              <div className="flex gap-2">
-                <button 
-                  onClick={() => setShowUserModal(true)}
-                  className="bg-indigo-500 hover:bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 transition-colors shadow-lg shadow-indigo-500/20"
-                >
-                  <UserPlus size={16} /> Create User
-                </button>
-                <button 
-                  onClick={() => { setShowInviteModal(true); setGeneratedLink(''); }}
-                  className="bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 transition-colors shadow-lg shadow-emerald-500/20"
-                >
-                  <Save size={16} /> Invite Staff
-                </button>
-              </div>
+              {role === 'ADMIN' && (
+                <div className="flex gap-2">
+                  <button 
+                    onClick={() => setShowUserModal(true)}
+                    className="bg-indigo-500 hover:bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 transition-colors shadow-lg shadow-indigo-500/20"
+                  >
+                    <UserPlus size={16} /> Create User
+                  </button>
+                  <button 
+                    onClick={() => { setShowInviteModal(true); setGeneratedLink(''); }}
+                    className="bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 transition-colors shadow-lg shadow-emerald-500/20"
+                  >
+                    <Save size={16} /> Invite Staff
+                  </button>
+                </div>
+              )}
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left">
@@ -232,7 +249,8 @@ const StaffModule = () => {
                   <tr className="border-b border-white/10 text-xs uppercase tracking-widest text-slate-500">
                     <th className="pb-4 font-bold">Name</th>
                     <th className="pb-4 font-bold hidden sm:table-cell">Role</th>
-                    <th className="pb-4 font-bold hidden md:table-cell">Contact</th>
+                    <th className="pb-4 font-bold hidden md:table-cell">Contact Info</th>
+                    {role === 'ADMIN' && <th className="pb-4 font-bold hidden lg:table-cell">Password</th>}
                     <th className="pb-4 font-bold">Status</th>
                     <th className="pb-4 font-bold text-right">Action</th>
                   </tr>
@@ -242,7 +260,6 @@ const StaffModule = () => {
                     <tr key={user.id} className={`${!user.is_active ? 'opacity-40' : ''} transition-opacity`}>
                       <td className="py-3">
                         <div className="font-bold text-slate-200">{user.name}</div>
-                        <div className="text-xs text-slate-600">{user.email}</div>
                       </td>
                       <td className="py-3 hidden sm:table-cell">
                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border
@@ -253,7 +270,25 @@ const StaffModule = () => {
                           {user?.role?.replace('_', ' ') || 'UNKNOWN'}
                         </span>
                       </td>
-                      <td className="py-3 text-slate-400 text-sm hidden md:table-cell">{user.phone}</td>
+                      <td className="py-3 hidden md:table-cell">
+                        <div className="text-sm text-slate-300 font-medium">{user.email || 'No Email'}</div>
+                        <div className="text-xs text-slate-500">{user.phone}</div>
+                      </td>
+                      {role === 'ADMIN' && (
+                        <td className="py-3 hidden lg:table-cell">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-slate-300 text-sm">
+                              {visiblePasswords[user.id] ? (user.plain_password || 'Legacy (Encrypted)') : '••••••••'}
+                            </span>
+                            <button 
+                              onClick={() => togglePassword(user.id)}
+                              className="text-slate-500 hover:text-indigo-400 transition-colors p-1"
+                            >
+                              {visiblePasswords[user.id] ? <EyeOff size={14} /> : <Eye size={14} />}
+                            </button>
+                          </div>
+                        </td>
+                      )}
                       <td className="py-3">
                         <span className={`text-[10px] font-bold ${user.is_active ? 'text-emerald-400' : 'text-rose-400'}`}>
                           {user.is_active ? '● Active' : '● Inactive'}
@@ -316,42 +351,43 @@ const StaffModule = () => {
         </div>
 
         {/* Create Form */}
-        <div className="bg-slate-900/60 border border-white/5 rounded-[2rem] p-8 h-max sticky top-8">
-          <h2 className="text-xl font-bold text-white flex items-center gap-2 mb-6">
-            <UserPlus className="text-emerald-400" /> Create Team Setup
-          </h2>
-          <form onSubmit={handleCreateTeam} className="space-y-4">
-            <div className="group relative">
-              <input required type="text" value={newTeam.name} onChange={(e) => setNewTeam({...newTeam, name: e.target.value})} className="w-full bg-slate-950 text-white px-4 py-3 rounded-xl border border-white/10 outline-none" placeholder="Team / Model Name" />
-            </div>
-            
-            <div className="group relative">
-              <label className="text-xs font-bold text-slate-500 mb-2 block">Payment Structure</label>
-              <select value={newTeam.payment_type} onChange={(e) => setNewTeam({...newTeam, payment_type: e.target.value})} className="w-full bg-slate-950 text-white px-4 py-3 rounded-xl border border-white/10 outline-none appearance-none">
-                <option value="commission">Pure Commission (%)</option>
-                <option value="fixed">Fixed Salary</option>
-                <option value="salary_commission">Base Salary + Commission (%)</option>
-              </select>
-            </div>
-
-            {(newTeam.payment_type === 'fixed' || newTeam.payment_type === 'salary_commission') && (
+        {role === 'CALL_CENTER' && (
+          <div className="bg-slate-900/60 border border-white/5 rounded-[2rem] p-8 h-max sticky top-8">
+            <h2 className="text-xl font-bold text-white flex items-center gap-2 mb-6">
+              <UserPlus className="text-emerald-400" /> Create Team Setup
+            </h2>
+            <form onSubmit={handleCreateTeam} className="space-y-4">
               <div className="group relative">
-                <input required type="number" value={newTeam.salary} onChange={(e) => setNewTeam({...newTeam, salary: e.target.value})} className="w-full bg-slate-950 text-white px-4 py-3 rounded-xl border border-white/10 outline-none" placeholder="Monthly Salary Amount" />
+                <input required type="text" value={newTeam.name} onChange={(e) => setNewTeam({...newTeam, name: e.target.value})} className="w-full bg-slate-950 text-white px-4 py-3 rounded-xl border border-white/10 outline-none" placeholder="Team / Model Name" />
               </div>
-            )}
-
-            {(newTeam.payment_type === 'commission' || newTeam.payment_type === 'salary_commission') && (
+              
               <div className="group relative">
-                <input required type="number" max="100" value={newTeam.rate} onChange={(e) => setNewTeam({...newTeam, rate: e.target.value})} className="w-full bg-slate-950 text-white px-4 py-3 rounded-xl border border-white/10 outline-none" placeholder="Commission Rate (%)" />
+                <label className="text-xs font-bold text-slate-500 mb-2 block">Payment Structure</label>
+                <select value={newTeam.payment_type} onChange={(e) => setNewTeam({...newTeam, payment_type: e.target.value})} className="w-full bg-slate-950 text-white px-4 py-3 rounded-xl border border-white/10 outline-none appearance-none">
+                  <option value="commission">Pure Commission (%)</option>
+                  <option value="fixed">Fixed Salary</option>
+                  <option value="salary_commission">Base Salary + Commission (%)</option>
+                </select>
               </div>
-            )}
 
-            <button type="submit" disabled={saving} className="w-full bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-3 rounded-xl mt-4 flex justify-center items-center gap-2 shadow-lg shadow-indigo-500/20 transition-all">
-              {saving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />} Create Model
-            </button>
-          </form>
-        </div>
+              {(newTeam.payment_type === 'fixed' || newTeam.payment_type === 'salary_commission') && (
+                <div className="group relative">
+                  <input required type="number" value={newTeam.salary} onChange={(e) => setNewTeam({...newTeam, salary: e.target.value})} className="w-full bg-slate-950 text-white px-4 py-3 rounded-xl border border-white/10 outline-none" placeholder="Fixed Monthly Salary (USD)" />
+                </div>
+              )}
 
+              {(newTeam.payment_type === 'commission' || newTeam.payment_type === 'salary_commission') && (
+                <div className="group relative">
+                  <input required type="number" value={newTeam.rate} onChange={(e) => setNewTeam({...newTeam, rate: e.target.value})} className="w-full bg-slate-950 text-white px-4 py-3 rounded-xl border border-white/10 outline-none animate-pulse" placeholder="Commission Rate (%)" />
+                </div>
+              )}
+
+              <button type="submit" disabled={saving} className="w-full bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-black py-4 rounded-xl shadow-lg shadow-emerald-500/20 transition-all flex items-center justify-center gap-2">
+                {saving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />} Save Team Setup
+              </button>
+            </form>
+          </div>
+        )}
       </div>
 
       {/* Add User Modal */}
@@ -370,7 +406,14 @@ const StaffModule = () => {
                 <input required type="text" value={newUser.phone} onChange={(e) => setNewUser({...newUser, phone: e.target.value})} className="w-full bg-slate-950 text-white px-4 py-3 rounded-xl border border-white/10 outline-none" placeholder="Phone Number" />
               </div>
               <div className="group relative">
-                <input required type="text" value={newUser.password} onChange={(e) => setNewUser({...newUser, password: e.target.value})} className="w-full bg-slate-950 text-white px-4 py-3 rounded-xl border border-white/10 outline-none" placeholder="Password" />
+                <input required type={showModalPassword ? "text" : "password"} value={newUser.password} onChange={(e) => setNewUser({...newUser, password: e.target.value})} className="w-full bg-slate-950 text-white pl-4 pr-10 py-3 rounded-xl border border-white/10 outline-none" placeholder="Password" />
+                <button
+                  type="button"
+                  onClick={() => setShowModalPassword(!showModalPassword)}
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-500 hover:text-indigo-400 transition-colors"
+                >
+                  {showModalPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
               </div>
               <div className="group relative">
                 <select value={newUser.role} onChange={(e) => setNewUser({...newUser, role: e.target.value})} className="w-full bg-slate-950 text-white px-4 py-3 rounded-xl border border-white/10 outline-none appearance-none">

@@ -5,13 +5,12 @@ import { logout } from '../store/slices/authSlice';
 import { 
   LogOut, LayoutDashboard, Users, ClipboardList, 
   Wrench, DollarSign, AlertCircle,
-  Activity, ArrowUpRight, Clock, Settings, Loader2, Download, RotateCcw, Trash2, Menu, X
+  Activity, ArrowUpRight, Clock, Settings, Loader2, Download, RotateCcw, Trash2, Menu, X, Search
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../services/api';
 import { motion } from 'framer-motion';
 import { generateInvoicePDF } from '../utils/invoiceGenerator';
-import JobMap from '../components/JobMap';
 import WorkshopModule from '../components/WorkshopModule';
 import FinanceModule from '../components/FinanceModule';
 import StaffModule from '../components/StaffModule';
@@ -27,6 +26,7 @@ const AdminDashboard = () => {
   const [earningsReport, setEarningsReport] = useState<any[]>([]);
   const [chartData, setChartData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [recentSearch, setRecentSearch] = useState('');
 
   const [activeTab, setActiveTab] = useState('Overview');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -204,14 +204,26 @@ const AdminDashboard = () => {
             
             {/* Recent Leads Table */}
             <div className="xl:col-span-2 bg-slate-900/60 border border-white/5 rounded-[2rem] overflow-hidden flex flex-col shadow-2xl">
-              <div className="p-5 lg:p-8 border-b border-white/5 flex justify-between items-center bg-gradient-to-r from-white/[0.02] to-transparent">
+              <div className="p-5 lg:p-8 border-b border-white/5 flex flex-col sm:flex-row justify-between items-start sm:items-center bg-gradient-to-r from-white/[0.02] to-transparent gap-4">
                 <h3 className="text-lg font-bold text-white flex items-center gap-3">
                   <Clock size={20} className="text-indigo-400" />
                   Recent Operations
                 </h3>
-                <button className="text-xs font-bold text-indigo-400 hover:text-indigo-300 flex items-center gap-1 transition-colors">
-                  View All <ArrowUpRight size={14} />
-                </button>
+                <div className="flex items-center gap-3 w-full sm:w-auto">
+                  <div className="relative flex-1 sm:w-48 group">
+                    <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-indigo-400 transition-colors" />
+                    <input 
+                      type="text" 
+                      placeholder="Search recent leads..." 
+                      value={recentSearch}
+                      onChange={(e) => setRecentSearch(e.target.value)}
+                      className="w-full bg-slate-950/50 border border-white/5 rounded-xl py-2 pl-10 pr-4 text-xs outline-none focus:border-indigo-500/50 transition-all text-white"
+                    />
+                  </div>
+                  <button onClick={() => setActiveTab('Service Leads')} className="text-xs font-bold text-indigo-400 hover:text-indigo-300 flex items-center gap-1 transition-colors shrink-0">
+                    View All <ArrowUpRight size={14} />
+                  </button>
+                </div>
               </div>
 
               <div className="overflow-x-auto">
@@ -226,7 +238,11 @@ const AdminDashboard = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5">
-                    {(data?.recentLeads || []).map((lead: any, idx: number) => (
+                    {((data?.recentLeads || []).filter((lead: any) => 
+                      lead.lead_id.toLowerCase().includes(recentSearch.toLowerCase()) ||
+                      (lead.customer?.name || '').toLowerCase().includes(recentSearch.toLowerCase()) ||
+                      (lead.customer?.phone || '').includes(recentSearch)
+                    )).map((lead: any, idx: number) => (
                       <tr key={idx} className="group hover:bg-white/[0.02] transition-colors cursor-pointer text-sm">
                         <td className="px-8 py-5">
                           <span className="font-mono text-sm font-bold text-indigo-300">{lead.lead_id}</span>
@@ -313,13 +329,6 @@ const AdminDashboard = () => {
                 </table>
               </div>
             </div>
-
-            {/* NEW: Map Visualization */}
-            <div className="xl:col-span-3 h-[300px] lg:h-[400px]">
-              <JobMap leads={data.recentLeads} technicians={data.technicians} />
-            </div>
-
-            {/* Recent Leads Table (Moved into a grid later) */}
 
             {/* Quick Actions / Alerts */}
             <div className="space-y-6">
@@ -436,7 +445,7 @@ const AdminDashboard = () => {
           ) : activeTab === 'Finance' ? (
             <FinanceModule />
           ) : activeTab === 'Staff Management' ? (
-            <StaffModule />
+            <StaffModule role="ADMIN" />
           ) : (
             <SettingsModule />
           )

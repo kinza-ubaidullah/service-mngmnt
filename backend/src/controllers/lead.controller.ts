@@ -40,6 +40,7 @@ export const createLead = async (req: Request, res: Response) => {
       google_map_link, 
       product_type, 
       problem_details,
+      house_image,
       item_pictures 
     } = req.body;
 
@@ -64,7 +65,7 @@ export const createLead = async (req: Request, res: Response) => {
       // Update existing customer address if provided
       await prisma.customer.update({
         where: { id: customer.id },
-        data: { exact_address, area: customer_area }
+        data: { exact_address, area: customer_area, google_map_link }
       });
     }
 
@@ -89,6 +90,7 @@ export const createLead = async (req: Request, res: Response) => {
         product_type,
         problem_details,
         item_pictures: item_pictures || [],
+        house_image: house_image || null,
         exact_address,
         assigned_by: user.id, // Who created it
         status: 'New',
@@ -117,6 +119,68 @@ export const createLead = async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Error creating lead:', error);
     res.status(500).json({ message: 'Failed to create lead' });
+  }
+};
+
+// Update an existing lead (Call Center / Admin)
+export const updateLead = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const {
+      customer_name, 
+      customer_phone, 
+      customer_area, 
+      exact_address, 
+      google_map_link, 
+      product_type, 
+      problem_details,
+    } = req.body;
+    const user = (req as any).user;
+
+    const leadId = parseInt(id as string);
+    if (isNaN(leadId)) {
+      res.status(400).json({ message: 'Invalid lead ID' });
+      return;
+    }
+
+    const lead = await prisma.lead.findUnique({ where: { id: leadId } });
+    if (!lead) return res.status(404).json({ message: 'Lead not found' });
+
+    // Update customer info
+    await prisma.customer.update({
+      where: { id: lead.customer_id },
+      data: {
+        name: customer_name,
+        phone: customer_phone,
+        area: customer_area,
+        exact_address,
+        google_map_link
+      }
+    });
+
+    // Update lead info
+    const updatedLead = await prisma.lead.update({
+      where: { id: leadId },
+      data: {
+        product_type,
+        problem_details,
+        exact_address
+      }
+    });
+
+    await prisma.jobHistory.create({
+      data: {
+        lead_id: leadId,
+        action: 'Lead Edited',
+        performed_by: user.id,
+        notes: 'Updated lead details'
+      }
+    });
+
+    res.json({ message: 'Lead updated successfully', lead: updatedLead });
+  } catch (error) {
+    console.error('Error updating lead:', error);
+    res.status(500).json({ message: 'Failed to update lead' });
   }
 };
 

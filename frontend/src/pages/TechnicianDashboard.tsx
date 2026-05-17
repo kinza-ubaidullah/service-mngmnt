@@ -12,6 +12,7 @@ import toast from 'react-hot-toast';
 import api from '../services/api';
 import { motion, AnimatePresence } from 'framer-motion';
 import { generateInvoicePDF } from '../utils/invoiceGenerator';
+import { socket } from '../services/socket';
 
 interface Lead {
   id: number;
@@ -62,6 +63,7 @@ const TechnicianDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [workshopSearch, setWorkshopSearch] = useState('');
   const [workshopFilter, setWorkshopFilter] = useState('all');
+  const [jobSearch, setJobSearch] = useState('');
   const [selectedJob, setSelectedJob] = useState<Lead | null>(null);
   const [outcomeModalOpen, setOutcomeModalOpen] = useState(false);
   
@@ -126,7 +128,52 @@ const TechnicianDashboard = () => {
     fetchJobs();
     fetchWalletData();
     fetchWorkshopJobs();
-  }, []);
+
+    // Establish WebSocket Connection and start Geolocation tracking
+    socket.connect();
+    console.log('Technician socket connecting...');
+
+    let watchId: number | null = null;
+    if (navigator.geolocation && user?.id) {
+      console.log('Starting Geolocation watcher for technician:', user.id);
+      watchId = navigator.geolocation.watchPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          console.log(`Live location update: lat ${latitude}, lng ${longitude}`);
+          
+          // Emit coordinate update over WebSocket channel
+          socket.emit('location_update', {
+            userId: Number(user.id),
+            lat: latitude,
+            lng: longitude
+          });
+        },
+        (error) => {
+          console.warn('Geolocation access failed/timeout:', error);
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 15000,
+          maximumAge: 10000
+        }
+      );
+    } else {
+      console.warn('Browser Geolocation is not supported or User ID is missing.');
+    }
+
+    return () => {
+      if (watchId !== null) {
+        navigator.geolocation.clearWatch(watchId);
+      }
+      socket.disconnect();
+    };
+  }, [user?.id]);
+
+  const filteredJobs = jobs.filter(job => 
+    job.lead_id.toLowerCase().includes(jobSearch.toLowerCase()) ||
+    (job.customer?.name || '').toLowerCase().includes(jobSearch.toLowerCase()) ||
+    (job.customer?.phone || '').includes(jobSearch)
+  );
 
   const updateWorkshopStatus = async (jobId: number, status: string) => {
     try {
@@ -180,8 +227,8 @@ const TechnicianDashboard = () => {
     try {
       const res = await api.patch('/users/profile', profileForm);
       toast.success('Profile updated!');
-      // Update local storage/redux if needed
       dispatch(setUser(res.data.user));
+      setActiveTab('tasks');
     } catch (error) {
       toast.error('Failed to update profile');
     } finally {
@@ -329,16 +376,28 @@ const TechnicianDashboard = () => {
 
         {activeTab === 'tasks' ? (
           <>
-            <div className="mb-6 flex justify-between items-end">
+            <div className="mb-6 flex flex-col sm:flex-row sm:justify-between sm:items-end gap-4">
               <div>
                 <h2 className="text-2xl font-bold text-white">Active Tasks</h2>
                 <p className="text-sm text-slate-400">
                   {jobs.filter(j => j.status === 'Assigned' || j.status === 'InProgress' || j.status === 'Reopened').length} pending jobs
                 </p>
               </div>
-              <button onClick={fetchJobs} className="p-2 text-emerald-400 hover:bg-emerald-500/10 rounded-lg transition">
-                <Clock size={20} />
-              </button>
+              <div className="flex items-center gap-3 w-full sm:w-auto">
+                <div className="relative flex-1 sm:w-48 group">
+                  <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-emerald-400 transition-colors" />
+                  <input 
+                    type="text" 
+                    placeholder="Search tasks..." 
+                    value={jobSearch}
+                    onChange={(e) => setJobSearch(e.target.value)}
+                    className="w-full bg-slate-900/50 border border-white/5 rounded-xl py-2 pl-10 pr-4 text-xs outline-none focus:border-emerald-500/50 transition-all text-white"
+                  />
+                </div>
+                <button onClick={fetchJobs} className="p-2 text-emerald-400 bg-slate-900/50 hover:bg-emerald-500/10 rounded-xl transition border border-white/5">
+                  <Clock size={20} />
+                </button>
+              </div>
             </div>
 
             {loading ? (
@@ -356,7 +415,7 @@ const TechnicianDashboard = () => {
             ) : (
               <div className="space-y-4">
                 <AnimatePresence mode="popLayout">
-                  {jobs
+                  {filteredJobs
                     .filter(j => j.status !== 'Completed' && j.status !== 'PickedForWorkshop')
                     .map((job, idx) => (
                     <motion.div
