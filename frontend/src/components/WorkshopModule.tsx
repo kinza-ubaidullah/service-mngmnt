@@ -137,6 +137,15 @@ const WorkshopModule = () => {
                             <CheckCircle2 size={16} />
                           </button>
                         )}
+                        {job.status === 'Ready' && (
+                          <button 
+                            onClick={() => updateStatus(job.id, 'Delivered')}
+                            className="p-2 bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 rounded-xl border border-purple-500/20 transition-all"
+                            title="Mark Delivered"
+                          >
+                            <Truck size={16} />
+                          </button>
+                        )}
                         <button 
                           onClick={async () => {
                             if (window.confirm('Are you sure you want to remove this machine from workshop records?')) {

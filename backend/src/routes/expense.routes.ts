@@ -6,8 +6,8 @@ const router = Router();
 
 router.use(authenticate);
 
-router.post('/', authorizeRole(['TECHNICIAN', 'ADMIN']), createExpense);
-router.get('/my-expenses', authorizeRole(['TECHNICIAN', 'ADMIN']), getMyExpenses);
-router.get('/wallet-summary', authorizeRole(['TECHNICIAN', 'ADMIN']), getWalletSummary);
+router.post('/', authorizeRole(['TECHNICIAN', 'ADMIN', 'CALL_CENTER']), createExpense);
+router.get('/my-expenses', authorizeRole(['TECHNICIAN', 'ADMIN', 'CALL_CENTER']), getMyExpenses);
+router.get('/wallet-summary', authorizeRole(['TECHNICIAN', 'ADMIN', 'CALL_CENTER']), getWalletSummary);
 
 export default router;

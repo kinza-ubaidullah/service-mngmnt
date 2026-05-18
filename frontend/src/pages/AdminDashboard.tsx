@@ -28,8 +28,12 @@ const AdminDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [recentSearch, setRecentSearch] = useState('');
 
-  const [activeTab, setActiveTab] = useState('Overview');
+  const [activeTab, setActiveTab] = useState(() => sessionStorage.getItem('adminActiveTab') || 'Overview');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  useEffect(() => {
+    sessionStorage.setItem('adminActiveTab', activeTab);
+  }, [activeTab]);
 
   const fetchData = async () => {
     try {

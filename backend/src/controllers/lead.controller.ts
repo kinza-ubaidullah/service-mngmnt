@@ -248,10 +248,15 @@ export const getMyJobs = async (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
 
+    const whereClause: any = {};
+    if (user.role === 'ADMIN') {
+      whereClause.assigned_to = { not: null };
+    } else {
+      whereClause.assigned_to = user.id;
+    }
+
     const leads = await prisma.lead.findMany({
-      where: {
-        assigned_to: user.id,
-      },
+      where: whereClause,
       include: {
         customer: true,
       },

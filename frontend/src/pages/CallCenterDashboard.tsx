@@ -2,12 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import type { RootState } from '../store';
 import { logout } from '../store/slices/authSlice';
-import { LogOut, PhoneCall, Plus, ClipboardList, MapPin, User, Settings, Loader2, Sparkles, Activity, X, Calendar, Wrench, Users } from 'lucide-react';
+import { LogOut, PhoneCall, Plus, ClipboardList, MapPin, User, Settings, Loader2, Sparkles, Activity, X, Calendar, Wrench, Users, Wallet } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../services/api';
 import { motion, AnimatePresence } from 'framer-motion';
 import JobMap from '../components/JobMap';
 import StaffModule from '../components/StaffModule';
+import WorkshopModule from '../components/WorkshopModule';
+import FinanceModule from '../components/FinanceModule';
 import { socket } from '../services/socket';
 
 interface Lead {
@@ -47,8 +49,12 @@ const CallCenterDashboard = () => {
   const [areas, setAreas] = useState<{ id: number; name: string }[]>([]);
   const [fetchingLeads, setFetchingLeads] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [activeTab, setActiveTab] = useState<'operations' | 'teams'>('operations');
+  const [activeTab, setActiveTab] = useState<'operations' | 'teams' | 'workshop' | 'wallet'>(() => (sessionStorage.getItem('callCenterActiveTab') as 'operations' | 'teams' | 'workshop' | 'wallet') || 'operations');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'completed'>('active');
+
+  useEffect(() => {
+    sessionStorage.setItem('callCenterActiveTab', activeTab);
+  }, [activeTab]);
 
   // Form States
   const [loading, setLoading] = useState(false);
@@ -294,18 +300,30 @@ const CallCenterDashboard = () => {
         </div>
 
         {/* Tab Switcher */}
-        <div className="flex gap-2 bg-slate-950/40 p-1 rounded-xl border border-white/5">
+        <div className="flex gap-2 bg-slate-950/40 p-1 rounded-xl border border-white/5 overflow-x-auto">
           <button 
             onClick={() => setActiveTab('operations')} 
-            className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${activeTab === 'operations' ? 'bg-indigo-500 text-white shadow-lg' : 'text-slate-400 hover:text-slate-200'}`}
+            className={`px-4 py-2 whitespace-nowrap rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${activeTab === 'operations' ? 'bg-indigo-500 text-white shadow-lg' : 'text-slate-400 hover:text-slate-200'}`}
           >
             Operations & Map
           </button>
           <button 
             onClick={() => setActiveTab('teams')} 
-            className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${activeTab === 'teams' ? 'bg-indigo-500 text-white shadow-lg' : 'text-slate-400 hover:text-slate-200'}`}
+            className={`px-4 py-2 whitespace-nowrap rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${activeTab === 'teams' ? 'bg-indigo-500 text-white shadow-lg' : 'text-slate-400 hover:text-slate-200'}`}
           >
-            Teams & Finance Setup
+            Teams Setup
+          </button>
+          <button 
+            onClick={() => setActiveTab('workshop')} 
+            className={`px-4 py-2 whitespace-nowrap rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${activeTab === 'workshop' ? 'bg-indigo-500 text-white shadow-lg' : 'text-slate-400 hover:text-slate-200'}`}
+          >
+            Workshop
+          </button>
+          <button 
+            onClick={() => setActiveTab('wallet')} 
+            className={`px-4 py-2 whitespace-nowrap rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${activeTab === 'wallet' ? 'bg-indigo-500 text-white shadow-lg' : 'text-slate-400 hover:text-slate-200'}`}
+          >
+            Wallet & Finance
           </button>
         </div>
         
@@ -328,11 +346,15 @@ const CallCenterDashboard = () => {
         </div>
       </motion.nav>
       
-      <main className="flex-1 p-3 lg:p-6 md:p-8 max-w-[1800px] w-full mx-auto relative z-10">
+      <main className="flex-1 flex flex-col p-3 lg:p-6 md:p-8 max-w-[1800px] w-full mx-auto relative z-10">
         {activeTab === 'teams' ? (
           <StaffModule role="CALL_CENTER" />
+        ) : activeTab === 'workshop' ? (
+          <WorkshopModule />
+        ) : activeTab === 'wallet' ? (
+          <FinanceModule />
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-8">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-8 flex-1">
         <motion.div initial={{ x: -20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} transition={{ delay: 0.1 }} className="lg:col-span-4 flex flex-col h-full">
           <div className="bg-slate-900/60 backdrop-blur-xl rounded-3xl border border-white/10 overflow-hidden flex flex-col flex-1 shadow-2xl">
             <div className="px-8 py-6 border-b border-white/5 bg-gradient-to-r from-white/[0.02] to-transparent">
@@ -505,7 +527,7 @@ const CallCenterDashboard = () => {
                 <JobMap leads={leads} technicians={technicians} onAssign={openAssignModal} />
               </div>
 
-              <div className="bg-slate-900/60 backdrop-blur-xl rounded-3xl border border-white/10 overflow-hidden flex flex-col lg:h-[calc(100vh-510px)] min-h-[400px] shadow-2xl">
+              <div className="bg-slate-900/60 backdrop-blur-xl rounded-3xl border border-white/10 overflow-hidden flex flex-col flex-1 min-h-[400px] shadow-2xl">
                 <div className="px-8 py-6 border-b border-white/5 bg-gradient-to-r from-transparent to-white/[0.02] flex justify-between items-center shrink-0">
                   <div className="flex items-center gap-3">
                     <div className="p-1.5 bg-blue-500/20 rounded-lg"><Activity className="text-blue-400" size={18} /></div>
@@ -569,7 +591,7 @@ const CallCenterDashboard = () => {
                       <motion.div 
                         initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }} transition={{ delay: idx * 0.05 }}
                         key={lead.id} 
-                        className="group bg-slate-950/40 hover:bg-slate-800/60 border border-white/5 hover:border-indigo-500/30 rounded-2xl p-5 flex items-center gap-6 transition-all duration-300"
+                        className="group bg-slate-950/40 hover:bg-slate-800/60 border border-white/5 hover:border-indigo-500/30 rounded-2xl p-6 flex items-center gap-6 transition-all duration-300"
                       >
                         {/* ID Block */}
                         <div className="shrink-0 flex flex-col items-center justify-center bg-slate-900 border border-white/10 rounded-xl p-3 min-w-[110px]">

@@ -6,7 +6,7 @@ import {
   LogOut, Wrench, MapPin, Clock, ClipboardCheck, 
   ChevronRight, CheckCircle2, Package, Wallet, Plus,
   Loader2, Sparkles, X, CreditCard, Info, User, TrendingDown, History, Download,
-  AlertCircle, Search, Filter, Activity
+  AlertCircle, Search, Filter, Activity, Truck
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../services/api';
@@ -57,9 +57,13 @@ const TechnicianDashboard = () => {
     );
   }
 
-  const [activeTab, setActiveTab] = useState<'tasks' | 'wallet' | 'profile' | 'workshop'>('tasks');
+  const [activeTab, setActiveTab] = useState<'tasks' | 'wallet' | 'profile' | 'workshop'>(() => (sessionStorage.getItem('techActiveTab') as 'tasks' | 'wallet' | 'profile' | 'workshop') || 'tasks');
   const [jobs, setJobs] = useState<Lead[]>([]);
   const [workshopJobs, setWorkshopJobs] = useState<any[]>([]);
+
+  useEffect(() => {
+    sessionStorage.setItem('techActiveTab', activeTab);
+  }, [activeTab]);
   const [loading, setLoading] = useState(true);
   const [workshopSearch, setWorkshopSearch] = useState('');
   const [workshopFilter, setWorkshopFilter] = useState('all');
@@ -356,14 +360,7 @@ const TechnicianDashboard = () => {
           >
             <Package size={18} /> Workshop
           </button>
-          <button 
-            onClick={() => setActiveTab('wallet')}
-            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-[10px] sm:text-sm transition-all
-              ${activeTab === 'wallet' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' : 'text-slate-500 hover:text-slate-300'}
-            `}
-          >
-            <Wallet size={18} /> Wallet
-          </button>
+
           <button 
             onClick={() => setActiveTab('profile')}
             className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-[10px] sm:text-sm transition-all
@@ -607,9 +604,12 @@ const TechnicianDashboard = () => {
                            </button>
                          )}
                          {job.status === 'Ready' && (
-                           <div className="flex-1 bg-emerald-500/10 text-emerald-400 text-center py-3 rounded-xl border border-emerald-500/20 text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2">
-                              <Package size={14} /> Awaiting Delivery Pickup
-                           </div>
+                           <button 
+                             onClick={() => updateWorkshopStatus(job.id, 'Delivered')}
+                             className="flex-1 bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold py-3 rounded-xl shadow-lg shadow-purple-600/20 transition-all flex items-center justify-center gap-2"
+                           >
+                              <Truck size={14} /> Mark as Delivered
+                           </button>
                          )}
                       </div>
                     </motion.div>
@@ -618,101 +618,7 @@ const TechnicianDashboard = () => {
               </div>
             )}
           </motion.div>
-        ) : activeTab === 'wallet' ? (
-          /* WALLET TAB */
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
-            
-            {/* Wallet Cards */}
-            <div className="grid grid-cols-1 gap-4">
-              {/* Cash in Hand Card */}
-              <div className="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-[2.5rem] p-8 text-white shadow-2xl shadow-emerald-500/20 relative overflow-hidden">
-                <div className="absolute -right-8 -bottom-8 w-40 h-40 bg-white/20 rounded-full blur-3xl"></div>
-                <p className="text-emerald-100 text-[10px] font-bold uppercase tracking-widest mb-1 opacity-80">Current Cash in Hand</p>
-                <h3 className="text-4xl font-black mb-6">
-                  <span className="text-xl mr-1 opacity-70">USD</span>
-                  {walletSummary?.balance || 0}
-                </h3>
-                
-                <div className="grid grid-cols-2 gap-4 border-t border-white/10 pt-6">
-                  <div>
-                    <p className="text-[10px] font-bold text-emerald-100 uppercase opacity-60">Collected</p>
-                    <p className="text-lg font-bold">$ {walletSummary?.totalCollected || 0}</p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-bold text-emerald-100 uppercase opacity-60">Spent</p>
-                    <p className="text-lg font-bold">$ {walletSummary?.totalSpent || 0}</p>
-                  </div>
-                </div>
-              </div>
 
-              {/* Estimated Earning Card */}
-              <div className="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-[2.5rem] p-8 text-white shadow-2xl shadow-blue-500/20 relative overflow-hidden">
-                <div className="absolute -right-8 -bottom-8 w-40 h-40 bg-white/10 rounded-full blur-3xl"></div>
-                <div className="flex justify-between items-start mb-1">
-                  <p className="text-blue-100 text-[10px] font-bold uppercase tracking-widest opacity-80">Estimated Earning</p>
-                  <span className="bg-white/20 px-2 py-0.5 rounded-full text-[10px] font-bold">Rate: {earningsSummary?.rate || 10}%</span>
-                </div>
-                <h3 className="text-4xl font-black mb-6">
-                  <span className="text-xl mr-1 opacity-70">USD</span>
-                  {earningsSummary?.commission || 0}
-                </h3>
-                
-                <p className="text-[10px] text-blue-200/70 italic font-medium">This is your calculated commission share from total revenue.</p>
-              </div>
-            </div>
-
-            {/* Quick Actions */}
-            <button 
-              onClick={() => setExpenseModalOpen(true)}
-              className="w-full bg-white/5 hover:bg-white/10 border border-white/10 p-5 rounded-2xl flex items-center justify-between group transition-all"
-            >
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-emerald-500/10 rounded-xl text-emerald-400 group-hover:scale-110 transition-transform">
-                  <TrendingDown size={20} />
-                </div>
-                <div className="text-left">
-                  <p className="text-sm font-bold text-white">Record Expense</p>
-                  <p className="text-xs text-slate-500 font-medium">Fuel, Parts, Food, etc.</p>
-                </div>
-              </div>
-              <Plus size={20} className="text-slate-600 group-hover:text-white transition-colors" />
-            </button>
-
-            {/* Recent Expenses List */}
-            <div className="space-y-4">
-              <div className="flex items-center gap-2 text-sm font-bold text-slate-400 mb-2">
-                <History size={16} /> Recent Expenses
-              </div>
-              
-              {expenses.length === 0 ? (
-                <div className="text-center py-8 text-slate-600 italic text-sm">No expenses recorded yet.</div>
-              ) : (
-                expenses.map((exp, idx) => (
-                  <motion.div 
-                    key={exp.id}
-                    initial={{ opacity: 0, x: -10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: idx * 0.05 }}
-                    className="bg-slate-900/50 border border-white/5 p-4 rounded-2xl flex items-center justify-between"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-white/5 rounded-lg flex items-center justify-center text-slate-400 font-bold text-xs">
-                        {exp.category.charAt(0)}
-                      </div>
-                      <div>
-                        <p className="text-sm font-bold text-slate-200">{exp.category}</p>
-                        <p className="text-[10px] text-slate-500 font-medium">{new Date(exp.date).toLocaleDateString()}</p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-black text-white">- $ {exp.amount}</p>
-                      <p className="text-[10px] text-slate-600 truncate max-w-[100px]">{exp.description}</p>
-                    </div>
-                  </motion.div>
-                ))
-              )}
-            </div>
-          </motion.div>
         ) : (
           /* PROFILE TAB */
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
