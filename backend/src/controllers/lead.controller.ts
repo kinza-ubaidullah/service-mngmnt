@@ -134,6 +134,8 @@ export const updateLead = async (req: Request, res: Response) => {
       google_map_link, 
       product_type, 
       problem_details,
+      house_image,
+      item_pictures
     } = req.body;
     const user = (req as any).user;
 
@@ -144,27 +146,54 @@ export const updateLead = async (req: Request, res: Response) => {
     }
 
     const lead = await prisma.lead.findUnique({ where: { id: leadId } });
-    if (!lead) return res.status(404).json({ message: 'Lead not found' });
+    if (!lead) {
+      res.status(404).json({ message: 'Lead not found' });
+      return;
+    }
 
-    // Update customer info
-    await prisma.customer.update({
-      where: { id: lead.customer_id },
-      data: {
-        name: customer_name,
-        phone: customer_phone,
-        area: customer_area,
-        exact_address,
-        google_map_link
-      }
+    // Handle phone number changes robustly to avoid unique key conflicts
+    const existingCustomer = await prisma.customer.findUnique({
+      where: { phone: customer_phone }
     });
 
-    // Update lead info
+    let targetCustomerId = lead.customer_id;
+
+    if (existingCustomer && existingCustomer.id !== lead.customer_id) {
+      // The phone number belongs to another customer. Swap lead association to that customer.
+      await prisma.customer.update({
+        where: { id: existingCustomer.id },
+        data: {
+          name: customer_name,
+          area: customer_area,
+          exact_address,
+          google_map_link
+        }
+      });
+      targetCustomerId = existingCustomer.id;
+    } else {
+      // Update the current customer's profile
+      await prisma.customer.update({
+        where: { id: lead.customer_id },
+        data: {
+          name: customer_name,
+          phone: customer_phone,
+          area: customer_area,
+          exact_address,
+          google_map_link
+        }
+      });
+    }
+
+    // Update lead info, including base64 images if provided
     const updatedLead = await prisma.lead.update({
       where: { id: leadId },
       data: {
         product_type,
         problem_details,
-        exact_address
+        exact_address,
+        customer_id: targetCustomerId,
+        house_image: house_image !== undefined ? house_image : undefined,
+        item_pictures: item_pictures !== undefined ? item_pictures : undefined
       }
     });
 
@@ -173,14 +202,14 @@ export const updateLead = async (req: Request, res: Response) => {
         lead_id: leadId,
         action: 'Lead Edited',
         performed_by: user.id,
-        notes: 'Updated lead details'
+        notes: 'Updated lead details and images'
       }
     });
 
     res.json({ message: 'Lead updated successfully', lead: updatedLead });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error updating lead:', error);
-    res.status(500).json({ message: 'Failed to update lead' });
+    res.status(500).json({ message: 'Failed to update lead', error: error.message });
   }
 };
 
@@ -307,19 +336,25 @@ export const updateLeadOutcome = async (req: Request, res: Response) => {
       return;
     }
 
+    // If a non-admin tries to mark as Completed, send to PendingApproval instead
+    let finalStatus = status as JobStatus;
+    if (finalStatus === 'Completed' && user.role !== 'ADMIN') {
+      finalStatus = 'PendingApproval';
+    }
+
     // Update Lead
     const updatedLead = await prisma.lead.update({
       where: { id: leadId },
       data: {
-        status: status as JobStatus,
+        status: finalStatus,
         actual_problem: actual_problem || null,
         repair_details: repair_details || null,
         total_amount: (total_amount && !isNaN(Number(total_amount))) ? Number(total_amount) : null,
         collected_amount: (collected_amount && !isNaN(Number(collected_amount))) ? Number(collected_amount) : null,
         warranty_months: (warranty_months && !isNaN(Number(warranty_months))) ? Number(warranty_months) : 1,
-        // If status is Completed, set warranty dates
-        warranty_start: status === 'Completed' ? new Date() : null,
-        warranty_end: (status === 'Completed' && warranty_months && !isNaN(Number(warranty_months)))
+        // Set warranty dates only if it's truly Completed (or PendingApproval means work is done)
+        warranty_start: (finalStatus === 'Completed' || finalStatus === 'PendingApproval') ? new Date() : null,
+        warranty_end: ((finalStatus === 'Completed' || finalStatus === 'PendingApproval') && warranty_months && !isNaN(Number(warranty_months)))
           ? new Date(new Date().setMonth(new Date().getMonth() + Number(warranty_months))) 
           : null,
       },
@@ -332,22 +367,22 @@ export const updateLeadOutcome = async (req: Request, res: Response) => {
         action: `Outcome: ${status}`,
         performed_by: user.id,
         old_status: lead.status,
-        new_status: status as JobStatus,
+        new_status: finalStatus,
         notes: repair_details,
       },
     });
 
-    // If status is PickedForWorkshop, ensure WorkshopJob entry
+    // If status is PickedForWorkshop, ensure WorkshopJob entry is WaitingForApproval
     if (status === 'PickedForWorkshop') {
       await prisma.workshopJob.upsert({
         where: { lead_id: leadId },
         update: {
-          status: 'Received',
+          status: 'WaitingForApproval',
         },
         create: {
           lead_id: leadId,
           received_by: user.id,
-          status: 'Received',
+          status: 'WaitingForApproval',
         },
       });
     }
@@ -397,6 +432,45 @@ export const reopenLead = async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Error reopening lead:', error);
     res.status(500).json({ message: 'Failed to reopen job' });
+  }
+};
+
+// Admin approves a PendingApproval lead
+export const approveLead = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const user = (req as any).user;
+
+    const leadId = parseInt(id as string);
+    const lead = await prisma.lead.findUnique({ where: { id: leadId } });
+
+    if (!lead || lead.status !== 'PendingApproval') {
+      res.status(400).json({ message: 'Lead is not pending approval' });
+      return;
+    }
+
+    const updatedLead = await prisma.lead.update({
+      where: { id: leadId },
+      data: {
+        status: 'Completed'
+      }
+    });
+
+    await prisma.jobHistory.create({
+      data: {
+        lead_id: leadId,
+        action: 'Admin Approved',
+        performed_by: user.id,
+        old_status: 'PendingApproval',
+        new_status: 'Completed',
+        notes: 'Admin verified and approved the completed job.'
+      }
+    });
+
+    res.json({ message: 'Job approved successfully', lead: updatedLead });
+  } catch (error) {
+    console.error('Error approving lead:', error);
+    res.status(500).json({ message: 'Failed to approve job' });
   }
 };
 
@@ -452,28 +526,53 @@ export const lookupCustomer = async (req: Request, res: Response) => {
   }
 };
 
-// Delete a lead (Admin only)
+// Delete a lead (Soft Delete to Bin, only allowed for unassigned leads)
 export const deleteLead = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const leadId = parseInt(id as string);
+    const user = (req as any).user;
     
     if (isNaN(leadId)) {
       res.status(400).json({ message: 'Invalid lead ID' });
       return;
     }
 
-    console.log('Admin deleting lead:', leadId);
+    const lead = await prisma.lead.findUnique({ where: { id: leadId } });
+    if (!lead) {
+      res.status(404).json({ message: 'Lead not found' });
+      return;
+    }
 
-    // Delete all dependent records
-    await prisma.jobHistory.deleteMany({ where: { lead_id: leadId } });
-    await prisma.workshopJob.deleteMany({ where: { lead_id: leadId } });
-    await prisma.expense.deleteMany({ where: { lead_id: leadId } });
+    // Only allow deletion of unassigned leads (status === 'New')
+    if (lead.status !== 'New') {
+      res.status(400).json({ 
+        message: 'Only unassigned leads can be deleted. This lead has active work or has been dispatched.' 
+      });
+      return;
+    }
+
+    console.log('Soft deleting lead to Bin:', leadId);
+
+    // Soft delete by updating status to 'Deleted'
+    const updatedLead = await prisma.lead.update({
+      where: { id: leadId },
+      data: { status: 'Deleted' }
+    });
+
+    // Audit log
+    await prisma.jobHistory.create({
+      data: {
+        lead_id: leadId,
+        action: 'Lead Deleted (Bin)',
+        performed_by: user.id,
+        old_status: lead.status,
+        new_status: 'Deleted',
+        notes: 'Moved lead to trash/bin'
+      }
+    });
     
-    // Now delete the lead
-    await prisma.lead.delete({ where: { id: leadId } });
-    
-    res.json({ message: 'Lead deleted successfully' });
+    res.json({ message: 'Lead moved to Bin successfully', lead: updatedLead });
   } catch (error: any) {
     console.error('Delete lead CRITICAL error:', error);
     res.status(500).json({ message: 'Failed to delete lead', error: error.message });

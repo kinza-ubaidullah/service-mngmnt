@@ -12,6 +12,7 @@ import Register from './pages/Register';
 import AdminDashboard from './pages/AdminDashboard';
 import CallCenterDashboard from './pages/CallCenterDashboard';
 import TechnicianDashboard from './pages/TechnicianDashboard';
+import MapPage from './pages/MapPage';
 import ProtectedRoute from './components/ProtectedRoute';
 
 const RootRedirect = () => {
@@ -133,6 +134,16 @@ function App() {
           />
 
 
+
+          {/* Map Page */}
+          <Route
+            path="/map"
+            element={
+              <ProtectedRoute allowedRoles={['CALL_CENTER', 'ADMIN', 'TECHNICIAN']}>
+                <MapPage />
+              </ProtectedRoute>
+            }
+          />
 
           {/* Catch All */}
           <Route path="*" element={<Navigate to="/" replace />} />

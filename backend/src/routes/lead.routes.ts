@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getLeads, createLead, updateLead, assignLead, getMyJobs, updateLeadOutcome, reopenLead, lookupCustomer, deleteLead } from '../controllers/lead.controller';
+import { getLeads, createLead, updateLead, assignLead, getMyJobs, updateLeadOutcome, reopenLead, approveLead, lookupCustomer, deleteLead } from '../controllers/lead.controller';
 import { authenticate, authorizeRole } from '../middleware/auth.middleware';
 
 const router = Router();
@@ -15,6 +15,7 @@ router.patch('/:id/assign', authorizeRole(['ADMIN', 'CALL_CENTER']), assignLead)
 
 router.patch('/:id/outcome', authorizeRole(['TECHNICIAN', 'ADMIN']), updateLeadOutcome);
 router.patch('/:id/reopen', authorizeRole(['ADMIN', 'CALL_CENTER']), reopenLead);
+router.post('/:id/approve', authorizeRole(['ADMIN']), approveLead);
 
 // Admin and Call Center delete
 router.delete('/:id', authorizeRole(['ADMIN', 'CALL_CENTER']), deleteLead);

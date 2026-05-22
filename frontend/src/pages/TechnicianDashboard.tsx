@@ -6,7 +6,7 @@ import {
   LogOut, Wrench, MapPin, Clock, ClipboardCheck, 
   ChevronRight, CheckCircle2, Package, Wallet, Plus,
   Loader2, Sparkles, X, CreditCard, Info, User, TrendingDown, History, Download,
-  AlertCircle, Search, Filter, Activity, Truck
+  AlertCircle, Search, Filter, Activity, Truck, RefreshCw
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../services/api';
@@ -57,7 +57,7 @@ const TechnicianDashboard = () => {
     );
   }
 
-  const [activeTab, setActiveTab] = useState<'tasks' | 'wallet' | 'profile' | 'workshop'>(() => (sessionStorage.getItem('techActiveTab') as 'tasks' | 'wallet' | 'profile' | 'workshop') || 'tasks');
+  const [activeTab, setActiveTab] = useState<'tasks' | 'history' | 'wallet' | 'workshop'>(() => (sessionStorage.getItem('techActiveTab') as 'tasks' | 'history' | 'wallet' | 'workshop') || 'tasks');
   const [jobs, setJobs] = useState<Lead[]>([]);
   const [workshopJobs, setWorkshopJobs] = useState<any[]>([]);
 
@@ -92,6 +92,30 @@ const TechnicianDashboard = () => {
     address: user?.address || '',
     profile_picture: user?.profile_picture || ''
   });
+
+  // Calculate distance between two coordinates in km
+  const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+    const R = 6371; // Radius of the earth in km
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+      Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
+  };
+
+  const getDistanceDisplay = (mapLink?: string) => {
+    if (!mapLink || !user?.lat || !user?.lng) return null;
+    const match = mapLink.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+    if (match) {
+      const lat = parseFloat(match[1]);
+      const lng = parseFloat(match[2]);
+      const dist = calculateDistance(user.lat, user.lng, lat, lng);
+      return `${dist.toFixed(1)} km away`;
+    }
+    return null;
+  };
 
   const fetchJobs = async () => {
     try {
@@ -202,6 +226,7 @@ const TechnicianDashboard = () => {
       setSelectedJob(null);
       fetchJobs();
       fetchWalletData();
+      fetchWorkshopJobs();
     } catch (error: any) {
       toast.error(error.response?.data?.message || 'Update failed');
     } finally {
@@ -317,30 +342,7 @@ const TechnicianDashboard = () => {
 
       <main className="flex-1 p-4 max-w-4xl mx-auto w-full relative z-10 pb-24">
         
-        {/* Profile Completion Warning */}
-        {(!user?.location_name || !user?.specialization) && activeTab !== 'profile' && (
-          <motion.div 
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="mb-8 bg-gradient-to-r from-amber-500/20 to-orange-500/20 border border-amber-500/30 rounded-2xl p-4 flex items-center justify-between"
-          >
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-amber-500 rounded-lg text-white shadow-lg shadow-amber-500/20">
-                <Info size={18} />
-              </div>
-              <div>
-                <p className="text-sm font-bold text-white">Profile Incomplete</p>
-                <p className="text-[10px] text-amber-200/70 font-medium">Please set your location & specialization to receive jobs.</p>
-              </div>
-            </div>
-            <button 
-              onClick={() => setActiveTab('profile')}
-              className="text-[10px] font-black uppercase tracking-widest bg-amber-500 text-white px-3 py-2 rounded-lg"
-            >
-              Set Now
-            </button>
-          </motion.div>
-        )}
+        {/* Profile Completion Warning Removed */}
 
         {/* Tab Switcher */}
         <div className="flex bg-slate-900/50 p-1 rounded-2xl border border-white/5 mb-8 shadow-xl">
@@ -362,12 +364,20 @@ const TechnicianDashboard = () => {
           </button>
 
           <button 
-            onClick={() => setActiveTab('profile')}
+            onClick={() => setActiveTab('history')}
             className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-[10px] sm:text-sm transition-all
-              ${activeTab === 'profile' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' : 'text-slate-500 hover:text-slate-300'}
+              ${activeTab === 'history' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' : 'text-slate-500 hover:text-slate-300'}
             `}
           >
-            <User size={18} /> Profile
+            <History size={18} /> History
+          </button>
+          <button 
+            onClick={() => setActiveTab('wallet')}
+            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-[10px] sm:text-sm transition-all
+              ${activeTab === 'wallet' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' : 'text-slate-500 hover:text-slate-300'}
+            `}
+          >
+            <Wallet size={18} /> Wallet
           </button>
         </div>
 
@@ -392,7 +402,7 @@ const TechnicianDashboard = () => {
                   />
                 </div>
                 <button onClick={fetchJobs} className="p-2 text-emerald-400 bg-slate-900/50 hover:bg-emerald-500/10 rounded-xl transition border border-white/5">
-                  <Clock size={20} />
+                  <RefreshCw size={20} />
                 </button>
               </div>
             </div>
@@ -420,7 +430,18 @@ const TechnicianDashboard = () => {
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: idx * 0.1 }}
-                      onClick={() => { setSelectedJob(job); setOutcomeModalOpen(true); }}
+                      onClick={() => { 
+                        setSelectedJob(job); 
+                        setOutcomeData({
+                          status: 'Completed',
+                          actual_problem: '',
+                          repair_details: '',
+                          total_amount: '',
+                          collected_amount: '',
+                          warranty_months: '3'
+                        });
+                        setOutcomeModalOpen(true); 
+                      }}
                       className="bg-slate-900/60 backdrop-blur-xl border border-white/10 rounded-2xl p-5 hover:border-emerald-500/40 transition-all active:scale-[0.98] cursor-pointer group"
                     >
                       <div className="flex justify-between items-start mb-4">
@@ -450,21 +471,32 @@ const TechnicianDashboard = () => {
                       </div>
 
                       <h3 className="text-lg font-bold text-white mb-1">{job.customer?.name}</h3>
-                      <div className="flex items-center gap-2 text-slate-400 text-sm mb-3">
-                        <MapPin size={14} className="text-emerald-500/70" />
-                        <span className="truncate flex-1">{job.customer?.area}</span>
+                      <div className="flex flex-col gap-1 text-slate-400 text-sm mb-3">
+                        <div className="flex items-center gap-2">
+                          <MapPin size={14} className="text-emerald-500/70" />
+                          <span className="truncate flex-1">{job.customer?.area}</span>
+                          {getDistanceDisplay(job.customer?.google_map_link) && (
+                            <span className="text-xs text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded">
+                              {getDistanceDisplay(job.customer?.google_map_link)}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex gap-2 mb-4">
+                        <a href={`tel:${job.customer?.phone?.replace(/[^0-9+]/g, '')}`} onClick={(e) => e.stopPropagation()} className="flex-1 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 text-xs font-bold py-2.5 rounded-xl border border-blue-500/20 transition-all flex items-center justify-center gap-1">
+                          Call
+                        </a>
+                        <a href={`https://wa.me/${job.customer?.phone?.replace(/[^0-9]/g, '')}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="flex-1 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 text-xs font-bold py-2.5 rounded-xl border border-emerald-500/20 transition-all flex items-center justify-center gap-1">
+                          WhatsApp
+                        </a>
                         {job.customer?.google_map_link && (
-                          <a 
-                            href={job.customer?.google_map_link} 
-                            target="_blank" 
-                            rel="noopener noreferrer"
-                            onClick={(e) => e.stopPropagation()}
-                            className="p-1.5 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 rounded-lg transition-colors border border-blue-500/20 flex items-center gap-1 text-[10px] font-bold"
-                          >
-                            <MapPin size={12} /> Navigate
+                          <a href={job.customer?.google_map_link} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="flex-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 text-xs font-bold py-2.5 rounded-xl border border-amber-500/20 transition-all flex items-center justify-center gap-1">
+                            Location
                           </a>
                         )}
                       </div>
+
                       <div className="grid grid-cols-2 gap-3 pt-3 border-t border-white/5 mb-4">
                         <div className="flex flex-col gap-0.5">
                           <span className="text-[10px] font-bold text-slate-500 uppercase">Appliance</span>
@@ -619,82 +651,76 @@ const TechnicianDashboard = () => {
             )}
           </motion.div>
 
-        ) : (
-          /* PROFILE TAB */
+        ) : activeTab === 'wallet' ? (
+          /* WALLET TAB */
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
-            <div className="bg-slate-900/60 backdrop-blur-xl border border-white/10 rounded-3xl p-6 shadow-2xl">
-              <div className="flex flex-col items-center mb-8">
-                <div className="w-24 h-24 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-full flex items-center justify-center mb-4 shadow-lg shadow-emerald-500/20">
-                  <User size={48} className="text-white" />
+            <div className="bg-gradient-to-br from-emerald-600 to-teal-700 rounded-3xl p-6 text-white shadow-xl shadow-emerald-500/20">
+              <div className="flex justify-between items-start mb-6">
+                <div>
+                  <p className="text-emerald-100 text-sm font-medium mb-1">Today's Total Sale</p>
+                  <h3 className="text-4xl font-black tracking-tight">Rs. {walletSummary?.totalCollected || 0}</h3>
                 </div>
-                <h2 className="text-xl font-bold text-white">Complete Your Profile</h2>
-                <p className="text-xs text-slate-500">This information will be visible to Call Center</p>
+                <div className="p-3 bg-white/20 rounded-2xl backdrop-blur-md">
+                  <Wallet size={24} className="text-white" />
+                </div>
               </div>
-
-              <form onSubmit={handleProfileSubmit} className="space-y-4">
-                <div className="group relative">
-                  <input 
-                    type="text" 
-                    value={profileForm.name} 
-                    onChange={(e) => setProfileForm({...profileForm, name: e.target.value})}
-                    className="w-full bg-slate-950 text-white px-4 py-4 rounded-2xl border border-white/10 focus:border-emerald-500 outline-none transition-all" 
-                    placeholder="Full Name" 
-                  />
-                  <label className="absolute left-4 top-[-8px] bg-slate-900 px-1 text-[10px] font-bold text-slate-500">Name</label>
+              <div className="grid grid-cols-2 gap-4 border-t border-white/20 pt-4">
+                <div>
+                  <p className="text-emerald-200 text-[10px] uppercase tracking-wider font-bold mb-1">Total Expenses</p>
+                  <p className="text-xl font-bold">Rs. {walletSummary?.totalSpent || 0}</p>
                 </div>
-
-                <div className="group relative">
-                  <input 
-                    type="text" 
-                    value={profileForm.specialization} 
-                    onChange={(e) => setProfileForm({...profileForm, specialization: e.target.value})}
-                    className="w-full bg-slate-950 text-white px-4 py-4 rounded-2xl border border-white/10 focus:border-emerald-500 outline-none transition-all" 
-                    placeholder="Specialization (e.g. AC, Fridge, Washing Machine)" 
-                  />
-                  <label className="absolute left-4 top-[-8px] bg-slate-900 px-1 text-[10px] font-bold text-slate-500">Specialization</label>
+                <div>
+                  <p className="text-emerald-200 text-[10px] uppercase tracking-wider font-bold mb-1">Outstanding Balance (To Return)</p>
+                  <p className="text-xl font-bold">Rs. {walletSummary?.balance || 0}</p>
                 </div>
-
-                <div className="flex gap-2">
-                  <div className="group relative flex-1">
-                    <input 
-                      type="text" 
-                      readOnly
-                      value={profileForm.location_name} 
-                      className="w-full bg-slate-950 text-white px-4 py-4 rounded-2xl border border-white/10 outline-none opacity-80" 
-                      placeholder="Location" 
-                    />
-                    <label className="absolute left-4 top-[-8px] bg-slate-900 px-1 text-[10px] font-bold text-slate-500">Current Location</label>
-                  </div>
-                  <button 
-                    type="button" 
-                    onClick={getCurrentLocation}
-                    className="bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 px-4 rounded-2xl border border-emerald-500/20 transition-all"
-                  >
-                    <MapPin size={20} />
-                  </button>
-                </div>
-
-                <div className="group relative">
-                  <textarea 
-                    value={profileForm.address} 
-                    onChange={(e) => setProfileForm({...profileForm, address: e.target.value})}
-                    className="w-full bg-slate-950 text-white px-4 py-4 rounded-2xl border border-white/10 focus:border-emerald-500 outline-none transition-all resize-none" 
-                    placeholder="Base Address / Area" 
-                    rows={3}
-                  ></textarea>
-                  <label className="absolute left-4 top-[-8px] bg-slate-900 px-1 text-[10px] font-bold text-slate-500">Address</label>
-                </div>
-
-                <button 
-                  type="submit" 
-                  disabled={loading}
-                  className="w-full bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-black py-4 rounded-2xl shadow-lg flex items-center justify-center gap-2 mt-4"
-                >
-                  {loading ? <Loader2 className="animate-spin" size={18} /> : <CheckCircle2 size={18} />}
-                  Save Profile
-                </button>
-              </form>
+              </div>
             </div>
+          </motion.div>
+        ) : (
+          /* HISTORY TAB */
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+            <div className="flex justify-between items-end mb-6">
+               <div>
+                  <h2 className="text-2xl font-bold text-white tracking-tight">Job History</h2>
+                  <p className="text-sm text-slate-400">Recently completed tasks</p>
+               </div>
+            </div>
+            {jobs.filter(j => j.status === 'Completed' || j.status === 'PickedForWorkshop').length === 0 ? (
+              <div className="bg-slate-900/50 border border-white/5 rounded-3xl p-12 text-center">
+                 <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-4">
+                   <History size={32} className="text-slate-600" />
+                 </div>
+                 <h3 className="text-white font-bold mb-1">No History</h3>
+                 <p className="text-sm text-slate-500">You haven't completed any jobs yet.</p>
+               </div>
+            ) : (
+              <div className="space-y-4">
+                {jobs.filter(j => j.status === 'Completed' || j.status === 'PickedForWorkshop').map((job, idx) => (
+                  <motion.div 
+                    key={job.id}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: idx * 0.05 }}
+                    className="bg-slate-900/60 backdrop-blur-xl border border-white/10 rounded-2xl p-5"
+                  >
+                    <div className="flex justify-between items-start mb-2">
+                       <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest bg-white/5 px-2 py-0.5 rounded">
+                             {job.lead_id}
+                          </span>
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase
+                             ${job.status === 'Completed' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-blue-500/20 text-blue-400'}
+                          `}>
+                             {job.status}
+                          </span>
+                       </div>
+                    </div>
+                    <h3 className="text-lg font-bold text-white mb-1">{job.customer?.name}</h3>
+                    <p className="text-xs text-slate-400">{job.product_type} • {job.customer?.area}</p>
+                  </motion.div>
+                ))}
+              </div>
+            )}
           </motion.div>
         )}
       </main>
@@ -768,7 +794,7 @@ const TechnicianDashboard = () => {
                       placeholder="Problem"
                       rows={2}
                     ></textarea>
-                    <label className="absolute left-4 top-[-8px] bg-slate-900 px-1 text-[10px] font-bold text-slate-500 peer-focus:text-emerald-400 transition-all peer-placeholder-shown:top-3.5 peer-placeholder-shown:text-xs">Actual Problem Found</label>
+                    <label className="absolute left-4 top-[-8px] bg-slate-900 px-1 text-[10px] font-bold text-slate-500 peer-focus:text-emerald-400 transition-all peer-placeholder-shown:top-3.5 peer-placeholder-shown:text-xs pointer-events-none">Actual Problem Found</label>
                   </div>
 
                   <div className="group relative">
@@ -779,27 +805,58 @@ const TechnicianDashboard = () => {
                       placeholder="Details"
                       rows={2}
                     ></textarea>
-                    <label className="absolute left-4 top-[-8px] bg-slate-900 px-1 text-[10px] font-bold text-slate-500 peer-focus:text-emerald-400 transition-all peer-placeholder-shown:top-3.5 peer-placeholder-shown:text-xs">
+                    <label className="absolute left-4 top-[-8px] bg-slate-900 px-1 text-[10px] font-bold text-slate-500 peer-focus:text-emerald-400 transition-all peer-placeholder-shown:top-3.5 peer-placeholder-shown:text-xs pointer-events-none">
                       {outcomeData.status === 'Completed' ? 'Work Performed / Parts Used' : 
-                       outcomeData.status === 'PickedForWorkshop' ? 'Reason for Pickup & Accessories' : 
+                       outcomeData.status === 'PickedForWorkshop' ? 'Agreed Parts to Change (Warranty)' : 
                        'Inspection Notes & Recommendations'}
                     </label>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="group relative">
-                      <div className="absolute left-4 top-3.5 text-slate-500"><CreditCard size={14}/></div>
-                      <input 
-                        type="number"
-                        value={outcomeData.collected_amount}
-                        onChange={(e) => setOutcomeData({...outcomeData, collected_amount: e.target.value})}
-                        className="w-full bg-slate-950 text-white pl-9 pr-4 py-3 rounded-2xl border border-white/10 focus:border-emerald-500 outline-none transition-all placeholder-transparent peer" 
-                        placeholder="Amount"
-                      />
-                      <label className="absolute left-4 top-[-8px] bg-slate-900 px-1 text-[10px] font-bold text-slate-500 peer-focus:text-emerald-400 transition-all peer-placeholder-shown:top-3.5 peer-placeholder-shown:text-xs peer-placeholder-shown:left-9 peer-focus:left-4">
-                        {outcomeData.status === 'Completed' ? 'Amount Collected' : 'Charges / Advance'}
-                      </label>
+                  {outcomeData.status === 'PickedForWorkshop' ? (
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="group relative">
+                        <div className="absolute left-4 top-3.5 text-slate-500"><CreditCard size={14}/></div>
+                        <input 
+                          type="number"
+                          value={outcomeData.total_amount}
+                          onChange={(e) => setOutcomeData({...outcomeData, total_amount: e.target.value})}
+                          className="w-full bg-slate-950 text-white pl-9 pr-4 py-3 rounded-2xl border border-white/10 focus:border-emerald-500 outline-none transition-all placeholder-transparent peer" 
+                          placeholder="Deal Amount"
+                        />
+                        <label className="absolute left-4 top-[-8px] bg-slate-900 px-1 text-[10px] font-bold text-slate-500 peer-focus:text-emerald-400 transition-all peer-placeholder-shown:top-3.5 peer-placeholder-shown:text-xs peer-placeholder-shown:left-9 peer-focus:left-4 pointer-events-none">
+                          Deal Amount
+                        </label>
+                      </div>
+                      <div className="group relative">
+                        <div className="absolute left-4 top-3.5 text-slate-500"><CreditCard size={14}/></div>
+                        <input 
+                          type="number"
+                          value={outcomeData.collected_amount}
+                          onChange={(e) => setOutcomeData({...outcomeData, collected_amount: e.target.value})}
+                          className="w-full bg-slate-950 text-white pl-9 pr-4 py-3 rounded-2xl border border-white/10 focus:border-emerald-500 outline-none transition-all placeholder-transparent peer" 
+                          placeholder="Advance Taken"
+                        />
+                        <label className="absolute left-4 top-[-8px] bg-slate-900 px-1 text-[10px] font-bold text-slate-500 peer-focus:text-emerald-400 transition-all peer-placeholder-shown:top-3.5 peer-placeholder-shown:text-xs peer-placeholder-shown:left-9 peer-focus:left-4 pointer-events-none">
+                          Advance Taken
+                        </label>
+                      </div>
                     </div>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="group relative">
+                        <div className="absolute left-4 top-3.5 text-slate-500"><CreditCard size={14}/></div>
+                        <input 
+                          type="number"
+                          value={outcomeData.collected_amount}
+                          onChange={(e) => setOutcomeData({...outcomeData, collected_amount: e.target.value})}
+                          className="w-full bg-slate-950 text-white pl-9 pr-4 py-3 rounded-2xl border border-white/10 focus:border-emerald-500 outline-none transition-all placeholder-transparent peer" 
+                          placeholder="Amount"
+                        />
+                        <label className="absolute left-4 top-[-8px] bg-slate-900 px-1 text-[10px] font-bold text-slate-500 peer-focus:text-emerald-400 transition-all peer-placeholder-shown:top-3.5 peer-placeholder-shown:text-xs peer-placeholder-shown:left-9 peer-focus:left-4 pointer-events-none">
+                          {outcomeData.status === 'Completed' ? 'Amount Collected' : 'Charges'}
+                        </label>
+                      </div>
+
 
                     {outcomeData.status === 'Completed' && (
                       <div className="group relative">
@@ -817,7 +874,8 @@ const TechnicianDashboard = () => {
                         <label className="absolute left-4 top-[-8px] bg-slate-900 px-1 text-[10px] font-bold text-slate-500">Warranty</label>
                       </div>
                     )}
-                  </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex gap-3 pt-4">

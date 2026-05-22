@@ -102,7 +102,8 @@ export const getFinancialChartData = async (req: Request, res: Response) => {
 
     const expenses = await prisma.expense.findMany({
       where: {
-        date: { gte: last7Days }
+        date: { gte: last7Days },
+        is_recurring: false
       },
       select: {
         date: true,
@@ -142,7 +143,10 @@ export const getReinvestments = async (req: Request, res: Response) => {
   try {
     const expenses = await prisma.expense.findMany({
       where: {
-        category: { startsWith: 'Reinvestment' }
+        is_recurring: false
+      },
+      include: {
+        user: { select: { name: true } }
       },
       orderBy: { date: 'desc' }
     });
@@ -154,21 +158,119 @@ export const getReinvestments = async (req: Request, res: Response) => {
 
 export const addReinvestment = async (req: Request, res: Response) => {
   try {
-    const { amount, category, description, date } = req.body;
+    const { amount, category, description, date, is_recurring, frequency, due_day } = req.body;
     const user = (req as any).user;
 
+    const data: any = {
+      user_id: user.id,
+      amount: Number(amount),
+      category,
+      description,
+      date: date ? new Date(date) : new Date(),
+      is_recurring: !!is_recurring
+    };
+
+    if (is_recurring) {
+      data.frequency = frequency || 'Monthly';
+      data.due_day = due_day ? Number(due_day) : 1;
+      
+      // Calculate next due date
+      const today = new Date();
+      let nextDue = new Date(today.getFullYear(), today.getMonth(), data.due_day);
+      if (nextDue < today) {
+        nextDue.setMonth(nextDue.getMonth() + 1);
+      }
+      data.next_due = nextDue;
+    }
+
     const expense = await prisma.expense.create({
-      data: {
-        user_id: user.id,
-        amount: Number(amount),
-        category: `Reinvestment: ${category}`,
-        description,
-        date: date ? new Date(date) : new Date()
+      data,
+      include: {
+        user: { select: { name: true } }
       }
     });
 
-    res.json({ message: 'Reinvestment recorded', expense });
+    res.json({ message: is_recurring ? 'Recurring payment schedule added' : 'Expense recorded', expense });
   } catch (error) {
-    res.status(500).json({ message: 'Error recording reinvestment' });
+    console.error('Error recording expense:', error);
+    res.status(500).json({ message: 'Error recording expense' });
+  }
+};
+
+export const getRecurringSchedules = async (req: Request, res: Response) => {
+  try {
+    const schedules = await prisma.expense.findMany({
+      where: { is_recurring: true },
+      include: {
+        user: { select: { name: true } }
+      },
+      orderBy: { next_due: 'asc' }
+    });
+    res.json({ schedules });
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching recurring schedules' });
+  }
+};
+
+export const payRecurringSchedule = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const user = (req as any).user;
+
+    const schedule = await prisma.expense.findUnique({
+      where: { id: Number(id) }
+    });
+
+    if (!schedule || !schedule.is_recurring) {
+       res.status(404).json({ message: 'Recurring schedule not found' });
+       return;
+    }
+
+    // 1. Create a regular expense from schedule
+    const newExpense = await prisma.expense.create({
+      data: {
+        user_id: user.id,
+        amount: schedule.amount,
+        category: schedule.category,
+        description: `Recurring Payment for: ${schedule.description || schedule.category}`,
+        date: new Date(),
+        is_recurring: false
+      }
+    });
+
+    // 2. Calculate next due date
+    const currentNextDue = schedule.next_due ? new Date(schedule.next_due) : new Date();
+    let nextDue = new Date(currentNextDue);
+    if (schedule.frequency === 'Weekly') {
+      nextDue.setDate(nextDue.getDate() + 7);
+    } else { // Monthly default
+      nextDue.setMonth(nextDue.getMonth() + 1);
+    }
+
+    // 3. Update schedule
+    await prisma.expense.update({
+      where: { id: schedule.id },
+      data: {
+        last_paid: new Date(),
+        next_due: nextDue
+      }
+    });
+
+    res.json({ message: 'Recurring payment successfully registered', expense: newExpense });
+  } catch (error) {
+    console.error('Pay recurring error:', error);
+    res.status(500).json({ message: 'Error executing recurring payment' });
+  }
+};
+
+export const deleteExpenseRecord = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    await prisma.expense.delete({
+      where: { id: Number(id) }
+    });
+    res.json({ message: 'Expense record deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ message: 'Error deleting expense record' });
   }
 };

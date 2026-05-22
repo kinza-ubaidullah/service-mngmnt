@@ -20,12 +20,14 @@ enum JobStatus {
   New
   Assigned
   InProgress
+  PendingApproval
   Completed
   Cancelled
   InspectionCompleted
   PickedForWorkshop
   Reopened
   Complaint
+  Deleted
 }
 
 enum WorkshopStatus {
@@ -175,14 +177,20 @@ model WorkshopJob {
 
 // New Model (Phase 2 ke liye zaroori)
 model Expense {
-  id          Int      @id @default(autoincrement())
-  user_id     Int
-  user        User     @relation(fields: [user_id], references: [id])
-  lead_id     Int?
-  amount      Decimal  @db.Decimal(10, 2)
-  category    String   // Petrol, Food, Parts, Transport, Other
-  description String?
-  date        DateTime @default(now())
+  id            Int       @id @default(autoincrement())
+  user_id       Int
+  user          User      @relation(fields: [user_id], references: [id])
+  lead_id       Int?
+  amount        Decimal   @db.Decimal(10, 2)
+  category      String    // Petrol, Food, Parts, Transport, Other, Salary, Rent, Spare parts, Food, Marketing, Vehicle, Tools, etc.
+  description   String?
+  date          DateTime  @default(now())
+
+  is_recurring  Boolean   @default(false)
+  frequency     String?   // "Monthly", "Weekly", "Daily"
+  due_day       Int?      // Day of month/week when it is due
+  last_paid     DateTime?
+  next_due      DateTime?
 
   @@map("expenses")
 }

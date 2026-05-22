@@ -27,6 +27,8 @@ const AdminDashboard = () => {
   const [chartData, setChartData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [recentSearch, setRecentSearch] = useState('');
+  const [selectedAttention, setSelectedAttention] = useState<any>(null);
+  const [selectedLead, setSelectedLead] = useState<any>(null);
 
   const [activeTab, setActiveTab] = useState(() => sessionStorage.getItem('adminActiveTab') || 'Overview');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -100,6 +102,50 @@ const AdminDashboard = () => {
           className="fixed inset-0 bg-black/60 z-40 lg:hidden"
           onClick={() => setMobileMenuOpen(false)}
         />
+      )}
+
+      {/* Attention Details Modal */}
+      {selectedAttention && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-slate-900 border border-white/10 rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl flex flex-col max-h-[80vh]"
+          >
+            <div className="p-6 border-b border-white/5 flex items-center justify-between bg-white/[0.02]">
+              <div className="flex items-center gap-3">
+                <div className={`w-3 h-3 rounded-full ${selectedAttention.color}`}></div>
+                <h3 className="text-xl font-bold text-white">{selectedAttention.label}</h3>
+              </div>
+              <button 
+                onClick={() => setSelectedAttention(null)}
+                className="text-slate-400 hover:text-white p-2 hover:bg-white/5 rounded-xl transition-all"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto space-y-4">
+              {selectedAttention.details?.map((detail: any, idx: number) => (
+                <div key={idx} className="bg-slate-950/50 border border-white/5 rounded-2xl p-4 hover:border-white/10 transition-colors">
+                  <div className="flex justify-between items-start gap-4">
+                    <div>
+                      <h4 className="text-sm font-bold text-slate-200">{detail.title}</h4>
+                      <p className="text-xs text-slate-400 mt-1">{detail.desc}</p>
+                    </div>
+                    {detail.id && (
+                      <span className="text-[10px] font-mono font-bold text-indigo-400 bg-indigo-500/10 px-2 py-1 rounded border border-indigo-500/20 shrink-0">
+                        {detail.id}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {(!selectedAttention.details || selectedAttention.details.length === 0) && (
+                <p className="text-sm text-slate-400 text-center py-4">No specific details available.</p>
+              )}
+            </div>
+          </motion.div>
+        </div>
       )}
 
       {/* Sidebar */}
@@ -247,7 +293,7 @@ const AdminDashboard = () => {
                       (lead.customer?.name || '').toLowerCase().includes(recentSearch.toLowerCase()) ||
                       (lead.customer?.phone || '').includes(recentSearch)
                     )).map((lead: any, idx: number) => (
-                      <tr key={idx} className="group hover:bg-white/[0.02] transition-colors cursor-pointer text-sm">
+                      <tr key={idx} onClick={() => setSelectedLead(lead)} className="group hover:bg-white/[0.02] transition-colors cursor-pointer text-sm">
                         <td className="px-8 py-5">
                           <span className="font-mono text-sm font-bold text-indigo-300">{lead.lead_id}</span>
                         </td>
@@ -265,11 +311,12 @@ const AdminDashboard = () => {
                             <span className={`px-3 py-1.5 rounded-lg text-[10px] font-bold tracking-wide border
                               ${lead.status === 'New' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 
                                 lead.status === 'Assigned' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : 
+                                lead.status === 'PendingApproval' ? 'bg-pink-500/10 text-pink-400 border-pink-500/20' : 
                                 lead.status === 'Completed' ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20' :
                                 lead.status === 'Reopened' ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' :
                                 'bg-slate-800 text-slate-300 border-slate-700'}
                             `}>
-                              {lead.status.toUpperCase()}
+                              {lead.status === 'PendingApproval' ? 'PENDING APPROVAL' : lead.status.toUpperCase()}
                             </span>
                             {lead.is_warranty_claim && (
                               <span className="px-2 py-1 bg-amber-500/20 text-amber-500 border border-amber-500/30 rounded text-[9px] font-black tracking-tighter">
@@ -277,6 +324,22 @@ const AdminDashboard = () => {
                               </span>
                             )}
                             <div className="flex items-center gap-2">
+                              {lead.status === 'PendingApproval' && (
+                                <button 
+                                  onClick={async (e) => { 
+                                    e.stopPropagation(); 
+                                    try {
+                                      await api.post(`/leads/${lead.id}/approve`);
+                                      toast.success('Job Approved!');
+                                      fetchData();
+                                    } catch (e) { toast.error('Failed to approve'); }
+                                  }}
+                                  className="p-1.5 bg-white/5 hover:bg-pink-500/20 text-slate-400 hover:text-pink-400 rounded-lg transition-all border border-white/5 hover:border-pink-500/20 font-bold text-xs"
+                                  title="Approve Job"
+                                >
+                                  Approve
+                                </button>
+                              )}
                               {lead.status === 'Completed' && (
                                 <>
                                   <button 
@@ -366,19 +429,30 @@ const AdminDashboard = () => {
                   Attention Needed
                 </h3>
                 <div className="space-y-4">
-                  {[
-                    { label: '3 Jobs overdue', sub: 'North Region Team', color: 'bg-red-500' },
-                    { label: '2 Parts pending', sub: 'Workshop Section', color: 'bg-amber-500' },
-                    { label: '1 Refund request', sub: 'Customer Ali Raza', color: 'bg-indigo-500' },
-                  ].map((alert, idx) => (
-                    <div key={idx} className="flex items-center gap-4 group cursor-pointer">
-                      <div className={`w-1 h-10 ${alert.color} rounded-full`}></div>
-                      <div>
-                        <p className="text-xs font-bold text-slate-200 group-hover:text-indigo-400 transition-colors">{alert.label}</p>
-                        <p className="text-[10px] text-slate-500 font-medium">{alert.sub}</p>
+                  {data?.attentionNeeded?.length > 0 ? (
+                    data.attentionNeeded.map((alert: any, idx: number) => (
+                      <div 
+                        key={idx} 
+                        onClick={() => setSelectedAttention(alert)}
+                        className="flex items-center gap-4 group cursor-pointer bg-white/[0.02] p-3 rounded-xl border border-white/5 hover:border-white/10 transition-all hover:bg-white/[0.04]"
+                      >
+                        <div className={`w-1 h-10 ${alert.color} rounded-full`}></div>
+                        <div className="flex-1">
+                          <p className="text-xs font-bold text-slate-200 group-hover:text-white transition-colors">{alert.label}</p>
+                          <p className="text-[10px] text-slate-500 font-medium mt-0.5">{alert.sub}</p>
+                        </div>
+                        <div className="bg-white/5 p-1.5 rounded-lg text-slate-400 group-hover:text-indigo-400 group-hover:bg-indigo-500/10 transition-all">
+                          <ArrowUpRight size={14} />
+                        </div>
                       </div>
+                    ))
+                  ) : (
+                    <div className="text-center py-6 bg-emerald-500/5 rounded-2xl border border-emerald-500/10">
+                      <Activity className="mx-auto text-emerald-500 mb-2" size={24} />
+                      <p className="text-sm font-bold text-emerald-400">All Clear!</p>
+                      <p className="text-xs text-slate-500 mt-1">No items require your attention right now.</p>
                     </div>
-                  ))}
+                  )}
                 </div>
               </div>
             </div>
@@ -457,6 +531,148 @@ const AdminDashboard = () => {
 
         </div>
       </main>
+      {/* Selected Lead Modal */}
+      {selectedLead && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md overflow-y-auto">
+          <div className="bg-slate-900 border border-white/10 rounded-[2.5rem] w-full max-w-3xl p-8 shadow-2xl my-8">
+            <div className="flex justify-between items-center mb-6 border-b border-white/5 pb-4">
+              <h3 className="text-2xl font-black text-white flex items-center gap-3">
+                <span className="text-indigo-400">{selectedLead.lead_id}</span>
+                <span className={`px-3 py-1 rounded-lg text-xs font-bold tracking-wide border
+                  ${selectedLead.status === 'New' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 
+                    selectedLead.status === 'Assigned' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : 
+                    selectedLead.status === 'PendingApproval' ? 'bg-pink-500/10 text-pink-400 border-pink-500/20' : 
+                    selectedLead.status === 'Completed' ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20' :
+                    'bg-slate-800 text-slate-300 border-slate-700'}
+                `}>
+                  {selectedLead.status === 'PendingApproval' ? 'PENDING APPROVAL' : selectedLead.status.toUpperCase()}
+                </span>
+              </h3>
+              <button onClick={() => setSelectedLead(null)} className="text-slate-500 hover:text-white transition-colors bg-white/5 p-2 rounded-xl">
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div className="space-y-6">
+                <div className="bg-slate-950/50 p-5 rounded-2xl border border-white/5">
+                  <h4 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-4">Customer Details</h4>
+                  <div className="space-y-3">
+                    <div>
+                      <p className="text-xs text-slate-500">Name</p>
+                      <p className="font-bold text-white text-lg">{selectedLead.customer?.name}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-500">Phone</p>
+                      <p className="font-bold text-white">{selectedLead.customer?.phone}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-500">Area</p>
+                      <p className="font-bold text-white">{selectedLead.customer?.area}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-500">Exact Address</p>
+                      <p className="font-bold text-white text-sm">{selectedLead.exact_address || selectedLead.customer?.exact_address || 'N/A'}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-slate-950/50 p-5 rounded-2xl border border-white/5">
+                  <h4 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-4">Assignment Info</h4>
+                  <div className="space-y-3">
+                    <div>
+                      <p className="text-xs text-slate-500">Technician</p>
+                      <p className="font-bold text-white">{selectedLead.technician?.name || 'Unassigned'}</p>
+                    </div>
+                    {selectedLead.visit_date && (
+                      <div>
+                        <p className="text-xs text-slate-500">Visit Date</p>
+                        <p className="font-bold text-white">{new Date(selectedLead.visit_date).toLocaleDateString()}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-6">
+                <div className="bg-slate-950/50 p-5 rounded-2xl border border-white/5">
+                  <h4 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-4">Job Details</h4>
+                  <div className="space-y-3">
+                    <div>
+                      <p className="text-xs text-slate-500">Product</p>
+                      <p className="font-bold text-white">{selectedLead.product_type}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-500">Reported Problem</p>
+                      <p className="font-medium text-slate-300 text-sm bg-white/5 p-3 rounded-xl mt-1">{selectedLead.problem_details}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {(selectedLead.status === 'Completed' || selectedLead.status === 'PendingApproval' || selectedLead.status === 'Reopened') && (
+                  <div className="bg-slate-950/50 p-5 rounded-2xl border border-white/5">
+                    <h4 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-4">Outcome</h4>
+                    <div className="space-y-3">
+                      <div>
+                        <p className="text-xs text-slate-500">Actual Problem Found</p>
+                        <p className="font-medium text-slate-300 text-sm">{selectedLead.actual_problem || 'N/A'}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-slate-500">Repair Details</p>
+                        <p className="font-medium text-slate-300 text-sm">{selectedLead.repair_details || 'N/A'}</p>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4 mt-2">
+                        <div className="bg-indigo-500/10 p-3 rounded-xl border border-indigo-500/20">
+                          <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider mb-1">Total Amount</p>
+                          <p className="font-black text-white text-lg">PKR {Number(selectedLead.total_amount || 0).toLocaleString()}</p>
+                        </div>
+                        <div className="bg-emerald-500/10 p-3 rounded-xl border border-emerald-500/20">
+                          <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider mb-1">Collected</p>
+                          <p className="font-black text-white text-lg">PKR {Number(selectedLead.collected_amount || 0).toLocaleString()}</p>
+                        </div>
+                      </div>
+                      <div className="pt-2">
+                        <p className="text-xs text-slate-500">Warranty Given</p>
+                        <p className="font-bold text-amber-400">{selectedLead.warranty_months} Month(s)</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="mt-8 flex justify-end gap-3">
+              {selectedLead.status === 'PendingApproval' && (
+                <button 
+                  onClick={async () => {
+                    try {
+                      await api.post(`/leads/${selectedLead.id}/approve`);
+                      toast.success('Job Approved!');
+                      setSelectedLead(null);
+                      fetchData();
+                    } catch (e) { toast.error('Failed to approve'); }
+                  }}
+                  className="px-6 py-3 bg-pink-500 hover:bg-pink-600 text-white font-black rounded-xl transition-all shadow-lg shadow-pink-500/20"
+                >
+                  Approve Job
+                </button>
+              )}
+              {selectedLead.status === 'Completed' && (
+                <button 
+                  onClick={() => generateInvoicePDF(selectedLead)}
+                  className="px-6 py-3 bg-indigo-500 hover:bg-indigo-600 text-white font-black rounded-xl transition-all shadow-lg shadow-indigo-500/20 flex items-center gap-2"
+                >
+                  <Download size={18} /> Download Invoice
+                </button>
+              )}
+              <button onClick={() => setSelectedLead(null)} className="px-6 py-3 bg-white/5 hover:bg-white/10 text-white font-bold rounded-xl transition-all">
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };
