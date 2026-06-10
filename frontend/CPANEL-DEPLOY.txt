@@ -1,0 +1,27 @@
+ServiceOS Frontend — cPanel Deploy Guide
+========================================
+
+1. UPLOAD
+   - Upload frontend-cpanel-deploy.zip
+   - Extract ALL files into your website public_html folder
+     (main domain or app subdomain — NOT the API folder)
+
+2. FILES INCLUDED
+   - index.html
+   - assets/ (JS, CSS bundles)
+   - .htaccess (SPA routing — required!)
+   - favicon.svg, icons.svg
+
+3. API URL
+   - Built with VITE_API_URL=https://api.aljaroshi.com
+   - Frontend will connect to your production API automatically
+
+4. AFTER UPLOAD
+   - Clear browser cache (Ctrl+F5)
+   - If blank page: confirm .htaccess was extracted (show hidden files)
+
+5. DO NOT
+   - Upload to api.aljaroshi.com folder (that is backend only)
+   - Delete .htaccess — React routes will break without it
+
+Built: latest UI with global search, PDF, voice notes, wallet timeline, workshop.

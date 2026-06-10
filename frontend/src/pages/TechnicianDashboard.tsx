@@ -78,6 +78,7 @@ interface Expense {
   category: string;
   description: string;
   date: string;
+  created_at?: string;
 }
 
 const TechnicianDashboard = () => {

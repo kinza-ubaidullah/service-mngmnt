@@ -1,0 +1,34 @@
+ServiceOS Backend — cPanel Deploy Guide
+========================================
+
+1. UPLOAD
+   - Upload and extract backend-cpanel-deploy.zip to your Node.js app folder
+     (e.g. api.aljaroshi.com folder or subdomain root)
+
+2. ENV FILE
+   - Keep your existing .env on server (DO NOT overwrite if already working)
+   - Required variables:
+     DATABASE_URL=mysql://user:pass@host:3306/dbname
+     JWT_SECRET=your-secret
+     PORT=5000
+
+3. INSTALL (SSH or cPanel Terminal)
+   cd /path/to/backend
+   npm install --production
+   npx prisma generate
+
+4. DATABASE SQL (run once in phpMyAdmin if not done before)
+   - fix-missing-columns-v2.sql
+   - fix-image-columns.sql
+   - create-posts-table.sql (only if using Create Post feature)
+
+5. START / RESTART Node.js App
+   - cPanel > Setup Node.js App > Restart
+   - Application startup file: dist/index.js
+   - Application mode: Production
+
+6. .htaccess
+   - Included — proxies requests to port 5000
+   - Ensure Apache mod_proxy is enabled on your host
+
+Built: latest source with trash/restore, voice notes, settlements, workshop, finance logs.
