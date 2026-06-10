@@ -1,10 +1,15 @@
 import React, { useState, useEffect } from 'react';
+import { useSelector } from 'react-redux';
+import type { RootState } from '../store';
 import { Lock, Shield, Eye, EyeOff, Key, Bell, Smartphone, LogOut, Loader2, Save, MapPin, Trash2, Plus } from 'lucide-react';
 import api from '../services/api';
 import toast from 'react-hot-toast';
 import { motion } from 'framer-motion';
 
 const SettingsModule = () => {
+  const user = useSelector((state: RootState) => state.auth.user);
+  const isAdmin = user?.role === 'ADMIN';
+
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [passwordForm, setPasswordForm] = useState({
@@ -23,15 +28,23 @@ const SettingsModule = () => {
   const [newArea, setNewArea] = useState('');
   const [loadingAreas, setLoadingAreas] = useState(false);
 
-  const fetchAreas = async () => {
+  const [customFields, setCustomFields] = useState<any[]>([]);
+  const [newField, setNewField] = useState({ name: '', type: 'Text', options: '', is_required: false });
+  const [loadingFields, setLoadingFields] = useState(false);
+
+  const fetchAreasAndFields = async () => {
     try {
-      const res = await api.get('/areas');
-      setAreas(res.data.areas);
+      const [areasRes, fieldsRes] = await Promise.all([
+        api.get('/areas'),
+        api.get('/finance/custom-fields?module=RecurringPayment').catch(() => ({ data: { fields: [] } }))
+      ]);
+      setAreas(areasRes.data.areas || []);
+      setCustomFields(fieldsRes.data.fields || []);
     } catch (e) {}
   };
 
   useEffect(() => {
-    fetchAreas();
+    fetchAreasAndFields();
   }, []);
 
   const handleAddArea = async (e: React.FormEvent) => {
@@ -42,7 +55,6 @@ const SettingsModule = () => {
       await api.post('/areas', { name: newArea.trim() });
       toast.success('Area added successfully');
       setNewArea('');
-      fetchAreas();
     } catch (error: any) {
       toast.error(error.response?.data?.message || 'Failed to add area');
     } finally {
@@ -55,9 +67,43 @@ const SettingsModule = () => {
     try {
       await api.delete(`/areas/${id}`);
       toast.success('Area deleted');
-      fetchAreas();
+      fetchAreasAndFields();
     } catch (error) {
       toast.error('Failed to delete area');
+    }
+  };
+
+  const handleAddField = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newField.name.trim()) return;
+    setLoadingFields(true);
+    try {
+      const optionsArray = newField.type === 'Dropdown' ? newField.options.split(',').map(s => s.trim()).filter(Boolean) : [];
+      await api.post('/finance/custom-fields', {
+        module: 'RecurringPayment',
+        field_name: newField.name.trim(),
+        field_type: newField.type,
+        options: optionsArray,
+        is_required: newField.is_required
+      });
+      toast.success('Custom field added');
+      setNewField({ name: '', type: 'Text', options: '', is_required: false });
+      fetchAreasAndFields();
+    } catch (error) {
+      toast.error('Failed to add custom field');
+    } finally {
+      setLoadingFields(false);
+    }
+  };
+
+  const handleDeleteField = async (id: number) => {
+    if (!window.confirm('Are you sure you want to delete this custom field?')) return;
+    try {
+      await api.delete(`/finance/custom-fields/${id}`);
+      toast.success('Custom field deleted');
+      fetchAreasAndFields();
+    } catch (error) {
+      toast.error('Failed to delete field');
     }
   };
 
@@ -229,67 +275,169 @@ const SettingsModule = () => {
       </div>
 
       {/* NEW: Area Management */}
-      <motion.div 
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="bg-slate-900/60 border border-white/5 rounded-[2.5rem] p-8 shadow-2xl relative overflow-hidden"
-      >
-        <div className="absolute top-0 right-0 p-8 opacity-5">
-          <MapPin size={80} className="text-white" />
-        </div>
-        
-        <h3 className="text-lg font-bold text-white mb-6 flex items-center gap-3">
-          <MapPin className="text-blue-400" size={20} />
-          Area Management
-        </h3>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 relative z-10">
-          <div>
-            <form onSubmit={handleAddArea} className="space-y-4">
-              <label className="text-xs font-bold text-slate-500 uppercase tracking-widest ml-1">Add New Service Area</label>
-              <div className="flex gap-3">
-                <input 
-                  type="text"
-                  required
-                  value={newArea}
-                  onChange={(e) => setNewArea(e.target.value)}
-                  className="flex-1 bg-slate-950/50 border border-white/5 rounded-xl py-3 px-4 outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/50 transition-all text-sm font-medium text-white"
-                  placeholder="e.g. Model Town"
-                />
-                <button 
-                  type="submit" 
-                  disabled={loadingAreas || !newArea.trim()}
-                  className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-6 rounded-xl flex items-center gap-2 transition-all shadow-lg shadow-blue-500/20 disabled:opacity-50"
-                >
-                  {loadingAreas ? <Loader2 className="animate-spin" size={18} /> : <Plus size={18} />} Add
-                </button>
-              </div>
-            </form>
+      {isAdmin && (
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-slate-900/60 border border-white/5 rounded-[2.5rem] p-8 shadow-2xl relative overflow-hidden"
+        >
+          <div className="absolute top-0 right-0 p-8 opacity-5">
+            <MapPin size={80} className="text-white" />
           </div>
           
-          <div className="bg-slate-950/50 rounded-2xl border border-white/5 p-4 max-h-[250px] overflow-y-auto custom-scrollbar">
-            <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3 px-2">Configured Areas ({areas.length})</h4>
-            <div className="space-y-2">
-              {areas.length === 0 ? (
-                <p className="text-sm text-slate-500 px-2">No areas configured yet.</p>
-              ) : (
-                areas.map(area => (
-                  <div key={area.id} className="flex items-center justify-between bg-white/[0.02] hover:bg-white/[0.05] border border-white/5 p-3 rounded-xl transition-colors group">
-                    <span className="text-sm font-semibold text-slate-200">{area.name}</span>
-                    <button 
-                      onClick={() => handleDeleteArea(area.id)}
-                      className="text-slate-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all p-1"
-                      title="Delete Area"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
-                ))
-              )}
+          <h3 className="text-lg font-bold text-white mb-6 flex items-center gap-3">
+            <MapPin className="text-blue-400" size={20} />
+            Area Management
+          </h3>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 relative z-10">
+            <div>
+              <form onSubmit={handleAddArea} className="space-y-4">
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-widest ml-1">Add New Service Area</label>
+                <div className="flex gap-3">
+                  <input 
+                    type="text"
+                    required
+                    value={newArea}
+                    onChange={(e) => setNewArea(e.target.value)}
+                    className="flex-1 bg-slate-950/50 border border-white/5 rounded-xl py-3 px-4 outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/50 transition-all text-sm font-medium text-white"
+                    placeholder="e.g. Model Town"
+                  />
+                  <button 
+                    type="submit" 
+                    disabled={loadingAreas || !newArea.trim()}
+                    className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-6 rounded-xl flex items-center gap-2 transition-all shadow-lg shadow-blue-500/20 disabled:opacity-50"
+                  >
+                    {loadingAreas ? <Loader2 className="animate-spin" size={18} /> : <Plus size={18} />} Add
+                  </button>
+                </div>
+              </form>
+            </div>
+            
+            <div className="bg-slate-950/50 rounded-2xl border border-white/5 p-4 max-h-[250px] overflow-y-auto custom-scrollbar">
+              <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3 px-2">Configured Areas ({areas.length})</h4>
+              <div className="space-y-2">
+                {areas.length === 0 ? (
+                  <p className="text-sm text-slate-500 px-2">No areas configured yet.</p>
+                ) : (
+                  areas.map(area => (
+                    <div key={area.id} className="flex items-center justify-between bg-white/[0.02] hover:bg-white/[0.05] border border-white/5 p-3 rounded-xl transition-colors group">
+                      <span className="text-sm font-semibold text-slate-200">{area.name}</span>
+                      <button 
+                        onClick={() => handleDeleteArea(area.id)}
+                        className="text-slate-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all p-1"
+                        title="Delete Area"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
           </div>
-        </div>
-      </motion.div>
+        </motion.div>
+      )}
+
+      {/* NEW: Custom Fields Management */}
+      {isAdmin && (
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-slate-900/60 border border-white/5 rounded-[2.5rem] p-8 shadow-2xl relative overflow-hidden"
+        >
+          <div className="absolute top-0 right-0 p-8 opacity-5">
+            <Plus size={80} className="text-white" />
+          </div>
+          
+          <h3 className="text-lg font-bold text-white mb-6 flex items-center gap-3">
+            <Plus className="text-pink-400" size={20} />
+            Finance Custom Fields
+          </h3>
+          <p className="text-sm text-slate-400 mb-6">Add custom fields for Recurring Payments — payment title, vendor name, notes, attachment, status, etc.</p>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 relative z-10">
+            <div>
+              <form onSubmit={handleAddField} className="space-y-4">
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-widest ml-1">Add New Field</label>
+                <div className="flex gap-3">
+                  <input 
+                    type="text"
+                    required
+                    value={newField.name}
+                    onChange={(e) => setNewField({ ...newField, name: e.target.value })}
+                    className="flex-1 bg-slate-950/50 border border-white/5 rounded-xl py-3 px-4 outline-none focus:border-pink-500/50 focus:ring-1 focus:ring-pink-500/50 transition-all text-sm font-medium text-white"
+                    placeholder="Field Name"
+                  />
+                  <select 
+                    value={newField.type}
+                    onChange={(e) => setNewField({ ...newField, type: e.target.value })}
+                    className="bg-slate-950/50 border border-white/5 rounded-xl py-3 px-4 outline-none focus:border-pink-500/50 focus:ring-1 focus:ring-pink-500/50 transition-all text-sm font-medium text-white"
+                  >
+                    <option value="Text">Text</option>
+                    <option value="Number">Number</option>
+                    <option value="Date">Date</option>
+                    <option value="Dropdown">Dropdown</option>
+                    <option value="File">File / Attachment</option>
+                  </select>
+                </div>
+                <label className="flex items-center gap-2 text-sm text-slate-400 cursor-pointer">
+                  <input type="checkbox" checked={newField.is_required} onChange={e => setNewField({ ...newField, is_required: e.target.checked })}
+                    className="rounded border-white/20 bg-slate-950 text-pink-500" />
+                  Required field
+                </label>
+                {newField.type === 'Dropdown' && (
+                  <input 
+                    type="text"
+                    required
+                    value={newField.options}
+                    onChange={(e) => setNewField({ ...newField, options: e.target.value })}
+                    className="w-full bg-slate-950/50 border border-white/5 rounded-xl py-3 px-4 outline-none focus:border-pink-500/50 transition-all text-sm font-medium text-white"
+                    placeholder="Comma separated options (e.g. Paid, Pending, Cancelled)"
+                  />
+                )}
+                <button 
+                  type="submit" 
+                  disabled={loadingFields || !newField.name.trim()}
+                  className="bg-pink-500 hover:bg-pink-600 text-white font-bold py-3 px-6 rounded-xl flex items-center justify-center w-full gap-2 transition-all shadow-lg shadow-pink-500/20 disabled:opacity-50"
+                >
+                  {loadingFields ? <Loader2 className="animate-spin" size={18} /> : <Plus size={18} />} Add Field
+                </button>
+              </form>
+            </div>
+            
+            <div className="bg-slate-950/50 rounded-2xl border border-white/5 p-4 max-h-[250px] overflow-y-auto custom-scrollbar">
+              <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3 px-2">Configured Fields ({customFields.length})</h4>
+              <div className="space-y-2">
+                {customFields.length === 0 ? (
+                  <p className="text-sm text-slate-500 px-2">No custom fields yet.</p>
+                ) : (
+                  customFields.map(field => (
+                    <div key={field.id} className="flex flex-col bg-white/[0.02] hover:bg-white/[0.05] border border-white/5 p-3 rounded-xl transition-colors group">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-semibold text-slate-200">{field.field_name}{field.is_required ? ' *' : ''}</span>
+                        <div className="flex items-center gap-3">
+                          <span className="text-[10px] font-bold text-slate-500 uppercase border border-slate-700 px-2 py-0.5 rounded">{field.field_type}</span>
+                          <button 
+                            onClick={() => handleDeleteField(field.id)}
+                            className="text-slate-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all p-1"
+                            title="Delete Field"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </div>
+                      {field.field_type === 'Dropdown' && field.options && (
+                        <p className="text-xs text-slate-500 mt-2">Options: {field.options.join(', ')}</p>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        </motion.div>
+      )}
     </div>
   );
 };

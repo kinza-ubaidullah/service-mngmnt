@@ -47,7 +47,7 @@ export const generateInvoicePDF = (job: any) => {
         'Repair Service', 
         job.product_type, 
         job.repair_details || job.actual_problem || 'Standard Maintenance', 
-        `$ ${job.total_amount || job.collected_amount || 0}`
+        `PKR ${Number(job.total_amount || job.collected_amount || 0).toLocaleString()}`
       ]
     ],
     headStyles: { fillColor: primaryColor },
@@ -59,7 +59,7 @@ export const generateInvoicePDF = (job: any) => {
   
   doc.setFont('helvetica', 'bold');
   doc.text('Total Amount:', 140, finalY);
-  doc.text(`$ ${job.total_amount || job.collected_amount || 0}`, 175, finalY);
+  doc.text(`PKR ${Number(job.total_amount || job.collected_amount || 0).toLocaleString()}`, 175, finalY);
   
   doc.setFillColor(245, 245, 245);
   doc.rect(15, finalY + 10, 180, 25, 'F');

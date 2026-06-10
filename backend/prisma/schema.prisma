@@ -66,8 +66,25 @@ model User {
   assigned_jobs Lead[]   @relation("AssignedTo")
   created_leads Lead[]   @relation("CreatedBy")   // Changed name
   expenses      Expense[]
+  posts         Post[]
 
   @@map("users")
+}
+
+model Post {
+  id          Int      @id @default(autoincrement())
+  user_id     Int
+  user        User     @relation(fields: [user_id], references: [id])
+  content     String?  @db.Text
+  visibility  String   @default("Public")
+  location    String?
+  hashtags    String?
+  product_tag String?
+  media       Json?
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  @@map("posts")
 }
 
 model Team {
@@ -87,8 +104,8 @@ model Customer {
   name            String
   phone           String   @unique
   area            String?
-  exact_address   String?
-  google_map_link String?
+  exact_address   String?  @db.Text
+  google_map_link String?  @db.Text
   created_at      DateTime @default(now())
 
   leads           Lead[]
@@ -104,8 +121,8 @@ model Lead {
 
   product_type      String
   problem_details   String?  @db.Text
-  product_image     String?
-  house_image       String?
+  product_image     String?  @db.LongText
+  house_image       String?  @db.LongText
   item_pictures     Json?
   exact_address     String?  @db.Text
 
@@ -125,6 +142,12 @@ model Lead {
   repair_details    String?  @db.Text
   total_amount      Decimal? @db.Decimal(10, 2)
   collected_amount  Decimal? @db.Decimal(10, 2) @default(0)
+  agreed_amount     Decimal? @db.Decimal(10, 2)
+  payment_confirmed Boolean  @default(false)
+  pending_outcome   String?
+  voice_note        String?  @db.LongText
+  lat               Float?
+  lng               Float?
 
   warranty_months   Int      @default(1)
   warranty_start    DateTime?
@@ -169,8 +192,10 @@ model WorkshopJob {
   current_day_count  Int           @default(0)
   notes              String?       @db.Text
 
-  delivered_at       DateTime?
-  delivered_by       Int?
+  delivered_at           DateTime?
+  delivered_by           Int?
+  delivery_assigned_to   Int?
+  delivery_assigned_at   DateTime?
 
   @@map("workshop_jobs")
 }
@@ -191,6 +216,7 @@ model Expense {
   due_day       Int?      // Day of month/week when it is due
   last_paid     DateTime?
   next_due      DateTime?
+  custom_data   Json?     // Stores dynamic custom fields data
 
   @@map("expenses")
 }
@@ -209,7 +235,60 @@ model InviteToken {
 model Area {
   id          Int      @id @default(autoincrement())
   name        String   @unique
+  lat         Float?
+  lng         Float?
   created_at  DateTime @default(now())
 
   @@map("areas")
+}
+
+model TechnicianSettlement {
+  id            Int      @id @default(autoincrement())
+  technician_id Int
+  amount        Decimal  @db.Decimal(10, 2)
+  description   String?
+  lead_id       Int?
+  is_received   Boolean  @default(false)
+  received_at   DateTime?
+  received_by   Int?
+  created_at    DateTime @default(now())
+
+  @@map("technician_settlements")
+}
+
+model CustomField {
+  id          Int      @id @default(autoincrement())
+  module      String   // e.g. "RecurringPayment"
+  field_name  String
+  field_type  String   // e.g. "Text", "Number", "Date", "Dropdown", "File"
+  options     Json?    // For Dropdown options (array of strings)
+  is_required Boolean  @default(false)
+  created_at  DateTime @default(now())
+  
+  @@map("custom_fields")
+}
+
+model SystemLog {
+  id          Int      @id @default(autoincrement())
+  user_id     Int?
+  user_name   String?
+  action_type String   // CREATE, UPDATE, DELETE, RESTORE
+  module      String   // Finance, Lead, etc.
+  old_value   Json?
+  new_value   Json?
+  panel       String?  // Admin Panel, etc.
+  created_at  DateTime @default(now())
+
+  @@map("system_logs")
+}
+
+model Trash {
+  id           Int      @id @default(autoincrement())
+  model_name   String   // Expense, Lead, etc.
+  record_id    Int
+  data         Json     // The complete deleted record
+  deleted_by   Int?
+  deleted_at   DateTime @default(now())
+
+  @@map("trash")
 }

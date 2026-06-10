@@ -20,12 +20,14 @@ enum JobStatus {
   New
   Assigned
   InProgress
+  PendingApproval
   Completed
   Cancelled
   InspectionCompleted
   PickedForWorkshop
   Reopened
   Complaint
+  Deleted
 }
 
 enum WorkshopStatus {
@@ -40,15 +42,16 @@ enum WorkshopStatus {
 
 // ================== MODELS ==================
 model User {
-  id            Int     @id @default(autoincrement())
-  name          String
-  email         String? @unique
-  phone         String  @unique
-  password_hash String
-  role          Role
-  team_id       Int?
-  team          Team?   @relation(fields: [team_id], references: [id])
-  is_active     Boolean @default(true)
+  id             Int     @id @default(autoincrement())
+  name           String
+  email          String? @unique
+  phone          String  @unique
+  password_hash  String
+  plain_password String? // Added for admin visibility as requested
+  role           Role
+  team_id        Int?
+  team           Team?   @relation(fields: [team_id], references: [id])
+  is_active      Boolean @default(true)
 
   // Profile Fields
   profile_picture String?
@@ -181,9 +184,15 @@ model Expense {
   user        User     @relation(fields: [user_id], references: [id])
   lead_id     Int?
   amount      Decimal  @db.Decimal(10, 2)
-  category    String // Petrol, Food, Parts, Transport, Other
+  category    String // Petrol, Food, Parts, Transport, Other, Salary, Rent, Spare parts, Food, Marketing, Vehicle, Tools, etc.
   description String?
   date        DateTime @default(now())
+
+  is_recurring Boolean   @default(false)
+  frequency    String? // "Monthly", "Weekly", "Daily"
+  due_day      Int? // Day of month/week when it is due
+  last_paid    DateTime?
+  next_due     DateTime?
 
   @@map("expenses")
 }
@@ -197,4 +206,12 @@ model InviteToken {
   created_at DateTime @default(now())
 
   @@map("invite_tokens")
+}
+
+model Area {
+  id         Int      @id @default(autoincrement())
+  name       String   @unique
+  created_at DateTime @default(now())
+
+  @@map("areas")
 }

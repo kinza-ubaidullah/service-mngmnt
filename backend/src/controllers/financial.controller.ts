@@ -1,5 +1,6 @@
 import type { Request, Response } from 'express';
 import { prisma } from '../utils/prisma';
+import { broadcastDataChange } from '../utils/broadcast';
 
 export const getTechnicianEarnings = async (req: Request, res: Response) => {
   try {
@@ -91,12 +92,14 @@ export const getFinancialChartData = async (req: Request, res: Response) => {
 
     const leads = await prisma.lead.findMany({
       where: {
-        status: 'Completed',
+        status: { in: ['Completed', 'PendingApproval', 'InspectionCompleted', 'PickedForWorkshop', 'InProgress'] },
         updated_at: { gte: last7Days }
       },
       select: {
         updated_at: true,
-        collected_amount: true
+        collected_amount: true,
+        total_amount: true,
+        status: true
       }
     });
 
@@ -124,7 +127,10 @@ export const getFinancialChartData = async (req: Request, res: Response) => {
 
     leads.forEach(l => {
         const dateStr = new Date(l.updated_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
-        if (chartMap[dateStr]) chartMap[dateStr].revenue += Number(l.collected_amount || 0);
+        if (chartMap[dateStr]) {
+          const amount = Number(l.collected_amount || 0) || Number(l.total_amount || 0);
+          chartMap[dateStr].revenue += amount;
+        }
     });
 
     expenses.forEach(e => {
@@ -158,7 +164,7 @@ export const getReinvestments = async (req: Request, res: Response) => {
 
 export const addReinvestment = async (req: Request, res: Response) => {
   try {
-    const { amount, category, description, date, is_recurring, frequency, due_day } = req.body;
+    const { amount, category, description, date, is_recurring, frequency, due_day, custom_data } = req.body;
     const user = (req as any).user;
 
     const data: any = {
@@ -167,7 +173,8 @@ export const addReinvestment = async (req: Request, res: Response) => {
       category,
       description,
       date: date ? new Date(date) : new Date(),
-      is_recurring: !!is_recurring
+      is_recurring: !!is_recurring,
+      custom_data: custom_data || null
     };
 
     if (is_recurring) {
@@ -190,6 +197,18 @@ export const addReinvestment = async (req: Request, res: Response) => {
       }
     });
 
+    await prisma.systemLog.create({
+      data: {
+        user_id: user.id,
+        user_name: user.name,
+        action_type: 'CREATE',
+        module: 'Finance',
+        new_value: expense as any,
+        panel: 'Admin / Manager Panel'
+      }
+    });
+
+    broadcastDataChange('finance', 'create');
     res.json({ message: is_recurring ? 'Recurring payment schedule added' : 'Expense recorded', expense });
   } catch (error) {
     console.error('Error recording expense:', error);
@@ -234,7 +253,8 @@ export const payRecurringSchedule = async (req: Request, res: Response) => {
         category: schedule.category,
         description: `Recurring Payment for: ${schedule.description || schedule.category}`,
         date: new Date(),
-        is_recurring: false
+        is_recurring: false,
+        custom_data: schedule.custom_data ?? undefined
       }
     });
 
@@ -256,6 +276,19 @@ export const payRecurringSchedule = async (req: Request, res: Response) => {
       }
     });
 
+    await prisma.systemLog.create({
+      data: {
+        user_id: user.id,
+        user_name: user.name,
+        action_type: 'PAY_RECURRING',
+        module: 'Finance',
+        old_value: schedule as any,
+        new_value: { expense: newExpense, next_due: nextDue } as any,
+        panel: 'Admin / Manager Panel'
+      }
+    });
+
+    broadcastDataChange('finance', 'pay');
     res.json({ message: 'Recurring payment successfully registered', expense: newExpense });
   } catch (error) {
     console.error('Pay recurring error:', error);
@@ -266,11 +299,225 @@ export const payRecurringSchedule = async (req: Request, res: Response) => {
 export const deleteExpenseRecord = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+    const user = (req as any).user;
+
+    const expense = await prisma.expense.findUnique({ where: { id: Number(id) } });
+    if (!expense) return res.status(404).json({ message: 'Expense not found' });
+
+    // Move to Trash
+    await prisma.trash.create({
+      data: {
+        model_name: 'Expense',
+        record_id: expense.id,
+        data: expense as any,
+        deleted_by: user.id
+      }
+    });
+
     await prisma.expense.delete({
       where: { id: Number(id) }
     });
-    res.json({ message: 'Expense record deleted successfully' });
+
+    await prisma.systemLog.create({
+      data: {
+        user_id: user.id,
+        user_name: user.name,
+        action_type: 'DELETE_TO_TRASH',
+        module: 'Finance',
+        old_value: expense as any,
+        panel: 'Admin / Manager Panel'
+      }
+    });
+
+    broadcastDataChange('finance', 'delete');
+    broadcastDataChange('system', 'delete');
+    res.json({ message: 'Expense record moved to Trash' });
   } catch (error) {
     res.status(500).json({ message: 'Error deleting expense record' });
+  }
+};
+
+export const updateExpenseRecord = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const user = (req as any).user;
+    const { amount, category, description, date, frequency, due_day, custom_data } = req.body;
+
+    const expense = await prisma.expense.findUnique({ where: { id: Number(id) } });
+    if (!expense) return res.status(404).json({ message: 'Expense not found' });
+
+    const updateData: any = {};
+    if (amount !== undefined) updateData.amount = Number(amount);
+    if (category !== undefined) updateData.category = category;
+    if (description !== undefined) updateData.description = description;
+    if (date !== undefined) updateData.date = new Date(date);
+    if (frequency !== undefined) updateData.frequency = frequency;
+    if (due_day !== undefined) updateData.due_day = Number(due_day);
+    if (custom_data !== undefined) updateData.custom_data = custom_data;
+
+    const updated = await prisma.expense.update({
+      where: { id: Number(id) },
+      data: updateData,
+      include: { user: { select: { name: true } } }
+    });
+
+    await prisma.systemLog.create({
+      data: {
+        user_id: user.id,
+        user_name: user.name,
+        action_type: 'UPDATE',
+        module: 'Finance',
+        old_value: expense as any,
+        new_value: updated as any,
+        panel: 'Admin / Manager Panel'
+      }
+    });
+
+    broadcastDataChange('finance', 'update');
+    res.json({ message: 'Expense updated', expense: updated });
+  } catch (error) {
+    console.error('Error updating expense:', error);
+    res.status(500).json({ message: 'Error updating expense record' });
+  }
+};
+
+const parseLeadPictures = (lead: {
+  item_pictures?: unknown;
+  house_image?: string | null;
+  product_image?: string | null;
+}): string[] => {
+  const pics: string[] = [];
+  if (lead.product_image) pics.push(lead.product_image);
+  if (lead.house_image) pics.push(lead.house_image);
+  if (lead.item_pictures) {
+    if (Array.isArray(lead.item_pictures)) {
+      pics.push(...(lead.item_pictures as string[]));
+    } else if (typeof lead.item_pictures === 'string') {
+      try {
+        const parsed = JSON.parse(lead.item_pictures);
+        if (Array.isArray(parsed)) pics.push(...parsed);
+      } catch { /* ignore */ }
+    }
+  }
+  return [...new Set(pics.filter(Boolean))];
+};
+
+const mapLeadDetail = (j: any) => ({
+  id: j.id,
+  lead_id: j.lead_id,
+  product_type: j.product_type,
+  status: j.status,
+  amount: Number(j.collected_amount || 0),
+  total_amount: Number(j.total_amount || 0),
+  agreed_amount: Number(j.agreed_amount || 0),
+  completed_at: j.updated_at,
+  visit_date: j.visit_date,
+  exact_address: j.exact_address,
+  problem_details: j.problem_details,
+  actual_problem: j.actual_problem,
+  repair_details: j.repair_details,
+  warranty_months: j.warranty_months,
+  pictures: parseLeadPictures(j),
+  customer: j.customer,
+  technician: j.technician
+});
+
+// Per-task revenue and per-expense breakdown for Finance summary cards
+export const getFinanceSummaryDetails = async (_req: Request, res: Response) => {
+  try {
+    const leadSelect = {
+      id: true,
+      lead_id: true,
+      product_type: true,
+      status: true,
+      collected_amount: true,
+      total_amount: true,
+      agreed_amount: true,
+      updated_at: true,
+      visit_date: true,
+      exact_address: true,
+      problem_details: true,
+      actual_problem: true,
+      repair_details: true,
+      warranty_months: true,
+      house_image: true,
+      product_image: true,
+      item_pictures: true,
+      customer: { select: { name: true, phone: true, area: true, exact_address: true, google_map_link: true } },
+      technician: { select: { id: true, name: true, phone: true } }
+    } as const;
+
+    const [revenueJobs, expenses] = await Promise.all([
+      prisma.lead.findMany({
+        where: { status: 'Completed' },
+        orderBy: { updated_at: 'desc' },
+        select: leadSelect
+      }),
+      prisma.expense.findMany({
+        where: { is_recurring: false },
+        orderBy: { date: 'desc' },
+        include: { user: { select: { id: true, name: true, role: true, phone: true } } }
+      })
+    ]);
+
+    const leadIds = expenses.map(e => e.lead_id).filter(Boolean) as number[];
+    const linkedLeads = leadIds.length
+      ? await prisma.lead.findMany({ where: { id: { in: leadIds } }, select: leadSelect })
+      : [];
+    const leadMap = Object.fromEntries(linkedLeads.map(l => [l.id, l]));
+
+    const revenueItems = revenueJobs
+      .filter(j => Number(j.collected_amount || 0) > 0)
+      .map(mapLeadDetail);
+
+    const expenseItems = expenses.map(e => {
+      const linked = e.lead_id ? leadMap[e.lead_id] : null;
+      const recipientMatch = (e.description || '').match(/Payment to ([^-]+)/i);
+      return {
+        id: e.id,
+        amount: Number(e.amount),
+        category: e.category,
+        description: e.description,
+        date: e.date,
+        recorded_by: e.user?.name || 'Unknown',
+        recorded_by_role: e.user?.role,
+        recorded_by_phone: e.user?.phone || null,
+        recipient_name: recipientMatch?.[1]?.trim() || null,
+        lead: linked ? mapLeadDetail(linked) : null,
+        custom_data: e.custom_data
+      };
+    });
+
+    const totalRevenue = revenueItems.reduce((s, j) => s + j.amount, 0);
+    const totalExpenses = expenseItems.reduce((s, e) => s + e.amount, 0);
+
+    const netLines = [
+      ...revenueItems.map(j => ({
+        type: 'revenue' as const,
+        label: j.lead_id,
+        sub: `${j.product_type} — ${j.customer?.name || 'Customer'} (Tech: ${j.technician?.name || 'N/A'})`,
+        amount: j.amount,
+        sign: '+' as const
+      })),
+      ...expenseItems.map(e => ({
+        type: 'expense' as const,
+        label: e.category,
+        sub: e.description || e.recipient_name || 'Expense',
+        amount: e.amount,
+        sign: '-' as const
+      }))
+    ];
+
+    res.json({
+      totalRevenue,
+      totalExpenses,
+      netBalance: totalRevenue - totalExpenses,
+      revenueItems,
+      expenseItems,
+      netLines
+    });
+  } catch (error) {
+    console.error('Finance summary details error:', error);
+    res.status(500).json({ message: 'Failed to fetch finance details' });
   }
 };

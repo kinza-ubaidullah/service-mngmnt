@@ -2,12 +2,21 @@ import React, { useState, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import type { RootState } from '../store';
 import { logout } from '../store/slices/authSlice';
-import { LogOut, PhoneCall, Plus, ClipboardList, MapPin, User, Settings, Loader2, Sparkles, Activity, X, Calendar, Wrench, Trash2, Info, Eye } from 'lucide-react';
+import { LogOut, PhoneCall, Plus, ClipboardList, MapPin, User, Settings, Loader2, Sparkles, Activity, X, Calendar, Wrench, Trash2, Info, Eye, UserMinus } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../services/api';
 import { motion, AnimatePresence } from 'framer-motion';
 import JobMap from '../components/JobMap';
+import PendingApprovalCard from '../components/PendingApprovalCard';
+import { matchesLeadSearch } from '../utils/leadHelpers';
+import GlobalLeadSearch from '../components/GlobalLeadSearch';
+import LeadPdfButtons from '../components/LeadPdfButtons';
+import { compressImageFile } from '../utils/compressImage';
+import RefreshButton from '../components/RefreshButton';
+import { useLiveData } from '../hooks/useLiveData';
+import { parseGoogleMapsCoords, resolveLocationFromLink } from '../utils/leadLocation';
 import WorkshopModule from '../components/WorkshopModule';
+import SettingsModule from '../components/SettingsModule';
 import { socket } from '../services/socket';
 
 interface Lead {
@@ -21,6 +30,8 @@ interface Lead {
   item_pictures?: string[] | any;
   created_at: string;
   visit_date?: string;
+  lat?: number;
+  lng?: number;
   customer: {
     name: string;
     phone: string;
@@ -53,8 +64,8 @@ const CallCenterDashboard = () => {
   const [areas, setAreas] = useState<{ id: number; name: string }[]>([]);
   const [fetchingLeads, setFetchingLeads] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [activeTab, setActiveTab] = useState<'operations' | 'workshop'>(() => (sessionStorage.getItem('callCenterActiveTab') as 'operations' | 'workshop') || 'operations');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'new' | 'assigned' | 'inprogress' | 'completed' | 'cancelled' | 'deleted' | 'delay'>('new');
+  const [activeTab, setActiveTab] = useState<'operations' | 'workshop' | 'settings'>(() => (sessionStorage.getItem('callCenterActiveTab') as 'operations' | 'workshop' | 'settings') || 'operations');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'new' | 'assigned' | 'inprogress' | 'completed' | 'cancelled' | 'deleted' | 'delay' | 'pending'>('new');
 
   useEffect(() => {
     sessionStorage.setItem('callCenterActiveTab', activeTab);
@@ -68,11 +79,17 @@ const CallCenterDashboard = () => {
     customer_area: '',
     exact_address: '',
     google_map_link: '',
-    product_type: 'Fridge',
+    product_type: 'Washing Machine',
+    payment_confirmed: false,
+    agreed_amount: '',
     problem_details: '',
     house_image: '',
     item_pictures: [] as string[],
+    lat: null as number | null,
+    lng: null as number | null,
   });
+  const [locationPreview, setLocationPreview] = useState<string | null>(null);
+  const [resolvingLocation, setResolvingLocation] = useState(false);
 
   // Assign Modal States
   const [assignModal, setAssignModal] = useState<{ isOpen: boolean; lead: Lead | null }>({ isOpen: false, lead: null });
@@ -90,22 +107,27 @@ const CallCenterDashboard = () => {
     product_type: '', 
     problem_details: '',
     house_image: '',
-    item_pictures: [] as string[]
+    item_pictures: [] as string[],
+    lat: null as number | null,
+    lng: null as number | null,
   });
+  const [editLocationPreview, setEditLocationPreview] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
 
   // Customer Insights
   const [customerInsight, setCustomerInsight] = useState<any>(null);
+  const [areaSearch, setAreaSearch] = useState('');
 
   // Fetch Data
-  const fetchLeads = async () => {
+  const fetchLeads = async (opts?: { silent?: boolean }) => {
     try {
+      if (!opts?.silent) setFetchingLeads(true);
       const res = await api.get('/leads');
       setLeads(res.data.leads);
     } catch (error) {
       toast.error('Failed to load leads');
     } finally {
-      setFetchingLeads(false);
+      if (!opts?.silent) setFetchingLeads(false);
     }
   };
 
@@ -117,6 +139,12 @@ const CallCenterDashboard = () => {
       toast.error('Failed to load technicians');
     }
   };
+
+  const refreshAll = async (opts?: { silent?: boolean }) => {
+    await Promise.all([fetchLeads(opts), fetchTechnicians()]);
+  };
+
+  const { refresh, refreshing } = useLiveData(['leads', 'workshop', 'all'], () => refreshAll({ silent: true }));
 
   const fetchAreas = async () => {
     try {
@@ -149,17 +177,47 @@ const CallCenterDashboard = () => {
 
     return () => {
       socket.off('tech_location_changed');
-      socket.disconnect();
     };
   }, []);
+
+  const applyMapLinkToForm = async <T extends { lat: number | null; lng: number | null }>(
+    link: string,
+    setter: React.Dispatch<React.SetStateAction<T>>,
+    previewSetter: React.Dispatch<React.SetStateAction<string | null>>
+  ) => {
+    if (!link.trim()) {
+      previewSetter(null);
+      setter((prev) => ({ ...prev, lat: null, lng: null }));
+      return;
+    }
+    const direct = parseGoogleMapsCoords(link);
+    if (direct) {
+      setter((prev) => ({ ...prev, lat: direct[0], lng: direct[1] }));
+      previewSetter(`📍 Exact location: ${direct[0].toFixed(5)}, ${direct[1].toFixed(5)}`);
+      return;
+    }
+    setResolvingLocation(true);
+    const resolved = await resolveLocationFromLink(link);
+    setResolvingLocation(false);
+    if (resolved) {
+      setter((prev) => ({ ...prev, lat: resolved.lat, lng: resolved.lng }));
+      previewSetter(`📍 Exact location: ${resolved.lat.toFixed(5)}, ${resolved.lng.toFixed(5)}`);
+    } else {
+      previewSetter('⚠ Paste full Google Maps link for exact pin location');
+      setter((prev) => ({ ...prev, lat: null, lng: null }));
+    }
+  };
 
   // Handlers
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
-    setFormData({ ...formData, [name]: value });
+    setFormData((prev) => ({ ...prev, [name]: value }));
 
     if (name === 'customer_phone' && value.length >= 10) {
       handleCustomerLookup(value);
+    }
+    if (name === 'google_map_link') {
+      applyMapLinkToForm(value, setFormData, setLocationPreview);
     }
   };
 
@@ -189,16 +247,32 @@ const CallCenterDashboard = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!formData.customer_name.trim() || !formData.customer_phone.trim() || !formData.customer_area.trim()) {
+      toast.error('Please fill customer name, phone and area');
+      return;
+    }
     setLoading(true);
     try {
-      await api.post('/leads', formData);
+      const payload = {
+        ...formData,
+        customer_name: formData.customer_name.trim(),
+        customer_phone: formData.customer_phone.trim(),
+        customer_area: formData.customer_area.trim(),
+        google_map_link: formData.google_map_link?.trim() || '',
+        house_image: formData.house_image || '',
+        item_pictures: formData.item_pictures || [],
+        agreed_amount: formData.payment_confirmed ? formData.agreed_amount : '',
+      };
+      await api.post('/leads', payload);
       toast.success('Lead created successfully!');
       setFormData({
-        customer_name: '', customer_phone: '', customer_area: '', exact_address: '', google_map_link: '', product_type: 'Fridge', problem_details: '', house_image: '', item_pictures: [],
+        customer_name: '', customer_phone: '', customer_area: '', exact_address: '', google_map_link: '', product_type: 'Washing Machine', problem_details: '', house_image: '', item_pictures: [], payment_confirmed: false, agreed_amount: '', lat: null, lng: null,
       });
+      setLocationPreview(null);
       fetchLeads();
     } catch (error: any) {
-      toast.error(error.response?.data?.message || 'Error creating lead');
+      const msg = error.response?.data?.message || error.response?.data?.detail || 'Error creating lead';
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
@@ -222,12 +296,13 @@ const CallCenterDashboard = () => {
     }
   };
 
+  const isGlobalSearch = searchTerm.trim().length > 0;
+
   const filteredLeads = leads.filter(lead => {
-    const matchesSearch = lead.lead_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      lead.customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      lead.customer.phone.includes(searchTerm);
-      
-    if (!matchesSearch) return false;
+    if (!matchesLeadSearch(lead, searchTerm)) return false;
+
+    // Search across all sections — ignore active tab filter
+    if (isGlobalSearch) return true;
 
     if (statusFilter === 'new') {
       return lead.status === 'New';
@@ -243,6 +318,8 @@ const CallCenterDashboard = () => {
       return lead.status === 'Deleted';
     } else if (statusFilter === 'delay') {
       return lead.status === 'Assigned' && lead.visit_date && new Date(lead.visit_date) < new Date();
+    } else if (statusFilter === 'pending') {
+      return lead.status === 'PendingApproval';
     } else if (statusFilter === 'all') {
       return lead.status !== 'Deleted'; // Hide deleted in general history
     }
@@ -271,8 +348,15 @@ const CallCenterDashboard = () => {
       product_type: lead.product_type || 'Fridge',
       problem_details: lead.problem_details || '',
       house_image: lead.house_image || '',
-      item_pictures: lead.item_pictures || []
+      item_pictures: lead.item_pictures || [],
+      lat: lead.lat ?? null,
+      lng: lead.lng ?? null,
     });
+    if (lead.lat != null && lead.lng != null) {
+      setEditLocationPreview(`📍 Exact location: ${Number(lead.lat).toFixed(5)}, ${Number(lead.lng).toFixed(5)}`);
+    } else {
+      setEditLocationPreview(null);
+    }
   };
 
   const handleEditSubmit = async (e: React.FormEvent) => {
@@ -289,6 +373,27 @@ const CallCenterDashboard = () => {
     } finally {
       setEditing(false);
     }
+  };
+
+  const handleUnassign = async (lead: Lead, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    if (!window.confirm(`Unassign ${lead.lead_id}?`)) return;
+    try {
+      await api.patch(`/leads/${lead.id}/unassign`);
+      toast.success('Lead unassigned');
+      fetchLeads();
+    } catch {
+      toast.error('Failed to unassign');
+    }
+  };
+
+  const handleGlobalSearch = () => {
+    const q = searchTerm.trim();
+    if (!q) return;
+    setActiveTab('operations');
+    const match = leads.find((l) => matchesLeadSearch(l, q));
+    if (match) toast.success(`Found: ${match.lead_id}`);
+    else toast.error('No lead found');
   };
 
   const handleDelete = async (id: number) => {
@@ -342,9 +447,22 @@ const CallCenterDashboard = () => {
           >
             Workshop Management
           </button>
+          <button 
+            onClick={() => setActiveTab('settings')} 
+            className={`px-6 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${activeTab === 'settings' ? 'bg-indigo-500 text-white shadow-lg' : 'text-slate-400 hover:text-slate-200'}`}
+          >
+            <Settings size={16} /> Settings
+          </button>
         </div>
         
-        <div className="flex items-center gap-6">
+        <div className="flex items-center gap-4">
+          <GlobalLeadSearch
+            value={searchTerm}
+            onChange={(v) => { setSearchTerm(v); if (v.trim()) setActiveTab('operations'); }}
+            onSubmit={handleGlobalSearch}
+            placeholder="Search lead ID (any tab)..."
+            className="w-48 hidden lg:block"
+          />
           <div className="hidden md:flex items-center gap-3 bg-white/5 px-4 py-2 rounded-full border border-white/5">
             <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)]"></div>
             <span className="text-sm font-medium text-slate-300">Online</span>
@@ -366,6 +484,8 @@ const CallCenterDashboard = () => {
       <main className="flex-1 flex flex-col p-3 lg:p-6 md:p-8 max-w-[1800px] w-full mx-auto relative z-10">
         {activeTab === 'workshop' ? (
           <WorkshopModule />
+        ) : activeTab === 'settings' ? (
+          <SettingsModule />
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-8 flex-1">
             <motion.div initial={{ x: -20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} transition={{ delay: 0.1 }} className="lg:col-span-4 flex flex-col h-full">
@@ -394,24 +514,42 @@ const CallCenterDashboard = () => {
                         <input required type="tel" name="customer_phone" value={formData.customer_phone} onChange={handleChange} className="w-full bg-slate-950/50 text-white px-4 py-3 rounded-xl border border-white/10 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all duration-300" placeholder="Enter phone number" />
                       </div>
                       <div className="group relative">
-                        <label className="block text-xs font-bold text-slate-500 mb-2 pl-1 uppercase tracking-wider">Area Name</label>
-                        <select 
-                          required 
-                          name="customer_area" 
-                          value={formData.customer_area} 
-                          onChange={handleChange} 
-                          className="w-full bg-slate-950/50 text-white px-4 py-3 rounded-xl border border-white/10 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all duration-300"
-                        >
-                          <option value="" disabled>-- Select Area --</option>
-                          {areas.map(area => (
-                            <option key={area.id} value={area.name}>{area.name}</option>
+                        <label className="block text-xs font-bold text-slate-500 mb-2 pl-1 uppercase tracking-wider">Area (Search)</label>
+                        <input
+                          required
+                          list="area-options"
+                          name="customer_area"
+                          value={formData.customer_area}
+                          onChange={(e) => { setAreaSearch(e.target.value); handleChange(e); }}
+                          className="w-full bg-slate-950/50 text-white px-4 py-3 rounded-xl border border-white/10 focus:border-indigo-500 outline-none"
+                          placeholder="Type to search area e.g. Makkah..."
+                        />
+                        <datalist id="area-options">
+                          {areas.filter(a => !areaSearch || a.name.toLowerCase().includes(areaSearch.toLowerCase())).map(area => (
+                            <option key={area.id} value={area.name} />
                           ))}
-                          {areas.length === 0 && <option value="Unknown">No areas configured</option>}
-                        </select>
+                        </datalist>
                       </div>
+                      <div className="flex items-center justify-between bg-slate-950/50 px-4 py-3 rounded-xl border border-white/10">
+                        <div>
+                          <p className="text-sm font-bold text-white">Payment Confirmed on Call?</p>
+                          <p className="text-[11px] text-slate-500">Customer agreed price before visit</p>
+                        </div>
+                        <button type="button" onClick={() => setFormData({ ...formData, payment_confirmed: !formData.payment_confirmed })}
+                          className={`w-12 h-6 rounded-full relative transition-all ${formData.payment_confirmed ? 'bg-emerald-500' : 'bg-slate-700'}`}>
+                          <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${formData.payment_confirmed ? 'left-7' : 'left-1'}`} />
+                        </button>
+                      </div>
+                      {formData.payment_confirmed && (
+                        <input type="number" name="agreed_amount" value={formData.agreed_amount} onChange={handleChange}
+                          placeholder="Agreed Amount (PKR)" required
+                          className="w-full bg-slate-950/50 text-white px-4 py-3 rounded-xl border border-emerald-500/30 outline-none" />
+                      )}
                       <div className="group relative">
                         <label className="block text-xs font-bold text-slate-500 mb-2 pl-1 uppercase tracking-wider">Home Location Link (Google Maps)</label>
-                        <input type="url" name="google_map_link" value={formData.google_map_link} onChange={handleChange} className="w-full bg-slate-950/50 text-white px-4 py-3 rounded-xl border border-white/10 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all duration-300" placeholder="Google map URL" />
+                        <input type="url" name="google_map_link" value={formData.google_map_link} onChange={handleChange} className="w-full bg-slate-950/50 text-white px-4 py-3 rounded-xl border border-white/10 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all duration-300" placeholder="Paste Google Maps link for exact location" />
+                        {resolvingLocation && <p className="text-[10px] text-amber-400 font-bold pl-1 mt-1">Resolving location from link...</p>}
+                        {locationPreview && !resolvingLocation && <p className="text-[10px] text-emerald-400 font-bold pl-1 mt-1">{locationPreview}</p>}
                       </div>
                       <div className="group relative">
                         <label className="block text-xs font-bold text-slate-500 mb-2 pl-1">House Picture</label>
@@ -422,13 +560,11 @@ const CallCenterDashboard = () => {
                             className="w-full bg-slate-950/50 text-slate-400 text-xs px-4 py-3 rounded-xl border border-white/10 outline-none file:mr-4 file:py-1 file:px-3 file:rounded-full file:border-0 file:text-[10px] file:font-bold file:bg-indigo-500/20 file:text-indigo-400 hover:file:bg-indigo-500/30 transition-all cursor-pointer" 
                             onChange={async (e) => {
                               const file = e.target.files?.[0];
-                              if (file) {
-                                const reader = new FileReader();
-                                reader.onloadend = () => {
-                                  setFormData({...formData, house_image: reader.result as string});
-                                };
-                                reader.readAsDataURL(file);
-                              }
+                              if (!file) return;
+                              try {
+                                const compressed = await compressImageFile(file);
+                                setFormData(prev => ({ ...prev, house_image: compressed }));
+                              } catch { toast.error('Failed to process house image'); }
                             }}
                           />
                           {formData.house_image && (
@@ -448,15 +584,11 @@ const CallCenterDashboard = () => {
                             className="w-full bg-slate-950/50 text-slate-400 text-xs px-4 py-3 rounded-xl border border-white/10 outline-none file:mr-4 file:py-1 file:px-3 file:rounded-full file:border-0 file:text-[10px] file:font-bold file:bg-indigo-500/20 file:text-indigo-400 hover:file:bg-indigo-500/30 transition-all cursor-pointer" 
                             onChange={async (e) => {
                               const files = Array.from(e.target.files || []);
-                              const base64Promises = files.map(file => {
-                                  return new Promise((resolve) => {
-                                    const reader = new FileReader();
-                                    reader.onloadend = () => resolve(reader.result as string);
-                                    reader.readAsDataURL(file);
-                                  });
-                              });
-                              const results = await Promise.all(base64Promises);
-                              setFormData({...formData, item_pictures: results as string[]});
+                              if (!files.length) return;
+                              try {
+                                const results = await Promise.all(files.map(f => compressImageFile(f)));
+                                setFormData(prev => ({ ...prev, item_pictures: [...prev.item_pictures, ...results] }));
+                              } catch { toast.error('Failed to process item pictures'); }
                             }}
                           />
                           {formData.item_pictures.length > 0 && (
@@ -469,6 +601,7 @@ const CallCenterDashboard = () => {
                       <div className="group relative">
                         <label className="block text-xs font-bold text-slate-500 mb-2 pl-1 uppercase tracking-wider">Appliance Type</label>
                         <select required name="product_type" value={formData.product_type} onChange={handleChange} className="w-full bg-slate-950/50 text-white px-4 py-3 rounded-xl border border-white/10 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all duration-300">
+                          <option value="Washing Machine">🧺 Washing Machine</option>
                           <option value="Fridge">❄️ Refrigerator / Fridge</option>
                           <option value="AC">💨 Air Conditioner</option>
                           <option value="WashingMachine">🧺 Washing Machine</option>
@@ -495,8 +628,16 @@ const CallCenterDashboard = () => {
             <motion.div initial={{ x: 20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} transition={{ delay: 0.2 }} className="lg:col-span-8 flex flex-col h-full gap-4">
               
               {/* JobMap Section */}
-              <div className="bg-slate-900/60 backdrop-blur-xl rounded-3xl border border-white/10 overflow-hidden shadow-2xl p-2 h-[350px] shrink-0">
-                <JobMap leads={leads} technicians={technicians} onAssign={openAssignModal} showOnlyUnassigned={statusFilter === 'new'} />
+              <div className="bg-slate-900/60 backdrop-blur-xl rounded-3xl border border-white/10 overflow-hidden shadow-2xl shrink-0">
+                <div className="px-4 py-3 border-b border-white/5 flex justify-between items-center">
+                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                    <MapPin size={16} className="text-indigo-400" /> Live Map
+                  </h3>
+                  <RefreshButton onClick={refresh} loading={refreshing || fetchingLeads} />
+                </div>
+                <div className="p-2 h-[380px]">
+                  <JobMap leads={leads} technicians={technicians} onAssign={openAssignModal} showOnlyUnassigned={statusFilter === 'new'} />
+                </div>
               </div>
 
               <div className="bg-slate-900/60 backdrop-blur-xl rounded-3xl border border-white/10 overflow-hidden flex flex-col flex-1 min-h-[450px] shadow-2xl">
@@ -506,9 +647,10 @@ const CallCenterDashboard = () => {
                     <h2 className="text-lg font-bold text-white">Live Operations Feed</h2>
                   </div>
                   <div className="flex items-center gap-3">
+                    <RefreshButton onClick={refresh} loading={refreshing || fetchingLeads} />
                     <input 
                       type="text" 
-                      placeholder="Search leads..." 
+                      placeholder="Search all leads (ID, name, phone...)" 
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
                       className="bg-slate-950/50 border border-white/10 rounded-lg px-3 py-1.5 text-sm outline-none focus:border-indigo-500 text-white placeholder-slate-500 w-48"
@@ -526,6 +668,7 @@ const CallCenterDashboard = () => {
                       { id: 'new', label: 'Unassigned', count: leads.filter(l => l.status === 'New').length },
                       { id: 'assigned', label: 'Assigned', count: leads.filter(l => l.status === 'Assigned').length },
                       { id: 'inprogress', label: 'In Progress', count: leads.filter(l => l.status === 'InProgress').length },
+                      { id: 'pending', label: 'Pending Approval', count: leads.filter(l => l.status === 'PendingApproval').length },
                       { id: 'completed', label: 'Completed', count: leads.filter(l => l.status === 'Completed' || l.status === 'InspectionCompleted').length },
                       { id: 'cancelled', label: 'Cancelled', count: leads.filter(l => l.status === 'Cancelled').length },
                       { id: 'delay', label: 'Delayed', count: leads.filter(l => l.status === 'Assigned' && l.visit_date && new Date(l.visit_date) < new Date()).length },
@@ -545,8 +688,10 @@ const CallCenterDashboard = () => {
                       </button>
                     ))}
                   </div>
-                  <span className="text-xs text-slate-500 font-bold uppercase tracking-wider pl-2">
-                    Showing {filteredLeads.length} leads
+                  <span className={`text-xs font-bold uppercase tracking-wider pl-2 ${isGlobalSearch ? 'text-amber-400' : 'text-slate-500'}`}>
+                    {isGlobalSearch
+                      ? `Search: ${filteredLeads.length} lead${filteredLeads.length !== 1 ? 's' : ''} (all sections)`
+                      : `Showing ${filteredLeads.length} leads`}
                   </span>
                 </div>
 
@@ -559,12 +704,22 @@ const CallCenterDashboard = () => {
                         <ClipboardList size={48} className="text-slate-600" />
                       </motion.div>
                       <p className="text-xl font-medium text-slate-400">No leads found</p>
-                      <p className="text-sm mt-2 text-slate-600">Awaiting new dispatches or check active filters.</p>
+                      <p className="text-sm mt-2 text-slate-600">
+                        {isGlobalSearch ? 'No lead matches your search across all sections.' : 'Awaiting new dispatches or check active filters.'}
+                      </p>
                     </div>
                   ) : (
                     <div className="grid gap-3 p-4">
                       <AnimatePresence>
-                        {filteredLeads.map((lead, idx) => {
+                        {statusFilter === 'pending' ? (
+                          filteredLeads.length === 0 ? null : (
+                            <div className="space-y-4">
+                              {filteredLeads.map((lead) => (
+                                <PendingApprovalCard key={lead.id} lead={lead} canApprove onApproved={fetchLeads} />
+                              ))}
+                            </div>
+                          )
+                        ) : filteredLeads.map((lead, idx) => {
                           const isAssigned = lead.status === 'Assigned';
                           const isDeleted = lead.status === 'Deleted';
                           return (
@@ -665,6 +820,10 @@ const CallCenterDashboard = () => {
                                   )}
                                 </div>
 
+                                {!isDeleted && (
+                                  <LeadPdfButtons lead={lead} compact className="w-full justify-end" />
+                                )}
+
                                 <div className="flex w-full gap-1">
                                   {lead.status === 'New' ? (
                                     <button 
@@ -674,12 +833,23 @@ const CallCenterDashboard = () => {
                                       Assign
                                     </button>
                                   ) : !isDeleted && (
-                                    <button 
-                                      onClick={() => openAssignModal(lead)}
-                                      className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-bold py-1.5 rounded border border-white/5 transition-all"
-                                    >
-                                      Reassign
-                                    </button>
+                                    <>
+                                      <button 
+                                        onClick={() => openAssignModal(lead)}
+                                        className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-bold py-1.5 rounded border border-white/5 transition-all"
+                                      >
+                                        Reassign
+                                      </button>
+                                      {['Assigned', 'InProgress'].includes(lead.status) && (
+                                        <button
+                                          onClick={(e) => handleUnassign(lead, e)}
+                                          className="flex-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 text-[10px] font-bold py-1.5 rounded border border-amber-500/20 transition-all flex items-center justify-center gap-0.5"
+                                          title="Unassign"
+                                        >
+                                          <UserMinus size={12} /> Unassign
+                                        </button>
+                                      )}
+                                    </>
                                   )}
 
                                   <button 
@@ -825,15 +995,33 @@ const CallCenterDashboard = () => {
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-slate-400 mb-1">Area</label>
-                    <select required value={editForm.customer_area} onChange={e => setEditForm({...editForm, customer_area: e.target.value})} className="w-full bg-slate-950 text-white px-4 py-2.5 rounded-xl border border-white/10 focus:border-orange-500 outline-none">
-                      <option value="" disabled>-- Select Area --</option>
-                      {areas.map(area => <option key={area.id} value={area.name}>{area.name}</option>)}
-                      {areas.length === 0 && <option value={editForm.customer_area}>{editForm.customer_area}</option>}
-                    </select>
+                    <input
+                      required
+                      type="text"
+                      list="edit-area-options"
+                      value={editForm.customer_area}
+                      onChange={e => setEditForm({...editForm, customer_area: e.target.value})}
+                      className="w-full bg-slate-950 text-white px-4 py-2.5 rounded-xl border border-white/10 focus:border-orange-500 outline-none"
+                      placeholder="Type to search area..."
+                    />
+                    <datalist id="edit-area-options">
+                      {areas.map(area => <option key={area.id} value={area.name} />)}
+                    </datalist>
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-slate-400 mb-1">Google Map Link</label>
-                    <input type="url" value={editForm.google_map_link} onChange={e => setEditForm({...editForm, google_map_link: e.target.value})} className="w-full bg-slate-950 text-white px-4 py-2.5 rounded-xl border border-white/10 focus:border-orange-500 outline-none" />
+                    <input
+                      type="url"
+                      value={editForm.google_map_link}
+                      onChange={async (e) => {
+                        const link = e.target.value;
+                        setEditForm((prev) => ({ ...prev, google_map_link: link }));
+                        await applyMapLinkToForm(link, setEditForm, setEditLocationPreview);
+                      }}
+                      className="w-full bg-slate-950 text-white px-4 py-2.5 rounded-xl border border-white/10 focus:border-orange-500 outline-none"
+                      placeholder="Paste Google Maps link for exact location"
+                    />
+                    {editLocationPreview && <p className="text-[10px] text-emerald-400 font-bold mt-1">{editLocationPreview}</p>}
                   </div>
                   
                   {/* Current Image Previews */}

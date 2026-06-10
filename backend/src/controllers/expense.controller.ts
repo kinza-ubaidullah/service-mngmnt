@@ -1,5 +1,6 @@
 import type { Request, Response } from 'express';
 import { prisma } from '../utils/prisma.js';
+import { broadcastDataChange } from '../utils/broadcast';
 
 // Create a new expense (Technician action)
 export const createExpense = async (req: Request, res: Response) => {
@@ -17,6 +18,7 @@ export const createExpense = async (req: Request, res: Response) => {
       },
     });
 
+    broadcastDataChange('expenses', 'create');
     res.status(201).json({ message: 'Expense recorded successfully', expense });
   } catch (error) {
     console.error('Error creating expense:', error);

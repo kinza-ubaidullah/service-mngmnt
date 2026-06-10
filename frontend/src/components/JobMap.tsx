@@ -1,64 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import { useNavigate } from 'react-router-dom';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { User, MapPin, Wrench, ClipboardList, Maximize2, ExternalLink } from 'lucide-react';
-
-// ─── ICONS ───────────────────────────────────────────────────────────────────
-const unassignedIcon = L.divIcon({
-  className: 'custom-div-icon',
-  html: `
-    <div class="relative flex items-center justify-center">
-      <div class="absolute w-7 h-7 bg-amber-500/40 rounded-full animate-ping" style="animation-duration:1.8s;"></div>
-      <div class="w-5 h-5 bg-gradient-to-br from-amber-400 to-orange-600 rounded-full border-2 border-white shadow-lg shadow-orange-500/60 flex items-center justify-center text-[9px] text-white font-black">!</div>
-    </div>`,
-  iconSize: [28, 28],
-  iconAnchor: [14, 14],
-});
-
-const assignedIcon = L.divIcon({
-  className: 'custom-div-icon',
-  html: `
-    <div class="relative flex items-center justify-center">
-      <div class="w-5 h-5 bg-gradient-to-br from-indigo-400 to-blue-600 rounded-full border-2 border-white shadow-lg shadow-blue-500/50"></div>
-    </div>`,
-  iconSize: [22, 22],
-  iconAnchor: [11, 11],
-});
-
-const techIcon = L.divIcon({
-  className: 'custom-div-icon',
-  html: `
-    <div class="relative flex items-center justify-center">
-      <div class="absolute w-7 h-7 bg-emerald-500/30 rounded-full animate-pulse"></div>
-      <div class="w-5 h-5 bg-gradient-to-br from-emerald-400 to-teal-600 rounded-full border-2 border-white shadow-lg shadow-emerald-500/50 flex items-center justify-center">
-        <span class="w-2 h-2 bg-white rounded-full"></span>
-      </div>
-    </div>`,
-  iconSize: [28, 28],
-  iconAnchor: [14, 14],
-});
-
-// ─── HELPERS ─────────────────────────────────────────────────────────────────
-const getStableCoords = (lead: any): [number, number] => {
-  const baseLat = 31.5204;
-  const baseLng = 74.3587;
-  const idStr = String(lead.id || lead.lead_id || '');
-  let hash = 0;
-  for (let i = 0; i < idStr.length; i++) hash = idStr.charCodeAt(i) + ((hash << 5) - hash);
-  return [baseLat + ((hash & 0xFF) / 255) * 0.08 - 0.04, baseLng + (((hash >> 8) & 0xFF) / 255) * 0.08 - 0.04];
-};
-
-const openInGoogleMaps = (lead: any) => {
-  if (lead.customer?.google_map_link) {
-    window.open(lead.customer.google_map_link, '_blank');
-    return;
-  }
-  const [lat, lng] = getStableCoords(lead);
-  const query = encodeURIComponent(`${lead.customer?.area || ''} ${lead.exact_address || ''}`);
-  window.open(`https://www.google.com/maps/search/?api=1&query=${query}&center=${lat},${lng}`, '_blank');
-};
+import { DEFAULT_MAP_CENTER, getLeadCoords, openLeadInGoogleMaps } from '../utils/leadLocation';
+import { techIcon, getLeadMapIcon } from '../utils/mapIcons';
 
 const getPictures = (lead: any): string[] => {
   if (!lead.item_pictures) return [];
@@ -85,11 +32,31 @@ const MapResizer: React.FC<{ trigger: boolean }> = ({ trigger }) => {
   return null;
 };
 
+const MapAutoFit: React.FC<{ leads: any[]; technicians?: any[] }> = ({ leads, technicians = [] }) => {
+  const map = useMap();
+  const lastKey = useRef('');
+  useEffect(() => {
+    const points: [number, number][] = leads.map((l) => getLeadCoords(l));
+    technicians.forEach((t) => {
+      if (t.lat != null && t.lng != null) points.push([Number(t.lat), Number(t.lng)]);
+    });
+    const key = points.map((p) => p.join(',')).join('|');
+    if (key === lastKey.current || points.length === 0) return;
+    lastKey.current = key;
+    if (points.length === 1) {
+      map.setView(points[0], 15);
+    } else {
+      map.fitBounds(points as L.LatLngBoundsLiteral, { padding: [40, 40], maxZoom: 16 });
+    }
+  }, [leads, technicians, map]);
+  return null;
+};
+
 // ─── COMPONENT ───────────────────────────────────────────────────────────────
 const JobMap: React.FC<JobMapProps> = ({ leads, technicians = [], onAssign, showOnlyUnassigned = false }) => {
   const navigate = useNavigate();
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);
-  const center: [number, number] = [31.5204, 74.3587];
+  const center: [number, number] = DEFAULT_MAP_CENTER;
 
   const visibleLeads = leads.filter(l => {
     if (l.status === 'Deleted') return false;
@@ -131,6 +98,7 @@ const JobMap: React.FC<JobMapProps> = ({ leads, technicians = [], onAssign, show
         >
           {/* Force re-measure on fullscreen toggle */}
           <MapResizer trigger={false} />
+          <MapAutoFit leads={visibleLeads} technicians={technicians} />
           {/* Google Maps paid-style tiles */}
           <TileLayer
             attribution='&copy; <a href="https://maps.google.com">Google Maps</a>'
@@ -139,8 +107,8 @@ const JobMap: React.FC<JobMapProps> = ({ leads, technicians = [], onAssign, show
 
           {/* ── Lead Markers ── */}
           {visibleLeads.map((lead) => {
-            const pos = getStableCoords(lead);
-            const isNew = lead.status === 'New';
+            const pos = getLeadCoords(lead);
+            const isNew = lead.status === 'New' || lead.status === 'Complaint';
             const pics = getPictures(lead);
             const thumbSrc = pics[0] || lead.house_image || null;
 
@@ -148,7 +116,8 @@ const JobMap: React.FC<JobMapProps> = ({ leads, technicians = [], onAssign, show
               <Marker
                 key={`lead-${lead.id}`}
                 position={pos}
-                icon={isNew ? unassignedIcon : assignedIcon}
+                icon={getLeadMapIcon(lead.status)}
+                zIndexOffset={isNew ? 1000 : 0}
                 eventHandlers={{ mouseover: (e) => e.target.openPopup() }}
               >
                 <Popup className="custom-popup">
@@ -216,7 +185,7 @@ const JobMap: React.FC<JobMapProps> = ({ leads, technicians = [], onAssign, show
                       {/* Open full Google Maps window */}
                       <button
                         type="button"
-                        onClick={() => openInGoogleMaps(lead)}
+                        onClick={() => openLeadInGoogleMaps(lead)}
                         className="flex-1 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/20 text-[10px] font-black py-2 rounded-xl transition-all flex items-center justify-center gap-1.5"
                       >
                         <ExternalLink size={12} /> Open in Maps
@@ -301,6 +270,8 @@ const JobMap: React.FC<JobMapProps> = ({ leads, technicians = [], onAssign, show
         </div>
 
         <style>{`
+          @keyframes pin-ping { 75%, 100% { transform: scale(2); opacity: 0; } }
+          .unassigned-pin { z-index: 1000 !important; }
           .leaflet-container { background: #e5e7eb !important; }
           .custom-popup .leaflet-popup-content-wrapper,
           .tech-popup .leaflet-popup-content-wrapper {

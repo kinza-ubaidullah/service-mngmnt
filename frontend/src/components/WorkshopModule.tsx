@@ -1,29 +1,46 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Wrench, Clock, CheckCircle2, Truck, AlertCircle, RefreshCw, Trash2, CheckCircle, Info } from 'lucide-react';
+import LeadPdfButtons from './LeadPdfButtons';
 import api from '../services/api';
 import toast from 'react-hot-toast';
+import RefreshButton from './RefreshButton';
+import { useLiveData } from '../hooks/useLiveData';
 
-const WorkshopModule = () => {
+interface WorkshopModuleProps {
+  showGateInApproval?: boolean;
+  readOnly?: boolean;
+}
+
+const WorkshopModule: React.FC<WorkshopModuleProps> = ({ showGateInApproval = true, readOnly = false }) => {
   const [jobs, setJobs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedJobId, setExpandedJobId] = useState<number | null>(null);
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [technicians, setTechnicians] = useState<any[]>([]);
+  const [deliveryTech, setDeliveryTech] = useState<Record<number, string>>({});
 
-  const fetchWorkshopJobs = async () => {
+  const fetchWorkshopJobs = async (opts?: { silent?: boolean }) => {
     try {
-      setLoading(true);
-      const res = await api.get('/workshop/jobs');
+      if (!opts?.silent) setLoading(true);
+      const [res, techRes] = await Promise.all([
+        api.get(`/workshop/jobs${statusFilter !== 'all' ? `?status=${statusFilter}` : ''}`),
+        api.get('/users/technicians').catch(() => ({ data: { technicians: [] } }))
+      ]);
       setJobs(res.data.jobs);
+      setTechnicians(techRes.data.technicians || []);
     } catch (error) {
       toast.error('Failed to load workshop jobs');
     } finally {
-      setLoading(false);
+      if (!opts?.silent) setLoading(false);
     }
   };
 
+  const { refresh, refreshing } = useLiveData(['workshop', 'leads'], () => fetchWorkshopJobs({ silent: true }));
+
   useEffect(() => {
     fetchWorkshopJobs();
-  }, []);
+  }, [statusFilter]);
 
   const updateStatus = async (id: number, newStatus: string) => {
     try {
@@ -62,8 +79,26 @@ const WorkshopModule = () => {
   const pendingJobs = jobs.filter(j => j.status === 'WaitingForApproval');
   const activeJobs = jobs.filter(j => j.status !== 'WaitingForApproval' && j.status !== 'Delivered');
 
+  const assignDelivery = async (jobId: number) => {
+    const techId = deliveryTech[jobId];
+    if (!techId) return toast.error('Select a technician');
+    try {
+      await api.patch(`/workshop/jobs/${jobId}/assign-delivery`, { technician_id: techId });
+      toast.success('Delivery technician assigned');
+      fetchWorkshopJobs();
+    } catch { toast.error('Failed to assign delivery'); }
+  };
+
   return (
     <div className="space-y-6">
+      <div className="flex flex-wrap gap-2">
+        {['all', 'WaitingForApproval', 'Received', 'WorkStarted', 'WaitingForParts', 'Ready', 'Delivered'].map(s => (
+          <button key={s} onClick={() => setStatusFilter(s)}
+            className={`px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase border transition-all ${statusFilter === s ? 'bg-indigo-500 text-white border-indigo-500' : 'bg-white/5 text-slate-400 border-white/10'}`}>
+            {s === 'all' ? 'All' : s}
+          </button>
+        ))}
+      </div>
       {/* Header Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
@@ -84,8 +119,8 @@ const WorkshopModule = () => {
         ))}
       </div>
 
-      {/* 1. Pending Approval Section */}
-      {pendingJobs.length > 0 && (
+      {/* 1. Pending Approval Section (Call Center / Admin only) */}
+      {showGateInApproval && pendingJobs.length > 0 && (
         <motion.div 
           initial={{ opacity: 0, y: 15 }}
           animate={{ opacity: 1, y: 0 }}
@@ -95,9 +130,12 @@ const WorkshopModule = () => {
             <h2 className="text-lg font-black text-amber-400 flex items-center gap-2 uppercase tracking-wide">
               <AlertCircle size={20} /> Pending Call Center Approval ({pendingJobs.length})
             </h2>
-            <span className="text-xs text-amber-500 font-bold bg-amber-500/10 px-3 py-1 rounded-full border border-amber-500/20">
-              Needs Gate-In Check
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-amber-500 font-bold bg-amber-500/10 px-3 py-1 rounded-full border border-amber-500/20">
+                Needs Gate-In Check
+              </span>
+              <RefreshButton onClick={refresh} loading={refreshing} />
+            </div>
           </div>
 
           <div className="grid grid-cols-1 gap-4">
@@ -129,6 +167,7 @@ const WorkshopModule = () => {
                       </p>
                     )}
                   </div>
+                  <LeadPdfButtons lead={job.lead} compact />
                 </div>
 
                 <div className="flex items-center gap-2.5 shrink-0 self-end md:self-center">
@@ -167,9 +206,7 @@ const WorkshopModule = () => {
             <Wrench className="text-indigo-400" /> Active Workshop Inventory
           </h2>
           <div className="flex items-center gap-2">
-            <button onClick={fetchWorkshopJobs} className="text-indigo-400 hover:text-indigo-300 p-2 hover:bg-white/5 rounded-xl border border-white/5 transition-all">
-              <RefreshCw size={18} />
-            </button>
+            <RefreshButton onClick={refresh} loading={refreshing} />
           </div>
         </div>
 
@@ -220,8 +257,18 @@ const WorkshopModule = () => {
                         </span>
                       </td>
                       <td className="py-5 text-right" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-end gap-2">
-                          {job.status === 'Received' && (
+                        <div className="flex items-center justify-end gap-2 flex-wrap">
+                          {!readOnly && job.status === 'Ready' && (
+                            <div className="flex items-center gap-1">
+                              <select value={deliveryTech[job.id] || ''} onChange={e => setDeliveryTech({ ...deliveryTech, [job.id]: e.target.value })}
+                                className="bg-slate-950 text-white text-[10px] px-2 py-1 rounded-lg border border-white/10">
+                                <option value="">Assign delivery...</option>
+                                {technicians.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                              </select>
+                              <button onClick={() => assignDelivery(job.id)} className="text-[10px] bg-purple-500 text-white px-2 py-1 rounded-lg font-bold">Go</button>
+                            </div>
+                          )}
+                          {readOnly ? null : job.status === 'Received' && (
                             <button 
                               onClick={() => updateStatus(job.id, 'WorkStarted')}
                               className="p-2 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 rounded-xl border border-blue-500/20 transition-all"
@@ -230,7 +277,7 @@ const WorkshopModule = () => {
                               <Clock size={16} />
                             </button>
                           )}
-                          {(job.status === 'WorkStarted' || job.status === 'WaitingForParts') && (
+                          {!readOnly && (job.status === 'WorkStarted' || job.status === 'WaitingForParts') && (
                             <>
                               <button 
                                 onClick={() => updateStatus(job.id, job.status === 'WorkStarted' ? 'WaitingForParts' : 'WorkStarted')}
@@ -252,7 +299,7 @@ const WorkshopModule = () => {
                               </button>
                             </>
                           )}
-                          {job.status === 'Ready' && (
+                          {!readOnly && job.status === 'Ready' && (
                             <button 
                               onClick={() => updateStatus(job.id, 'Delivered')}
                               className="p-2 bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 rounded-xl border border-purple-500/20 transition-all"
@@ -261,7 +308,7 @@ const WorkshopModule = () => {
                               <Truck size={16} />
                             </button>
                           )}
-                          <button 
+                          {!readOnly && <button 
                             onClick={async () => {
                               if (window.confirm('Are you sure you want to remove this machine from workshop and return it back to technician?')) {
                                 try {
@@ -275,7 +322,7 @@ const WorkshopModule = () => {
                             title="Cancel / Delete Workshop Job"
                           >
                             <Trash2 size={16} />
-                          </button>
+                          </button>}
                         </div>
                       </td>
                     </tr>
@@ -321,6 +368,11 @@ const WorkshopModule = () => {
                                 </div>
                               </div>
 
+                              <div className="space-y-2">
+                                <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider">Documents</h4>
+                                <LeadPdfButtons lead={job.lead} />
+                              </div>
+
                               {/* Item Pictures Preview */}
                               {job.lead.item_pictures && job.lead.item_pictures.length > 0 && (
                                 <div className="space-y-2">
@@ -349,7 +401,11 @@ const WorkshopModule = () => {
             </tbody>
           </table>
           {activeJobs.length === 0 && (
-            <div className="text-center py-16 text-slate-500 italic">No approved workshop jobs in queue. Approve gate-ins above to add items here.</div>
+            <div className="text-center py-16 text-slate-500 italic">
+              {showGateInApproval
+                ? 'No approved workshop jobs in queue. Approve gate-ins above to add items here.'
+                : 'No workshop jobs in queue. Jobs appear here after call center gate-in approval.'}
+            </div>
           )}
         </div>
       </div>

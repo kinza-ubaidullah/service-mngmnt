@@ -6,6 +6,7 @@ import morgan from 'morgan';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import { prisma } from './utils/prisma';
+import { setSocketServer } from './utils/broadcast';
 
 dotenv.config();
 
@@ -21,6 +22,7 @@ const io = new Server(server, {
     credentials: true
   }
 });
+setSocketServer(io);
 
 app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:5173',
@@ -47,6 +49,10 @@ import expenseRoutes from './routes/expense.routes';
 import financialRoutes from './routes/financial.routes';
 import workshopRoutes from './routes/workshop.routes';
 import areaRoutes from './routes/area.routes';
+import systemRoutes from './routes/system.routes';
+import customFieldsRoutes from './routes/customFields.routes';
+import settlementRoutes from './routes/settlement.routes';
+import postRoutes from './routes/post.routes';
 
 // Support both prefixed and non-prefixed routes for maximum compatibility
 app.use(['/api/auth', '/auth'], authRoutes);
@@ -55,8 +61,12 @@ app.use(['/api/users', '/users'], userRoutes);
 app.use(['/api/dashboard', '/dashboard'], dashboardRoutes);
 app.use(['/api/expenses', '/expenses'], expenseRoutes);
 app.use(['/api/finance', '/finance'], financialRoutes);
+app.use(['/api/finance/custom-fields', '/finance/custom-fields'], customFieldsRoutes);
 app.use(['/api/workshop', '/workshop'], workshopRoutes);
 app.use(['/api/areas', '/areas'], areaRoutes);
+app.use(['/api/system', '/system'], systemRoutes);
+app.use(['/api/settlements', '/settlements'], settlementRoutes);
+app.use(['/api/posts', '/posts'], postRoutes);
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', message: 'Server is healthy' });

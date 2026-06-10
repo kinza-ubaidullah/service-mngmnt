@@ -1,42 +1,67 @@
 import React, { useState, useEffect } from 'react';
-import { ClipboardList, Search, Filter, Download, RotateCcw, Trash2, Clock, MapPin, Phone, User as UserIcon, X } from 'lucide-react';
+import { ClipboardList, Search, RotateCcw, Trash2, Clock, MapPin, Phone, User as UserIcon, X, UserPlus, UserMinus, Image } from 'lucide-react';
+import ImageZoomModal from './ImageZoomModal';
 import api from '../services/api';
 import toast from 'react-hot-toast';
 import { motion } from 'framer-motion';
-import { generateInvoicePDF } from '../utils/invoiceGenerator';
+import LeadPdfButtons from './LeadPdfButtons';
+import RefreshButton from './RefreshButton';
+import { matchesLeadSearch } from '../utils/leadHelpers';
+import { useLiveData } from '../hooks/useLiveData';
 
-const LeadsModule = () => {
+interface LeadsModuleProps {
+  externalSearch?: string;
+}
+
+const LeadsModule: React.FC<LeadsModuleProps> = ({ externalSearch }) => {
   const [leads, setLeads] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState(externalSearch || '');
   const [statusFilter, setStatusFilter] = useState('all');
   const [selectedLead, setSelectedLead] = useState<any>(null);
+  const [technicians, setTechnicians] = useState<any[]>([]);
+  const [assignModal, setAssignModal] = useState<{ open: boolean; lead: any }>({ open: false, lead: null });
+  const [assignForm, setAssignForm] = useState({ technician_id: '', visit_date: '' });
+  const [zoomImg, setZoomImg] = useState<string | null>(null);
 
-  const fetchData = async () => {
+  const getPictures = (lead: any) => {
+    if (!lead?.item_pictures) return [];
+    if (Array.isArray(lead.item_pictures)) return lead.item_pictures;
+    try { return JSON.parse(lead.item_pictures); } catch { return []; }
+  };
+
+  const fetchData = async (opts?: { silent?: boolean }) => {
     try {
-      setLoading(true);
-      const res = await api.get('/leads'); // Assuming this endpoint exists or I will create it
+      if (!opts?.silent) setLoading(true);
+      const [res, techRes] = await Promise.all([
+        api.get('/leads'),
+        api.get('/users/technicians').catch(() => ({ data: { technicians: [] } }))
+      ]);
       setLeads(res.data.leads || res.data);
+      setTechnicians(techRes.data.technicians || []);
     } catch (error) {
       toast.error('Failed to load leads');
     } finally {
-      setLoading(false);
+      if (!opts?.silent) setLoading(false);
     }
   };
+
+  const { refresh, refreshing } = useLiveData(['leads'], () => fetchData({ silent: true }));
 
   useEffect(() => {
     fetchData();
   }, []);
 
+  useEffect(() => {
+    if (externalSearch !== undefined) setSearchTerm(externalSearch);
+  }, [externalSearch]);
+
+  const isGlobalSearch = searchTerm.trim().length > 0;
+
   const filteredLeads = leads.filter(lead => {
-    const matchesSearch = 
-      lead.lead_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      lead.customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      lead.customer.phone.includes(searchTerm);
-    
-    const matchesStatus = statusFilter === 'all' || lead.status === statusFilter;
-    
-    return matchesSearch && matchesStatus;
+    if (!matchesLeadSearch(lead, searchTerm)) return false;
+    if (isGlobalSearch) return true;
+    return statusFilter === 'all' || lead.status === statusFilter;
   });
 
   const handleDelete = async (leadId: number, leadDisplayId: string) => {
@@ -47,6 +72,27 @@ const LeadsModule = () => {
         fetchData();
       } catch { toast.error('Failed to delete'); }
     }
+  };
+
+  const handleAssign = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!assignModal.lead) return;
+    try {
+      await api.patch(`/leads/${assignModal.lead.id}/assign`, assignForm);
+      toast.success('Lead assigned');
+      setAssignModal({ open: false, lead: null });
+      fetchData();
+    } catch { toast.error('Failed to assign'); }
+  };
+
+  const handleUnassign = async (lead: any, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!window.confirm(`Unassign ${lead.lead_id}?`)) return;
+    try {
+      await api.patch(`/leads/${lead.id}/unassign`);
+      toast.success('Lead unassigned');
+      fetchData();
+    } catch { toast.error('Failed to unassign'); }
   };
 
   const handleReopen = async (lead: any) => {
@@ -60,7 +106,7 @@ const LeadsModule = () => {
     }
   };
 
-  if (loading) return <div className="flex justify-center py-20"><div className="w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div></div>;
+  if (loading && leads.length === 0) return <div className="flex justify-center py-20"><div className="w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div></div>;
 
   return (
     <div className="space-y-6">
@@ -70,12 +116,13 @@ const LeadsModule = () => {
           <p className="text-slate-500 font-medium">Manage and track all customer service requests</p>
         </div>
         
-        <div className="flex flex-wrap gap-3 w-full md:w-auto">
+        <div className="flex flex-wrap gap-3 w-full md:w-auto items-center">
+          <RefreshButton onClick={refresh} loading={refreshing} />
           <div className="relative flex-1 md:w-64">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
             <input 
               type="text" 
-              placeholder="Search ID, Customer, Phone..."
+              placeholder="Search all leads (any section)..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full bg-slate-900 border border-white/5 rounded-xl py-2 pl-10 pr-4 text-sm text-white outline-none focus:border-indigo-500/50 transition-all"
@@ -102,6 +149,7 @@ const LeadsModule = () => {
           <table className="w-full text-left">
             <thead>
               <tr className="text-[10px] font-black text-slate-500 uppercase tracking-widest border-b border-white/5 bg-white/[0.02]">
+                <th className="px-8 py-5">Photo</th>
                 <th className="px-8 py-5">Lead Detail</th>
                 <th className="px-8 py-5">Customer info</th>
                 <th className="px-8 py-5">Status</th>
@@ -112,6 +160,14 @@ const LeadsModule = () => {
             <tbody className="divide-y divide-white/5">
               {filteredLeads.map((lead) => (
                 <tr key={lead.id} onClick={() => setSelectedLead(lead)} className="group hover:bg-white/[0.02] transition-colors cursor-pointer">
+                  <td className="px-8 py-6">
+                    {getPictures(lead)[0] ? (
+                      <img src={getPictures(lead)[0]} alt="" className="w-14 h-14 rounded-xl object-cover border border-white/10 cursor-pointer"
+                        onClick={(e) => { e.stopPropagation(); setZoomImg(getPictures(lead)[0]); }} />
+                    ) : (
+                      <div className="w-14 h-14 rounded-xl border border-dashed border-white/10 flex items-center justify-center text-slate-600"><Image size={16} /></div>
+                    )}
+                  </td>
                   <td className="px-8 py-6">
                     <div className="flex flex-col">
                       <span className="font-mono text-sm font-black text-indigo-400">{lead.lead_id}</span>
@@ -168,6 +224,18 @@ const LeadsModule = () => {
                   </td>
                   <td className="px-8 py-6 text-right">
                     <div className="flex items-center justify-end gap-2">
+                      {(lead.status === 'New' || lead.status === 'Assigned') && (
+                        <button onClick={(e) => { e.stopPropagation(); setAssignModal({ open: true, lead }); }}
+                          className="p-2 bg-white/5 hover:bg-blue-500/20 text-slate-400 hover:text-blue-400 rounded-xl border border-white/5" title="Assign">
+                          <UserPlus size={16} />
+                        </button>
+                      )}
+                      {lead.status === 'Assigned' && (
+                        <button onClick={(e) => handleUnassign(lead, e)}
+                          className="p-2 bg-white/5 hover:bg-amber-500/20 text-slate-400 hover:text-amber-400 rounded-xl border border-white/5" title="Unassign">
+                          <UserMinus size={16} />
+                        </button>
+                      )}
                       {lead.status === 'PendingApproval' && (
                         <button 
                           onClick={async (e) => { 
@@ -184,23 +252,17 @@ const LeadsModule = () => {
                           Approve
                         </button>
                       )}
+                      <div onClick={(e) => e.stopPropagation()}>
+                        <LeadPdfButtons lead={lead} compact />
+                      </div>
                       {lead.status === 'Completed' && (
-                        <>
-                          <button 
-                            onClick={(e) => { e.stopPropagation(); generateInvoicePDF(lead); }}
-                            className="p-2 bg-white/5 hover:bg-indigo-500/20 text-slate-400 hover:text-indigo-400 rounded-xl transition-all border border-white/5 hover:border-indigo-500/20"
-                            title="Download Invoice"
-                          >
-                            <Download size={16} />
-                          </button>
-                          <button 
-                            onClick={(e) => { e.stopPropagation(); handleReopen(lead); }}
-                            className="p-2 bg-white/5 hover:bg-amber-500/20 text-slate-400 hover:text-amber-400 rounded-xl transition-all border border-white/5 hover:border-amber-500/20"
-                            title="Reopen Job"
-                          >
-                            <RotateCcw size={16} />
-                          </button>
-                        </>
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); handleReopen(lead); }}
+                          className="p-2 bg-white/5 hover:bg-amber-500/20 text-slate-400 hover:text-amber-400 rounded-xl transition-all border border-white/5 hover:border-amber-500/20"
+                          title="Reopen Job"
+                        >
+                          <RotateCcw size={16} />
+                        </button>
                       )}
                       <button 
                         onClick={(e) => { e.stopPropagation(); handleDelete(lead.id, lead.lead_id); }}
@@ -351,14 +413,7 @@ const LeadsModule = () => {
                   Approve Job
                 </button>
               )}
-              {selectedLead.status === 'Completed' && (
-                <button 
-                  onClick={() => generateInvoicePDF(selectedLead)}
-                  className="px-6 py-3 bg-indigo-500 hover:bg-indigo-600 text-white font-black rounded-xl transition-all shadow-lg shadow-indigo-500/20 flex items-center gap-2"
-                >
-                  <Download size={18} /> Download Invoice
-                </button>
-              )}
+              <LeadPdfButtons lead={selectedLead} />
               <button onClick={() => setSelectedLead(null)} className="px-6 py-3 bg-white/5 hover:bg-white/10 text-white font-bold rounded-xl transition-all">
                 Close
               </button>
@@ -367,6 +422,25 @@ const LeadsModule = () => {
         </div>
       )}
 
+      {assignModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md">
+          <form onSubmit={handleAssign} className="bg-slate-900 border border-white/10 rounded-3xl p-8 w-full max-w-md space-y-4">
+            <h3 className="text-lg font-black text-white">Assign {assignModal.lead?.lead_id}</h3>
+            <select required value={assignForm.technician_id} onChange={e => setAssignForm({ ...assignForm, technician_id: e.target.value })}
+              className="w-full bg-slate-950 text-white px-4 py-3 rounded-xl border border-white/10">
+              <option value="">Select Technician</option>
+              {technicians.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+            <input type="date" value={assignForm.visit_date} onChange={e => setAssignForm({ ...assignForm, visit_date: e.target.value })}
+              className="w-full bg-slate-950 text-white px-4 py-3 rounded-xl border border-white/10" />
+            <div className="flex gap-3">
+              <button type="button" onClick={() => setAssignModal({ open: false, lead: null })} className="flex-1 py-3 bg-white/5 rounded-xl text-white font-bold">Cancel</button>
+              <button type="submit" className="flex-1 py-3 bg-indigo-500 rounded-xl text-white font-bold">Assign</button>
+            </div>
+          </form>
+        </div>
+      )}
+      <ImageZoomModal src={zoomImg} onClose={() => setZoomImg(null)} />
     </div>
   );
 };

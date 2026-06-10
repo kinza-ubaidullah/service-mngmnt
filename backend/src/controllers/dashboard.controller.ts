@@ -21,10 +21,15 @@ export const getAdminStats = async (req: Request, res: Response) => {
       })
     ]);
 
-    // Recent leads
+    // Recent operations — leads with meaningful activity, newest first
     const recentLeads = await prisma.lead.findMany({
-      take: 5,
-      orderBy: { created_at: 'desc' },
+      take: 12,
+      where: {
+        status: {
+          in: ['InspectionCompleted', 'PickedForWorkshop', 'Completed', 'PendingApproval', 'Assigned', 'InProgress', 'Reopened']
+        }
+      },
+      orderBy: { updated_at: 'desc' },
       include: {
         customer: true,
         technician: { select: { name: true } }

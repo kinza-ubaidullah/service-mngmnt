@@ -2,11 +2,16 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   DollarSign, TrendingDown, TrendingUp, Plus, Loader2, RefreshCw,
-  Trash2, CalendarClock, CheckCircle2, X, RotateCcw, AlertCircle,
-  Repeat, CreditCard, Banknote, ShoppingCart
+  Trash2, CalendarClock, CheckCircle2, X, AlertCircle,
+  Repeat, CreditCard, Banknote, ShoppingCart, Activity, Archive
 } from 'lucide-react';
 import api from '../services/api';
 import toast from 'react-hot-toast';
+import LogsModule from './LogsModule';
+import TrashModule from './TrashModule';
+import RefreshButton from './RefreshButton';
+import FinanceDetailModal from './FinanceDetailModal';
+import { useLiveData } from '../hooks/useLiveData';
 
 const CATEGORIES = [
   { value: 'Salary', label: '👷 Salary / Wages' },
@@ -43,16 +48,73 @@ const getDaysUntilDue = (nextDue: string) => {
   return Math.ceil(diff / (1000 * 3600 * 24));
 };
 
+const renderCustomFieldInput = (
+  field: any,
+  values: Record<string, any>,
+  setValues: React.Dispatch<React.SetStateAction<Record<string, any>>>
+) => {
+  const onChange = (val: string) => setValues(prev => ({ ...prev, [field.field_name]: val }));
+
+  if (field.field_type === 'Dropdown') {
+    return (
+      <select required={field.is_required} value={values[field.field_name] || ''} onChange={e => onChange(e.target.value)}
+        className="w-full bg-slate-950 text-white px-3 py-2.5 rounded-xl border border-white/10 outline-none focus:border-indigo-500 text-sm">
+        <option value="">-- Select --</option>
+        {(field.options || []).map((opt: string) => <option key={opt} value={opt}>{opt}</option>)}
+      </select>
+    );
+  }
+  if (field.field_type === 'File') {
+    return (
+      <input type="file" accept="image/*,.pdf" onChange={e => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => onChange(reader.result as string);
+        reader.readAsDataURL(file);
+      }} className="w-full bg-slate-950 text-white px-3 py-2 rounded-xl border border-white/10 text-sm file:mr-3 file:py-1 file:px-3 file:rounded-lg file:border-0 file:bg-indigo-500 file:text-white" />
+    );
+  }
+  return (
+    <input
+      type={field.field_type === 'Number' ? 'number' : field.field_type === 'Date' ? 'date' : 'text'}
+      required={field.is_required}
+      value={values[field.field_name] || ''}
+      onChange={e => onChange(e.target.value)}
+      className="w-full bg-slate-950 text-white px-3 py-2.5 rounded-xl border border-white/10 outline-none focus:border-indigo-500 text-sm"
+    />
+  );
+};
+
+const CustomDataBadges = ({ data }: { data: Record<string, any> | null }) => {
+  if (!data || Object.keys(data).length === 0) return null;
+  return (
+    <div className="flex flex-wrap gap-1.5 mt-2">
+      {Object.entries(data).map(([key, val]) => (
+        <span key={key} className="text-[10px] bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 px-2 py-0.5 rounded-lg font-bold">
+          {key}: {typeof val === 'string' && val.startsWith('data:') ? '📎 Attached' : String(val)}
+        </span>
+      ))}
+    </div>
+  );
+};
+
 const FinanceModule = () => {
-  const [activeTab, setActiveTab] = useState<'expenses' | 'recurring'>('expenses');
+  const [activeTab, setActiveTab] = useState<'expenses' | 'recurring' | 'logs' | 'trash'>('expenses');
   const [expenses, setExpenses] = useState<any[]>([]);
   const [schedules, setSchedules] = useState<any[]>([]);
   const [stats, setStats] = useState<any>(null);
   const [users, setUsers] = useState<any[]>([]);
+  const [customFields, setCustomFields] = useState<any[]>([]);
+  const [customDataValues, setCustomDataValues] = useState<Record<string, any>>({});
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [saving, setSaving] = useState(false);
   const [payingId, setPayingId] = useState<number | null>(null);
+  const [detailModal, setDetailModal] = useState<'revenue' | 'expenses' | 'net' | null>(null);
+  const [detailData, setDetailData] = useState<any>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailRefreshing, setDetailRefreshing] = useState(false);
 
   const [formData, setFormData] = useState({
     amount: '',
@@ -66,25 +128,29 @@ const FinanceModule = () => {
     recipient_name: ''
   });
 
-  const fetchData = async () => {
+  const fetchData = async (opts?: { silent?: boolean }) => {
     try {
-      setLoading(true);
-      const [expRes, recurRes, statsRes, usersRes] = await Promise.all([
+      if (!opts?.silent) setLoading(true);
+      const [expRes, recurRes, statsRes, usersRes, customRes] = await Promise.all([
         api.get('/finance/reinvestments'),
         api.get('/finance/recurring'),
         api.get('/dashboard/admin/stats'),
-        api.get('/users')
+        api.get('/users'),
+        api.get('/finance/custom-fields?module=RecurringPayment').catch(() => ({ data: { fields: [] } }))
       ]);
       setExpenses(expRes.data.reinvestments || []);
       setSchedules(recurRes.data.schedules || []);
       setStats(statsRes.data.stats || null);
       setUsers(usersRes.data.users || []);
+      setCustomFields(customRes.data.fields || []);
     } catch {
       toast.error('Failed to load financial data');
     } finally {
-      setLoading(false);
+      if (!opts?.silent) setLoading(false);
     }
   };
+
+  const { refresh, refreshing } = useLiveData(['finance', 'dashboard'], () => fetchData({ silent: true }));
 
   useEffect(() => { fetchData(); }, []);
 
@@ -96,7 +162,7 @@ const FinanceModule = () => {
     }
     setSaving(true);
     try {
-      const payload = { ...formData };
+      const payload = { ...formData, custom_data: formData.is_recurring ? customDataValues : null };
       if (formData.recipient_name) {
         payload.description = payload.description ? `${formData.recipient_name} - ${payload.description}` : `Payment to ${formData.recipient_name}`;
       }
@@ -104,6 +170,7 @@ const FinanceModule = () => {
       toast.success(formData.is_recurring ? '📅 Recurring schedule created!' : '✅ Expense recorded!');
       setShowModal(false);
       setFormData({ amount: '', category: 'Salary', description: '', date: new Date().toISOString().split('T')[0], is_recurring: false, frequency: 'Monthly', due_day: '1', recipient_id: '', recipient_name: '' });
+      setCustomDataValues({});
       fetchData();
     } catch (err: any) {
       toast.error(err.response?.data?.message || 'Failed to save');
@@ -113,12 +180,31 @@ const FinanceModule = () => {
   };
 
   const handleDelete = async (id: number) => {
-    if (!window.confirm('Delete this expense record?')) return;
+    if (!window.confirm('Move this record to Trash? You can restore it later.')) return;
     try {
       await api.delete(`/finance/reinvestments/${id}`);
-      toast.success('Deleted');
+      toast.success('Moved to Trash');
       fetchData();
     } catch { toast.error('Failed to delete'); }
+  };
+
+  const fetchDetailData = async (opts?: { silent?: boolean }) => {
+    try {
+      if (opts?.silent) setDetailRefreshing(true);
+      else setDetailLoading(true);
+      const res = await api.get('/finance/summary-details');
+      setDetailData(res.data);
+    } catch {
+      toast.error('Failed to load finance details');
+    } finally {
+      if (opts?.silent) setDetailRefreshing(false);
+      else setDetailLoading(false);
+    }
+  };
+
+  const openDetailModal = async (type: 'revenue' | 'expenses' | 'net') => {
+    setDetailModal(type);
+    await fetchDetailData();
   };
 
   const handlePayNow = async (schedule: any) => {
@@ -138,7 +224,7 @@ const FinanceModule = () => {
   const overdueSchedules = schedules.filter(s => getDaysUntilDue(s.next_due) <= 0);
   const upcomingSchedules = schedules.filter(s => getDaysUntilDue(s.next_due) > 0);
 
-  if (loading) return (
+  if (loading && expenses.length === 0 && schedules.length === 0) return (
     <div className="flex flex-col justify-center items-center h-96 gap-4">
       <RefreshCw className="animate-spin text-indigo-500" size={32} />
       <span className="text-sm font-bold text-slate-500 uppercase tracking-widest animate-pulse">Loading Financial Data...</span>
@@ -149,32 +235,38 @@ const FinanceModule = () => {
     <div className="space-y-6">
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0 }}
-          className="relative overflow-hidden bg-gradient-to-br from-indigo-600 to-blue-700 rounded-[2rem] p-7 text-white shadow-xl shadow-indigo-900/30">
+        <motion.button type="button" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0 }}
+          onClick={() => openDetailModal('revenue')}
+          className="relative overflow-hidden bg-gradient-to-br from-indigo-600 to-blue-700 rounded-[2rem] p-7 text-white shadow-xl shadow-indigo-900/30 text-left w-full cursor-pointer hover:scale-[1.02] hover:shadow-indigo-500/20 transition-all group">
           <div className="absolute -right-6 -bottom-6 w-32 h-32 bg-white/10 rounded-full blur-3xl" />
           <TrendingUp size={28} className="mb-3 opacity-80" />
           <p className="text-indigo-200 text-[11px] font-bold uppercase tracking-widest mb-1">Total Revenue</p>
           <h3 className="text-3xl font-black">PKR {revenue.toLocaleString()}</h3>
           <p className="text-indigo-200/70 text-xs mt-1">From all completed jobs</p>
-        </motion.div>
+          <p className="text-indigo-200/50 text-[10px] mt-2 font-bold uppercase tracking-wider opacity-0 group-hover:opacity-100 transition-opacity">Click for task-wise details →</p>
+        </motion.button>
 
-        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08 }}
-          className="relative overflow-hidden bg-gradient-to-br from-rose-500 to-red-600 rounded-[2rem] p-7 text-white shadow-xl shadow-red-900/30">
+        <motion.button type="button" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08 }}
+          onClick={() => openDetailModal('expenses')}
+          className="relative overflow-hidden bg-gradient-to-br from-rose-500 to-red-600 rounded-[2rem] p-7 text-white shadow-xl shadow-red-900/30 text-left w-full cursor-pointer hover:scale-[1.02] hover:shadow-rose-500/20 transition-all group">
           <div className="absolute -right-6 -bottom-6 w-32 h-32 bg-white/10 rounded-full blur-3xl" />
           <TrendingDown size={28} className="mb-3 opacity-80" />
           <p className="text-rose-200 text-[11px] font-bold uppercase tracking-widest mb-1">Total Expenses</p>
           <h3 className="text-3xl font-black">PKR {totalExpenses.toLocaleString()}</h3>
           <p className="text-rose-200/70 text-xs mt-1">{expenses.length} recorded expenses</p>
-        </motion.div>
+          <p className="text-rose-200/50 text-[10px] mt-2 font-bold uppercase tracking-wider opacity-0 group-hover:opacity-100 transition-opacity">Click for expense details →</p>
+        </motion.button>
 
-        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.16 }}
-          className={`relative overflow-hidden bg-gradient-to-br ${net >= 0 ? 'from-emerald-500 to-teal-600 shadow-emerald-900/30' : 'from-rose-700 to-red-800 shadow-red-900/30'} rounded-[2rem] p-7 text-white shadow-xl`}>
+        <motion.button type="button" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.16 }}
+          onClick={() => openDetailModal('net')}
+          className={`relative overflow-hidden bg-gradient-to-br ${net >= 0 ? 'from-emerald-500 to-teal-600 shadow-emerald-900/30' : 'from-rose-700 to-red-800 shadow-red-900/30'} rounded-[2rem] p-7 text-white shadow-xl text-left w-full cursor-pointer hover:scale-[1.02] transition-all group`}>
           <div className="absolute -right-6 -bottom-6 w-32 h-32 bg-white/10 rounded-full blur-3xl" />
           <Banknote size={28} className="mb-3 opacity-80" />
           <p className="text-white/70 text-[11px] font-bold uppercase tracking-widest mb-1">Net Balance</p>
           <h3 className="text-3xl font-black">PKR {Math.abs(net).toLocaleString()}</h3>
           <p className="text-white/60 text-xs mt-1">{net < 0 ? '⚠️ Expenses exceed revenue' : '✅ Revenue - Expenses'}</p>
-        </motion.div>
+          <p className="text-white/40 text-[10px] mt-2 font-bold uppercase tracking-wider opacity-0 group-hover:opacity-100 transition-opacity">Click for full breakdown →</p>
+        </motion.button>
       </div>
 
       {/* Recurring Overdue Alert */}
@@ -193,19 +285,26 @@ const FinanceModule = () => {
 
       {/* Tabs + Add Button */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div className="flex bg-slate-900/60 border border-white/5 rounded-2xl p-1 gap-1">
-          {(['expenses', 'recurring'] as const).map(tab => (
-            <button key={tab} onClick={() => setActiveTab(tab)}
-              className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${activeTab === tab ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-500/20' : 'text-slate-400 hover:text-white'}`}>
-              {tab === 'expenses' ? <ShoppingCart size={15} /> : <Repeat size={15} />}
-              {tab === 'expenses' ? 'All Expenses' : `Recurring Schedules ${schedules.length > 0 ? `(${schedules.length})` : ''}`}
+        <div className="flex flex-wrap bg-slate-900/60 border border-white/5 rounded-2xl p-1 gap-1">
+          {([
+            { id: 'expenses' as const, label: 'All Expenses', icon: ShoppingCart },
+            { id: 'recurring' as const, label: `Recurring ${schedules.length > 0 ? `(${schedules.length})` : ''}`, icon: Repeat },
+            { id: 'logs' as const, label: 'Logs', icon: Activity },
+            { id: 'trash' as const, label: 'Trash', icon: Archive },
+          ]).map(tab => (
+            <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+              className={`px-4 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${activeTab === tab.id ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-500/20' : 'text-slate-400 hover:text-white'}`}>
+              <tab.icon size={15} /> {tab.label}
             </button>
           ))}
         </div>
-        <button onClick={() => setShowModal(true)}
-          className="bg-indigo-500 hover:bg-indigo-600 active:scale-95 text-white px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 transition-all shadow-lg shadow-indigo-500/20">
-          <Plus size={16} /> Add {formData.is_recurring ? 'Schedule' : 'Expense'}
-        </button>
+        <div className="flex items-center gap-2">
+          <RefreshButton onClick={refresh} loading={refreshing} />
+          <button onClick={() => setShowModal(true)}
+            className="bg-indigo-500 hover:bg-indigo-600 active:scale-95 text-white px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 transition-all shadow-lg shadow-indigo-500/20">
+            <Plus size={16} /> Add {formData.is_recurring ? 'Schedule' : 'Expense'}
+          </button>
+        </div>
       </div>
 
       {/* EXPENSES TAB */}
@@ -271,6 +370,7 @@ const FinanceModule = () => {
                       <div>
                         <p className="font-black text-white">{s.category}</p>
                         <p className="text-xs text-slate-400 mt-0.5">{s.description || 'No description'}</p>
+                        <CustomDataBadges data={s.custom_data} />
                         <p className="text-[11px] text-rose-400 font-bold mt-1">
                           {Math.abs(getDaysUntilDue(s.next_due))} days OVERDUE · {s.frequency}
                         </p>
@@ -309,6 +409,7 @@ const FinanceModule = () => {
                         <div>
                           <p className="font-black text-white">{s.category}</p>
                           <p className="text-xs text-slate-400 mt-0.5">{s.description || 'No description'}</p>
+                          <CustomDataBadges data={s.custom_data} />
                           <p className={`text-[11px] font-bold mt-1 ${days <= 3 ? 'text-amber-400' : 'text-slate-500'}`}>
                             Due in {days} day{days !== 1 ? 's' : ''} · {s.frequency}
                             {s.last_paid && ` · Last paid: ${new Date(s.last_paid).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}`}
@@ -336,9 +437,18 @@ const FinanceModule = () => {
           {schedules.length === 0 && (
             <div className="text-center py-20 text-slate-600 italic text-sm">
               No recurring schedules. Add one using the "Add Expense" button and toggle "Recurring Payment".
+              <p className="mt-2 text-xs text-slate-500">Custom fields can be configured in Settings → Finance Custom Fields.</p>
             </div>
           )}
         </div>
+      )}
+
+      {activeTab === 'logs' && (
+        <LogsModule moduleFilter="Finance" title="Finance Activity Logs" />
+      )}
+
+      {activeTab === 'trash' && (
+        <TrashModule modelFilter="Expense" title="Finance Trash" />
       )}
 
       {/* Add Expense Modal */}
@@ -415,23 +525,40 @@ const FinanceModule = () => {
 
                 {/* Recurring Options */}
                 {formData.is_recurring && (
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">Frequency</label>
-                      <select value={formData.frequency} onChange={e => setFormData({ ...formData, frequency: e.target.value })}
-                        className="w-full bg-slate-950 text-white px-3 py-2.5 rounded-xl border border-white/10 outline-none focus:border-indigo-500 text-sm">
-                        <option value="Monthly">Monthly</option>
-                        <option value="Weekly">Weekly</option>
-                      </select>
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">Frequency</label>
+                        <select value={formData.frequency} onChange={e => setFormData({ ...formData, frequency: e.target.value })}
+                          className="w-full bg-slate-950 text-white px-3 py-2.5 rounded-xl border border-white/10 outline-none focus:border-indigo-500 text-sm">
+                          <option value="Monthly">Monthly</option>
+                          <option value="Weekly">Weekly</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">
+                          {formData.frequency === 'Weekly' ? 'Day of Week (1=Mon)' : 'Day of Month'}
+                        </label>
+                        <input type="number" min="1" max={formData.frequency === 'Weekly' ? 7 : 28} value={formData.due_day}
+                          onChange={e => setFormData({ ...formData, due_day: e.target.value })}
+                          className="w-full bg-slate-950 text-white px-3 py-2.5 rounded-xl border border-white/10 outline-none focus:border-indigo-500 text-sm" />
+                      </div>
                     </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">
-                        {formData.frequency === 'Weekly' ? 'Day of Week (1=Mon)' : 'Day of Month'}
-                      </label>
-                      <input type="number" min="1" max={formData.frequency === 'Weekly' ? 7 : 28} value={formData.due_day}
-                        onChange={e => setFormData({ ...formData, due_day: e.target.value })}
-                        className="w-full bg-slate-950 text-white px-3 py-2.5 rounded-xl border border-white/10 outline-none focus:border-indigo-500 text-sm" />
-                    </div>
+                    
+                    {/* Dynamic Custom Fields */}
+                    {customFields.length > 0 && (
+                      <div className="pt-2 border-t border-white/10 space-y-3">
+                        <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Additional Fields</p>
+                        {customFields.map((field: any) => (
+                          <div key={field.id}>
+                            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">
+                              {field.field_name}{field.is_required ? ' *' : ''}
+                            </label>
+                            {renderCustomFieldInput(field, customDataValues, setCustomDataValues)}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -451,6 +578,17 @@ const FinanceModule = () => {
           </div>
         )}
       </AnimatePresence>
+
+      {detailModal && (
+        <FinanceDetailModal
+          type={detailModal}
+          data={detailData}
+          loading={detailLoading}
+          onClose={() => setDetailModal(null)}
+          onRefresh={() => fetchDetailData({ silent: true })}
+          refreshing={detailRefreshing}
+        />
+      )}
     </div>
   );
 };

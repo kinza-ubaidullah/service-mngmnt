@@ -6,31 +6,71 @@ import {
   LogOut, Wrench, MapPin, Clock, ClipboardCheck, 
   ChevronRight, CheckCircle2, Package, Wallet, Plus,
   Loader2, Sparkles, X, CreditCard, Info, User, TrendingDown, History, Download,
-  AlertCircle, Search, Filter, Activity, Truck, RefreshCw
+  AlertCircle, Search, Filter, Activity, Truck, RefreshCw, Settings, Camera
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../services/api';
 import { motion, AnimatePresence } from 'framer-motion';
 import { generateInvoicePDF } from '../utils/invoiceGenerator';
+import { generateInspectionReportPDF } from '../utils/inspectionReportGenerator';
+import { generateWorkshopPickupPDF } from '../utils/workshopPickupGenerator';
+import SettingsModule from '../components/SettingsModule';
+import TechnicianWorkshopView from '../components/TechnicianWorkshopView';
+import ImageZoomModal from '../components/ImageZoomModal';
+import LeadHistoryModal from '../components/LeadHistoryModal';
 import { socket } from '../services/socket';
+import { getLeadPictures, formatPKR, getFinalAmount, matchesLeadSearch } from '../utils/leadHelpers';
+import { parseGoogleMapsCoords } from '../utils/leadLocation';
+import RefreshButton from '../components/RefreshButton';
+import VoiceNoteRecorder from '../components/VoiceNoteRecorder';
+import { useLiveData } from '../hooks/useLiveData';
+import { compressImageFile } from '../utils/compressImage';
 
 interface Lead {
   id: number;
   lead_id: string;
   status: string;
   product_type: string;
-  problem_details: string;
+  problem_details?: string;
+  actual_problem?: string;
+  repair_details?: string;
   created_at: string;
   visit_date: string;
+  exact_address?: string;
   item_pictures?: string[];
+  house_image?: string;
+  agreed_amount?: number;
+  total_amount?: number;
+  collected_amount?: number;
+  warranty_months?: number;
+  lat?: number;
+  lng?: number;
   customer: {
     name: string;
     phone: string;
     area: string;
-    exact_address: string;
+    exact_address?: string;
     google_map_link?: string;
   };
 }
+
+const JOB_FILTERS = [
+  { id: 'active', label: 'Active' },
+  { id: 'new', label: 'New' },
+  { id: 'complaint', label: 'Complaint' },
+  { id: 'pending', label: 'Pending' },
+  { id: 'completed', label: 'Completed' },
+  { id: 'all', label: 'All' },
+] as const;
+
+const matchesJobFilter = (job: Lead, filter: string) => {
+  if (filter === 'active') return !['Completed', 'PickedForWorkshop', 'PendingApproval', 'Cancelled', 'Deleted'].includes(job.status);
+  if (filter === 'new') return job.status === 'Assigned' || job.status === 'InProgress';
+  if (filter === 'complaint') return job.status === 'Complaint' || job.status === 'Reopened';
+  if (filter === 'pending') return job.status === 'PendingApproval';
+  if (filter === 'completed') return job.status === 'Completed' || job.status === 'PickedForWorkshop' || job.status === 'InspectionCompleted';
+  return true;
+};
 
 interface Expense {
   id: number;
@@ -48,16 +88,7 @@ const TechnicianDashboard = () => {
 
   console.log('Tech Auth State:', { isAuthenticated, role: user?.role });
 
-  if (!isAuthenticated || !user) {
-    return (
-      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-center">
-        <Loader2 className="text-emerald-500 animate-spin mb-4" size={40} />
-        <p className="text-slate-400 font-bold tracking-widest uppercase text-xs">Authenticating Technician...</p>
-      </div>
-    );
-  }
-
-  const [activeTab, setActiveTab] = useState<'tasks' | 'history' | 'wallet' | 'workshop'>(() => (sessionStorage.getItem('techActiveTab') as 'tasks' | 'history' | 'wallet' | 'workshop') || 'tasks');
+  const [activeTab, setActiveTab] = useState<'tasks' | 'history' | 'wallet' | 'workshop' | 'settings'>(() => (sessionStorage.getItem('techActiveTab') as 'tasks' | 'history' | 'wallet' | 'workshop' | 'settings') || 'tasks');
   const [jobs, setJobs] = useState<Lead[]>([]);
   const [workshopJobs, setWorkshopJobs] = useState<any[]>([]);
 
@@ -70,7 +101,22 @@ const TechnicianDashboard = () => {
   const [jobSearch, setJobSearch] = useState('');
   const [selectedJob, setSelectedJob] = useState<Lead | null>(null);
   const [outcomeModalOpen, setOutcomeModalOpen] = useState(false);
-  
+  const [outcomeData, setOutcomeData] = useState({
+    status: 'Completed',
+    actual_problem: '',
+    repair_details: '',
+    total_amount: '',
+    collected_amount: '',
+    warranty_months: '3'
+  });
+  const [outcomePictures, setOutcomePictures] = useState<string[]>([]);
+  const [zoomImg, setZoomImg] = useState<string | null>(null);
+  const [jobFilter, setJobFilter] = useState<string>('active');
+  const [voiceNote, setVoiceNote] = useState<string>('');
+  const [outcomeLoading, setOutcomeLoading] = useState(false);
+  const [historyLead, setHistoryLead] = useState<Lead | null>(null);
+  const [walletDetail, setWalletDetail] = useState<any>(null);
+
   // Wallet State
   const [walletSummary, setWalletSummary] = useState<any>(null);
   const [earningsSummary, setEarningsSummary] = useState<any>(null);
@@ -105,39 +151,52 @@ const TechnicianDashboard = () => {
     return R * c;
   };
 
-  const getDistanceDisplay = (mapLink?: string) => {
-    if (!mapLink || !user?.lat || !user?.lng) return null;
-    const match = mapLink.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
-    if (match) {
-      const lat = parseFloat(match[1]);
-      const lng = parseFloat(match[2]);
-      const dist = calculateDistance(user.lat, user.lng, lat, lng);
-      return `${dist.toFixed(1)} km away`;
+  const getDistanceDisplay = (job: Lead) => {
+    if (!user?.lat || !user?.lng) return null;
+    let lat: number | null = job.lat ?? null;
+    let lng: number | null = job.lng ?? null;
+    if (lat == null || lng == null) {
+      const parsed = parseGoogleMapsCoords(job.customer?.google_map_link);
+      if (parsed) { lat = parsed[0]; lng = parsed[1]; }
     }
-    return null;
+    if (lat == null || lng == null) return null;
+    const dist = calculateDistance(user.lat, user.lng, lat, lng);
+    return `${dist.toFixed(1)} km away`;
   };
 
-  const fetchJobs = async () => {
+  const fetchJobs = async (opts?: { silent?: boolean }) => {
     try {
+      if (!opts?.silent) setLoading(true);
       const res = await api.get('/leads/technician/my-jobs');
       setJobs(res.data.leads || []);
     } catch (error) {
       toast.error('Failed to load your jobs');
     } finally {
-      setLoading(false);
+      if (!opts?.silent) setLoading(false);
     }
   };
 
+  const refreshTasks = async (opts?: { silent?: boolean }) => {
+    await Promise.all([fetchJobs(opts), fetchWalletData()]);
+  };
+
+  const { refresh: refreshTasksBtn, refreshing: tasksRefreshing } = useLiveData(
+    ['leads', 'workshop', 'expenses', 'settlements'],
+    () => refreshTasks({ silent: true })
+  );
+
   const fetchWalletData = async () => {
     try {
-      const [summaryRes, expensesRes, earningsRes] = await Promise.all([
+      const [summaryRes, expensesRes, earningsRes, settlementRes] = await Promise.all([
         api.get('/expenses/wallet-summary'),
         api.get('/expenses/my-expenses'),
-        api.get('/finance/my-summary')
+        api.get('/finance/my-summary'),
+        user?.id ? api.get(`/settlements/${user.id}`).catch(() => ({ data: null })) : Promise.resolve({ data: null }),
       ]);
       setWalletSummary(summaryRes.data.summary || { balance: 0, totalCollected: 0, totalSpent: 0 });
       setExpenses(expensesRes.data.expenses || []);
       setEarningsSummary(earningsRes.data || { commission: 0, rate: 0 });
+      setWalletDetail(settlementRes.data);
     } catch (error) {
       console.error('Wallet fetch error', error);
     }
@@ -153,6 +212,8 @@ const TechnicianDashboard = () => {
   };
 
   useEffect(() => {
+    if (!isAuthenticated || !user?.id) return;
+
     fetchJobs();
     fetchWalletData();
     fetchWorkshopJobs();
@@ -193,15 +254,52 @@ const TechnicianDashboard = () => {
       if (watchId !== null) {
         navigator.geolocation.clearWatch(watchId);
       }
-      socket.disconnect();
     };
-  }, [user?.id]);
+  }, [user?.id, isAuthenticated]);
 
-  const filteredJobs = jobs.filter(job => 
-    job.lead_id.toLowerCase().includes(jobSearch.toLowerCase()) ||
-    (job.customer?.name || '').toLowerCase().includes(jobSearch.toLowerCase()) ||
-    (job.customer?.phone || '').includes(jobSearch)
-  );
+  const buildWalletTimeline = () => {
+    const entries: {
+      id: string;
+      date: Date;
+      title: string;
+      subtitle: string;
+      amount: number;
+      type: 'income' | 'expense' | 'pending' | 'received';
+    }[] = [];
+
+    (walletDetail?.jobs || walletDetail?.completedJobs || []).forEach((j: any) => {
+      entries.push({
+        id: `job-${j.id}`,
+        date: new Date(j.completed_at || j.updated_at || Date.now()),
+        title: j.lead_id,
+        subtitle: `${j.customer?.name || 'Customer'} • ${j.product_type || 'Job'}${j.is_settled ? ' • Paid to Admin' : ' • Pending Return'}`,
+        amount: Number(j.amount ?? j.collected_amount ?? 0),
+        type: j.is_settled ? 'received' : 'pending',
+      });
+    });
+
+    expenses.forEach((exp) => {
+      entries.push({
+        id: `exp-${exp.id}`,
+        date: new Date(exp.date || exp.created_at || Date.now()),
+        title: exp.category || 'Expense',
+        subtitle: exp.description || 'Recorded expense',
+        amount: Number(exp.amount || 0),
+        type: 'expense',
+      });
+    });
+
+    return entries.sort((a, b) => b.date.getTime() - a.date.getTime());
+  };
+
+  const walletTimeline = buildWalletTimeline();
+
+  const isGlobalSearch = jobSearch.trim().length > 0;
+  const filteredJobs = jobs.filter(job => {
+    if (!matchesLeadSearch(job, jobSearch)) return false;
+    if (isGlobalSearch) return true;
+    return matchesJobFilter(job, jobFilter);
+  });
 
   const updateWorkshopStatus = async (jobId: number, status: string) => {
     try {
@@ -218,19 +316,36 @@ const TechnicianDashboard = () => {
     e.preventDefault();
     if (!selectedJob) return;
     
-    setLoading(true);
+    setOutcomeLoading(true);
     try {
-      await api.patch(`/leads/${selectedJob.id}/outcome`, outcomeData);
-      toast.success('Job outcome updated!');
+      const compressedPics = outcomePictures.length > 0
+        ? await Promise.all(outcomePictures.map(async (pic) => {
+            if (!pic.startsWith('data:image')) return pic;
+            try {
+              const res = await fetch(pic);
+              const blob = await res.blob();
+              const file = new File([blob], 'photo.jpg', { type: 'image/jpeg' });
+              return compressImageFile(file, 1000, 0.75);
+            } catch { return pic; }
+          }))
+        : undefined;
+      await api.patch(`/leads/${selectedJob.id}/outcome`, {
+        ...outcomeData,
+        item_pictures: compressedPics,
+        voice_note: voiceNote || undefined
+      });
+      toast.success('Job outcome submitted for approval!');
       setOutcomeModalOpen(false);
       setSelectedJob(null);
+      resetOutcomeForm();
       fetchJobs();
       fetchWalletData();
       fetchWorkshopJobs();
     } catch (error: any) {
-      toast.error(error.response?.data?.message || 'Update failed');
+      const msg = error.response?.data?.error || error.response?.data?.message || 'Update failed';
+      toast.error(msg);
     } finally {
-      setLoading(false);
+      setOutcomeLoading(false);
     }
   };
 
@@ -289,15 +404,28 @@ const TechnicianDashboard = () => {
     );
   };
 
-  // Outcome Form State
-  const [outcomeData, setOutcomeData] = useState({
-    status: 'Completed',
-    actual_problem: '',
-    repair_details: '',
-    total_amount: '',
-    collected_amount: '',
-    warranty_months: '3'
-  });
+  const openOutcomeModal = (job: Lead) => {
+    setSelectedJob(job);
+    setOutcomeData({ status: 'Completed', actual_problem: '', repair_details: '', total_amount: '', collected_amount: '', warranty_months: '3' });
+    setOutcomePictures([]);
+    setVoiceNote('');
+    setOutcomeModalOpen(true);
+  };
+
+  const resetOutcomeForm = () => {
+    setOutcomeData({ status: 'Completed', actual_problem: '', repair_details: '', total_amount: '', collected_amount: '', warranty_months: '3' });
+    setOutcomePictures([]);
+    setVoiceNote('');
+  };
+
+  if (!isAuthenticated || !user) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-center">
+        <Loader2 className="text-emerald-500 animate-spin mb-4" size={40} />
+        <p className="text-slate-400 font-bold tracking-widest uppercase text-xs">Authenticating Technician...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200 flex flex-col font-sans selection:bg-emerald-500/30">
@@ -379,15 +507,23 @@ const TechnicianDashboard = () => {
           >
             <Wallet size={18} /> Wallet
           </button>
+          <button 
+            onClick={() => setActiveTab('settings')}
+            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-[10px] sm:text-sm transition-all
+              ${activeTab === 'settings' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' : 'text-slate-500 hover:text-slate-300'}
+            `}
+          >
+            <Settings size={18} /> Settings
+          </button>
         </div>
 
         {activeTab === 'tasks' ? (
           <>
-            <div className="mb-6 flex flex-col sm:flex-row sm:justify-between sm:items-end gap-4">
+            <div className="mb-4 flex flex-col sm:flex-row sm:justify-between sm:items-end gap-4">
               <div>
-                <h2 className="text-2xl font-bold text-white">Active Tasks</h2>
+                <h2 className="text-2xl font-bold text-white">My Jobs</h2>
                 <p className="text-sm text-slate-400">
-                  {jobs.filter(j => j.status === 'Assigned' || j.status === 'InProgress' || j.status === 'Reopened').length} pending jobs
+                  {jobs.filter(j => matchesJobFilter(j, 'active')).length} active • {jobs.filter(j => j.status === 'Complaint' || j.status === 'Reopened').length} complaints
                 </p>
               </div>
               <div className="flex items-center gap-3 w-full sm:w-auto">
@@ -395,54 +531,63 @@ const TechnicianDashboard = () => {
                   <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-emerald-400 transition-colors" />
                   <input 
                     type="text" 
-                    placeholder="Search tasks..." 
+                    placeholder="Search lead ID, name, phone (any tab)..." 
                     value={jobSearch}
                     onChange={(e) => setJobSearch(e.target.value)}
                     className="w-full bg-slate-900/50 border border-white/5 rounded-xl py-2 pl-10 pr-4 text-xs outline-none focus:border-emerald-500/50 transition-all text-white"
                   />
                 </div>
-                <button onClick={fetchJobs} className="p-2 text-emerald-400 bg-slate-900/50 hover:bg-emerald-500/10 rounded-xl transition border border-white/5">
-                  <RefreshCw size={20} />
-                </button>
+                <RefreshButton onClick={refreshTasksBtn} loading={tasksRefreshing} className="text-emerald-400 hover:text-emerald-300" />
               </div>
+            </div>
+
+            <div className="flex flex-wrap gap-1 bg-slate-900/50 p-1 rounded-xl border border-white/5 mb-6">
+              {JOB_FILTERS.map((f) => (
+                <button
+                  key={f.id}
+                  type="button"
+                  onClick={() => setJobFilter(f.id)}
+                  className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
+                    jobFilter === f.id
+                      ? f.id === 'complaint' ? 'bg-red-500 text-white' : 'bg-emerald-500 text-white'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  {f.label}
+                  <span className="ml-1 opacity-70">({jobs.filter(j => matchesJobFilter(j, f.id)).length})</span>
+                </button>
+              ))}
             </div>
 
             {loading ? (
               <div className="h-64 flex justify-center items-center">
                 <Loader2 className="animate-spin text-emerald-500" size={32} />
               </div>
-            ) : jobs.filter(j => j.status !== 'Completed' && j.status !== 'PickedForWorkshop').length === 0 ? (
+            ) : filteredJobs.length === 0 ? (
               <div className="bg-slate-900/50 border border-white/5 rounded-3xl p-12 text-center">
                 <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-4">
                   <ClipboardCheck size={32} className="text-slate-600" />
                 </div>
-                <h3 className="text-white font-bold mb-1">All Caught Up!</h3>
-                <p className="text-sm text-slate-500">You have no active tasks at the moment.</p>
+                <h3 className="text-white font-bold mb-1">No Jobs Found</h3>
+                <p className="text-sm text-slate-500">No jobs match the current filter.</p>
               </div>
             ) : (
               <div className="space-y-4">
                 <AnimatePresence mode="popLayout">
-                  {filteredJobs
-                    .filter(j => j.status !== 'Completed' && j.status !== 'PickedForWorkshop')
-                    .map((job, idx) => (
+                  {filteredJobs.map((job, idx) => {
+                    const isComplaint = job.status === 'Complaint' || job.status === 'Reopened';
+                    const pics = getLeadPictures(job);
+                    return (
                     <motion.div
                       key={job.id}
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: idx * 0.1 }}
-                      onClick={() => { 
-                        setSelectedJob(job); 
-                        setOutcomeData({
-                          status: 'Completed',
-                          actual_problem: '',
-                          repair_details: '',
-                          total_amount: '',
-                          collected_amount: '',
-                          warranty_months: '3'
-                        });
-                        setOutcomeModalOpen(true); 
-                      }}
-                      className="bg-slate-900/60 backdrop-blur-xl border border-white/10 rounded-2xl p-5 hover:border-emerald-500/40 transition-all active:scale-[0.98] cursor-pointer group"
+                      className={`backdrop-blur-xl border rounded-2xl p-5 transition-all group ${
+                        isComplaint
+                          ? 'bg-red-950/30 border-red-500/40 shadow-lg shadow-red-500/10'
+                          : 'bg-slate-900/60 border-white/10 hover:border-emerald-500/40'
+                      }`}
                     >
                       <div className="flex justify-between items-start mb-4">
                         <div className="flex items-center gap-2">
@@ -450,10 +595,11 @@ const TechnicianDashboard = () => {
                             {job.lead_id}
                           </span>
                           <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase
-                            ${job.status === 'Assigned' ? 'bg-blue-500/20 text-blue-400' : 
+                            ${isComplaint ? 'bg-red-500/20 text-red-400' :
+                              job.status === 'Assigned' ? 'bg-blue-500/20 text-blue-400' : 
                               job.status === 'Completed' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-500/20 text-slate-400'}
                           `}>
-                            {job.status}
+                            {isComplaint ? 'COMPLAINT' : job.status}
                           </span>
                         </div>
                         <div className="flex items-center gap-2">
@@ -466,18 +612,45 @@ const TechnicianDashboard = () => {
                               <Download size={14} />
                             </button>
                           )}
+                          {job.status === 'InspectionCompleted' && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); generateInspectionReportPDF(job); }}
+                              className="p-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 rounded-lg transition-colors border border-amber-500/20"
+                              title="Inspection PDF"
+                            >
+                              <Download size={14} />
+                            </button>
+                          )}
+                          {job.status === 'PickedForWorkshop' && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); generateWorkshopPickupPDF(job); }}
+                              className="p-1.5 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 rounded-lg transition-colors border border-blue-500/20"
+                              title="Pickup PDF"
+                            >
+                              <Download size={14} />
+                            </button>
+                          )}
                           <ChevronRight size={16} className="text-slate-600 group-hover:text-emerald-400 group-hover:translate-x-1 transition-all" />
                         </div>
                       </div>
 
                       <h3 className="text-lg font-bold text-white mb-1">{job.customer?.name}</h3>
+                      <div className="text-sm text-amber-300/95 bg-amber-500/10 border border-amber-500/20 p-3 rounded-xl mb-3">
+                        <p className="text-[10px] font-black text-amber-500 uppercase tracking-wider mb-1">Customer Issue / Complaint</p>
+                        <p className="text-sm leading-relaxed whitespace-pre-wrap">{job.problem_details || 'No description provided.'}</p>
+                      </div>
+                      {(job.agreed_amount || getFinalAmount(job) > 0) && (
+                        <p className="text-xs text-emerald-400 font-bold mb-2">
+                          {job.agreed_amount ? `Agreed: ${formatPKR(job.agreed_amount)}` : `Amount: ${formatPKR(getFinalAmount(job))}`}
+                        </p>
+                      )}
                       <div className="flex flex-col gap-1 text-slate-400 text-sm mb-3">
                         <div className="flex items-center gap-2">
                           <MapPin size={14} className="text-emerald-500/70" />
                           <span className="truncate flex-1">{job.customer?.area}</span>
-                          {getDistanceDisplay(job.customer?.google_map_link) && (
+                          {getDistanceDisplay(job) && (
                             <span className="text-xs text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded">
-                              {getDistanceDisplay(job.customer?.google_map_link)}
+                              {getDistanceDisplay(job)}
                             </span>
                           )}
                         </div>
@@ -510,172 +683,207 @@ const TechnicianDashboard = () => {
                         </div>
                       </div>
 
-                      {/* Item Pictures Preview */}
-                      {job.item_pictures && job.item_pictures.length > 0 && (
+                      {pics.length > 0 && (
                         <div className="flex gap-2 mb-4 overflow-x-auto pb-1 custom-scrollbar">
-                           {job.item_pictures.map((pic: string, pIdx: number) => (
+                           {pics.map((pic: string, pIdx: number) => (
                              <img 
                                key={pIdx} 
                                src={pic} 
                                alt="item" 
-                               className="w-12 h-12 rounded-lg object-cover border border-white/10 shrink-0"
+                               className="w-14 h-14 rounded-lg object-cover border border-white/10 shrink-0 cursor-pointer hover:ring-2 hover:ring-emerald-500/50"
+                               onClick={() => setZoomImg(pic)}
                              />
                            ))}
                         </div>
                       )}
+
+                      <div className="flex gap-2 pt-2 border-t border-white/5">
+                        <button type="button" onClick={() => setHistoryLead(job)} className="flex-1 bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-bold py-2.5 rounded-xl border border-white/10 flex items-center justify-center gap-1">
+                          <History size={14} /> History
+                        </button>
+                        {!['Completed', 'PickedForWorkshop', 'PendingApproval'].includes(job.status) && (
+                          <button type="button" onClick={() => openOutcomeModal(job)} className="flex-1 bg-gradient-to-r from-emerald-500 to-teal-600 text-white text-xs font-bold py-2.5 rounded-xl flex items-center justify-center gap-1">
+                            <ClipboardCheck size={14} /> Update Outcome
+                          </button>
+                        )}
+                        {job.status === 'Completed' && (
+                          <button type="button" onClick={() => generateInvoicePDF(job)} className="flex-1 bg-indigo-500/10 text-indigo-400 text-xs font-bold py-2.5 rounded-xl border border-indigo-500/20 flex items-center justify-center gap-1">
+                            <Download size={14} /> Invoice
+                          </button>
+                        )}
+                        {job.status === 'InspectionCompleted' && (
+                          <button type="button" onClick={() => generateInspectionReportPDF(job)} className="flex-1 bg-amber-500/10 text-amber-400 text-xs font-bold py-2.5 rounded-xl border border-amber-500/20 flex items-center justify-center gap-1">
+                            <Download size={14} /> Inspection
+                          </button>
+                        )}
+                        {job.status === 'PickedForWorkshop' && (
+                          <button type="button" onClick={() => generateWorkshopPickupPDF(job)} className="flex-1 bg-blue-500/10 text-blue-400 text-xs font-bold py-2.5 rounded-xl border border-blue-500/20 flex items-center justify-center gap-1">
+                            <Download size={14} /> Pickup
+                          </button>
+                        )}
+                      </div>
                     </motion.div>
-                  ))}
+                    );
+                  })}
                 </AnimatePresence>
               </div>
             )}
           </>
         ) : activeTab === 'workshop' ? (
-          /* WORKSHOP TAB */
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
-            <div className="flex justify-between items-end mb-6">
-               <div>
-                  <h2 className="text-2xl font-bold text-white tracking-tight">Workshop Management</h2>
-                  <p className="text-sm text-slate-400">{workshopJobs.filter((j:any) => j.status !== 'Ready').length} units in progress</p>
-               </div>
-               <div className="bg-amber-500/10 text-amber-500 px-3 py-1.5 rounded-full border border-amber-500/20 text-[10px] font-black flex items-center gap-1.5">
-                 <Activity size={12} className="animate-pulse" /> LIVE
-               </div>
-            </div>
-
-            {/* Search & Filter */}
-            <div className="flex gap-2">
-              <div className="relative flex-1 group">
-                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-emerald-400 transition-colors" />
-                <input 
-                  type="text" 
-                  placeholder="Search Job ID or Name..."
-                  value={workshopSearch}
-                  onChange={(e) => setWorkshopSearch(e.target.value)}
-                  className="w-full bg-slate-900/50 border border-white/5 rounded-xl py-2.5 pl-10 pr-4 text-xs outline-none focus:border-emerald-500/50 transition-all"
-                />
-              </div>
-              <select 
-                value={workshopFilter}
-                onChange={(e) => setWorkshopFilter(e.target.value)}
-                className="bg-slate-900/50 border border-white/5 rounded-xl px-3 py-2.5 text-xs text-slate-300 outline-none focus:border-emerald-500/50"
-              >
-                <option value="all">All Status</option>
-                <option value="Received">Received</option>
-                <option value="WorkStarted">Repairing</option>
-                <option value="Ready">Ready</option>
-              </select>
-            </div>
-
-            {workshopJobs.length === 0 ? (
-               <div className="bg-slate-900/50 border border-white/5 rounded-3xl p-12 text-center">
-                 <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-4">
-                   <Package size={32} className="text-slate-600" />
-                 </div>
-                 <h3 className="text-white font-bold mb-1">Workshop Empty</h3>
-                 <p className="text-sm text-slate-500">No machines have been picked up for repair yet.</p>
-               </div>
-            ) : (
-              <div className="space-y-4">
-                {workshopJobs
-                  .filter(job => {
-                    const matchesSearch = job.lead.lead_id.toLowerCase().includes(workshopSearch.toLowerCase()) || 
-                                         job.lead.customer.name.toLowerCase().includes(workshopSearch.toLowerCase());
-                    const matchesFilter = workshopFilter === 'all' || job.status === workshopFilter;
-                    return matchesSearch && matchesFilter;
-                  })
-                  .map((job:any, idx:number) => {
-                  const days = Math.floor((new Date().getTime() - new Date(job.received_date).getTime()) / (1000 * 3600 * 24)) + 1;
-                  return (
-                    <motion.div 
-                      key={job.id}
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: idx * 0.05 }}
-                      className="bg-slate-900/60 backdrop-blur-xl border border-white/10 rounded-2xl p-5 hover:border-emerald-500/30 transition-all"
-                    >
-                      <div className="flex justify-between items-start mb-4">
-                         <div className="flex items-center gap-2">
-                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest bg-white/5 px-2 py-0.5 rounded">
-                               {job.lead.lead_id}
-                            </span>
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase
-                               ${job.status === 'Ready' ? 'bg-emerald-500/20 text-emerald-400' : 
-                                 job.status === 'WorkStarted' ? 'bg-blue-500/20 text-blue-400' : 'bg-slate-500/20 text-slate-400'}
-                            `}>
-                               {job.status}
-                            </span>
-                         </div>
-                         <div className={`text-[10px] font-bold px-2 py-0.5 rounded border ${days > 3 ? 'bg-red-500/10 text-red-400 border-red-500/20' : 'bg-white/5 text-slate-500 border-white/5'}`}>
-                            Day {days}
-                         </div>
-                      </div>
-
-                      <div className="mb-4">
-                        <h3 className="text-lg font-bold text-white mb-0.5">{job.lead?.product_type}</h3>
-                        <p className="text-xs text-slate-400 flex items-center gap-2">
-                           <User size={12} className="text-emerald-500/50" /> {job.lead?.customer?.name}
-                        </p>
-                        <p className="text-xs text-slate-500 mt-1 line-clamp-2 italic">"{job.lead?.problem_details}"</p>
-                      </div>
-
-                      <div className="flex gap-2">
-                         {job.status === 'Received' && (
-                           <button 
-                             onClick={() => updateWorkshopStatus(job.id, 'WorkStarted')}
-                             className="flex-1 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold py-3 rounded-xl shadow-lg shadow-blue-600/20 transition-all flex items-center justify-center gap-2"
-                           >
-                             <Activity size={14} /> Start Repair
-                           </button>
-                         )}
-                         {job.status === 'WorkStarted' && (
-                           <button 
-                             onClick={() => updateWorkshopStatus(job.id, 'Ready')}
-                             className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold py-3 rounded-xl shadow-lg shadow-emerald-600/20 transition-all flex items-center justify-center gap-2"
-                           >
-                             <CheckCircle2 size={14} /> Mark as Ready
-                           </button>
-                         )}
-                         {job.status === 'Ready' && (
-                           <button 
-                             onClick={() => updateWorkshopStatus(job.id, 'Delivered')}
-                             className="flex-1 bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold py-3 rounded-xl shadow-lg shadow-purple-600/20 transition-all flex items-center justify-center gap-2"
-                           >
-                              <Truck size={14} /> Mark as Delivered
-                           </button>
-                         )}
-                      </div>
-                    </motion.div>
-                  );
-                })}
-              </div>
-            )}
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+            <TechnicianWorkshopView />
           </motion.div>
-
         ) : activeTab === 'wallet' ? (
-          /* WALLET TAB */
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+            <div className="flex justify-between items-center">
+              <h2 className="text-2xl font-bold text-white">My Wallet</h2>
+              <RefreshButton onClick={refreshTasksBtn} loading={tasksRefreshing} className="text-emerald-400 hover:text-emerald-300" />
+            </div>
             <div className="bg-gradient-to-br from-emerald-600 to-teal-700 rounded-3xl p-6 text-white shadow-xl shadow-emerald-500/20">
               <div className="flex justify-between items-start mb-6">
                 <div>
-                  <p className="text-emerald-100 text-sm font-medium mb-1">Today's Total Sale</p>
-                  <h3 className="text-4xl font-black tracking-tight">Rs. {walletSummary?.totalCollected || 0}</h3>
+                  <p className="text-emerald-100 text-sm font-medium mb-1">Total Collected</p>
+                  <h3 className="text-4xl font-black tracking-tight">{formatPKR(walletSummary?.totalCollected || 0)}</h3>
+                  {earningsSummary?.commission > 0 && (
+                    <p className="text-emerald-200 text-xs mt-1">Commission: {formatPKR(earningsSummary.commission)} ({earningsSummary.rate || 10}%)</p>
+                  )}
                 </div>
-                <div className="p-3 bg-white/20 rounded-2xl backdrop-blur-md">
-                  <Wallet size={24} className="text-white" />
-                </div>
+                <button onClick={() => setExpenseModalOpen(true)} className="p-3 bg-white/20 rounded-2xl hover:bg-white/30 transition">
+                  <Plus size={24} />
+                </button>
               </div>
-              <div className="grid grid-cols-2 gap-4 border-t border-white/20 pt-4">
+              <div className="grid grid-cols-3 gap-3 border-t border-white/20 pt-4">
                 <div>
-                  <p className="text-emerald-200 text-[10px] uppercase tracking-wider font-bold mb-1">Total Expenses</p>
-                  <p className="text-xl font-bold">Rs. {walletSummary?.totalSpent || 0}</p>
+                  <p className="text-emerald-200 text-[10px] uppercase font-bold mb-1">Expenses</p>
+                  <p className="text-lg font-bold">{formatPKR(walletSummary?.totalSpent || 0)}</p>
                 </div>
                 <div>
-                  <p className="text-emerald-200 text-[10px] uppercase tracking-wider font-bold mb-1">Outstanding Balance (To Return)</p>
-                  <p className="text-xl font-bold">Rs. {walletSummary?.balance || 0}</p>
+                  <p className="text-emerald-200 text-[10px] uppercase font-bold mb-1">To Return</p>
+                  <p className="text-lg font-bold">{formatPKR(walletSummary?.balance || 0)}</p>
+                </div>
+                <div>
+                  <p className="text-emerald-200 text-[10px] uppercase font-bold mb-1">Overdue</p>
+                  <p className="text-lg font-bold text-amber-200">{formatPKR(walletDetail?.overdue || 0)}</p>
                 </div>
               </div>
             </div>
+
+            <div className="bg-slate-900/60 border border-white/10 rounded-2xl p-5">
+              <h3 className="text-sm font-bold text-white mb-1">All Transactions</h3>
+              <p className="text-[10px] text-slate-500 mb-4">Complete wallet activity — collections, pending returns, expenses</p>
+              {walletTimeline.length === 0 ? (
+                <p className="text-xs text-slate-500 italic">No transactions yet.</p>
+              ) : (
+                <div className="space-y-2 max-h-80 overflow-y-auto">
+                  {walletTimeline.map((entry) => (
+                    <div
+                      key={entry.id}
+                      className={`flex justify-between items-start gap-3 p-3 rounded-xl border text-xs ${
+                        entry.type === 'expense'
+                          ? 'bg-rose-500/5 border-rose-500/15'
+                          : entry.type === 'pending'
+                          ? 'bg-amber-500/5 border-amber-500/15'
+                          : entry.type === 'received'
+                          ? 'bg-emerald-500/5 border-emerald-500/15'
+                          : 'bg-white/[0.02] border-white/5'
+                      }`}
+                    >
+                      <div className="min-w-0">
+                        <p className="text-slate-200 font-bold">{entry.title}</p>
+                        <p className="text-slate-500 text-[10px] mt-0.5 truncate">{entry.subtitle}</p>
+                        <p className="text-[10px] text-slate-600 mt-1">
+                          {entry.date.toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        </p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className={`font-black ${
+                          entry.type === 'expense' ? 'text-rose-400' :
+                          entry.type === 'pending' ? 'text-amber-400' : 'text-emerald-400'
+                        }`}>
+                          {entry.type === 'expense' ? '-' : '+'}{formatPKR(entry.amount)}
+                        </p>
+                        <span className={`text-[9px] font-black uppercase ${
+                          entry.type === 'expense' ? 'text-rose-500' :
+                          entry.type === 'pending' ? 'text-amber-500' : 'text-emerald-500'
+                        }`}>
+                          {entry.type === 'expense' ? 'Expense' : entry.type === 'pending' ? 'Pending' : 'Received'}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {walletDetail?.settlements?.length > 0 && (
+              <div className="bg-slate-900/60 border border-white/10 rounded-2xl p-5">
+                <h3 className="text-sm font-bold text-white mb-3">Received Payments</h3>
+                <div className="space-y-2">
+                  {walletDetail.settlements.filter((s: any) => s.is_received).map((s: any) => (
+                    <div key={s.id} className="flex justify-between text-xs bg-emerald-500/5 border border-emerald-500/10 p-3 rounded-xl">
+                      <span className="text-slate-300">{s.description}</span>
+                      <span className="text-emerald-400 font-bold">{formatPKR(s.amount)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="bg-slate-900/60 border border-white/10 rounded-2xl p-5">
+              <h3 className="text-sm font-bold text-white mb-3">My Expenses</h3>
+              {expenses.length === 0 ? (
+                <p className="text-xs text-slate-500 italic">No expenses recorded. Tap + to add.</p>
+              ) : (
+                <div className="space-y-2 max-h-64 overflow-y-auto">
+                  {expenses.map((exp) => (
+                    <div key={exp.id} className="flex justify-between text-xs bg-white/[0.02] border border-white/5 p-3 rounded-xl">
+                      <div>
+                        <p className="text-slate-200 font-bold">{exp.category}</p>
+                        <p className="text-slate-500">{exp.description || new Date(exp.date).toLocaleDateString()}</p>
+                      </div>
+                      <span className="text-rose-400 font-bold">-{formatPKR(exp.amount)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {(walletDetail?.jobs?.length > 0 || walletDetail?.completedJobs?.length > 0) && (
+              <div className="bg-slate-900/60 border border-white/10 rounded-2xl p-5">
+                <h3 className="text-sm font-bold text-white mb-1">Task Payments</h3>
+                <p className="text-[10px] text-slate-500 mb-3">Har task ki payment admin ko alag jama hoti hai</p>
+                <div className="space-y-2 max-h-72 overflow-y-auto">
+                  {(walletDetail.jobs || walletDetail.completedJobs || []).map((j: any) => {
+                    const settled = !!j.is_settled;
+                    return (
+                      <div key={j.id} className={`p-3 rounded-xl border text-xs ${settled ? 'bg-emerald-500/5 border-emerald-500/15' : 'bg-rose-500/5 border-rose-500/20'}`}>
+                        <div className="flex justify-between items-center gap-2">
+                          <div className="min-w-0">
+                            <p className="text-slate-200 font-bold truncate">{j.lead_id} — {j.customer?.name}</p>
+                            <p className="text-slate-500 text-[10px] mt-0.5">
+                              {j.product_type ? `${j.product_type} • ` : ''}
+                              {new Date(j.completed_at || j.updated_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}
+                              {settled && j.settlement?.received_at && (
+                                <span className="text-emerald-500"> • Paid {new Date(j.settlement.received_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}</span>
+                              )}
+                            </p>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <p className={`font-black ${settled ? 'text-emerald-400' : 'text-rose-400'}`}>{formatPKR(j.amount ?? j.collected_amount)}</p>
+                            <span className={`text-[9px] font-black uppercase ${settled ? 'text-emerald-500' : 'text-rose-500'}`}>
+                              {settled ? 'Paid to Admin' : 'Pending'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </motion.div>
+        ) : activeTab === 'settings' ? (
+          <SettingsModule />
         ) : (
           /* HISTORY TAB */
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
@@ -684,8 +892,9 @@ const TechnicianDashboard = () => {
                   <h2 className="text-2xl font-bold text-white tracking-tight">Job History</h2>
                   <p className="text-sm text-slate-400">Recently completed tasks</p>
                </div>
+               <RefreshButton onClick={refreshTasksBtn} loading={tasksRefreshing} className="text-emerald-400 hover:text-emerald-300" />
             </div>
-            {jobs.filter(j => j.status === 'Completed' || j.status === 'PickedForWorkshop').length === 0 ? (
+            {jobs.filter(j => matchesJobFilter(j, 'completed')).length === 0 ? (
               <div className="bg-slate-900/50 border border-white/5 rounded-3xl p-12 text-center">
                  <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-4">
                    <History size={32} className="text-slate-600" />
@@ -695,13 +904,14 @@ const TechnicianDashboard = () => {
                </div>
             ) : (
               <div className="space-y-4">
-                {jobs.filter(j => j.status === 'Completed' || j.status === 'PickedForWorkshop').map((job, idx) => (
+                {jobs.filter(j => matchesJobFilter(j, 'completed')).map((job, idx) => (
                   <motion.div 
                     key={job.id}
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: idx * 0.05 }}
-                    className="bg-slate-900/60 backdrop-blur-xl border border-white/10 rounded-2xl p-5"
+                    className="bg-slate-900/60 backdrop-blur-xl border border-white/10 rounded-2xl p-5 cursor-pointer hover:border-emerald-500/30"
+                    onClick={() => setHistoryLead(job)}
                   >
                     <div className="flex justify-between items-start mb-2">
                        <div className="flex items-center gap-2">
@@ -714,9 +924,11 @@ const TechnicianDashboard = () => {
                              {job.status}
                           </span>
                        </div>
+                       <span className="text-emerald-400 font-black text-sm">{formatPKR(getFinalAmount(job))}</span>
                     </div>
                     <h3 className="text-lg font-bold text-white mb-1">{job.customer?.name}</h3>
                     <p className="text-xs text-slate-400">{job.product_type} • {job.customer?.area}</p>
+                    <p className="text-xs text-amber-400/80 mt-2 line-clamp-2">{job.problem_details}</p>
                   </motion.div>
                 ))}
               </div>
@@ -756,8 +968,19 @@ const TechnicianDashboard = () => {
                   <div className="flex items-center gap-2 text-sm font-bold text-slate-300">
                     <User size={14} className="text-emerald-400" /> {selectedJob.customer?.name}
                   </div>
-                  <div className="flex items-start gap-2 text-xs text-slate-400">
-                    <MapPin size={14} className="text-emerald-500/50 mt-0.5" /> {selectedJob.customer?.exact_address}
+                  <div className="flex items-start gap-2 text-xs text-slate-300 bg-slate-950/50 p-2 rounded-lg">
+                    <MapPin size={14} className="text-emerald-500 mt-0.5 shrink-0" />
+                    <div>
+                      <p className="font-bold">{selectedJob.customer?.area}</p>
+                      <p>{selectedJob.exact_address || selectedJob.customer?.exact_address || 'No exact address'}</p>
+                      {selectedJob.customer?.google_map_link && (
+                        <a href={selectedJob.customer.google_map_link} target="_blank" rel="noreferrer" className="text-amber-400 underline mt-1 inline-block">Open Google Maps →</a>
+                      )}
+                    </div>
+                  </div>
+                  <div className="text-xs text-amber-400 bg-amber-500/5 p-3 rounded-lg border border-amber-500/10">
+                    <p className="text-[10px] font-black uppercase text-amber-500 mb-1">Reported Issue</p>
+                    {selectedJob.problem_details || 'No description'}
                   </div>
                 </div>
 
@@ -785,103 +1008,129 @@ const TechnicianDashboard = () => {
                 </div>
 
                 <div className="space-y-4">
-                  <div className="group relative">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Actual Problem Found</label>
                     <textarea 
                       required
                       value={outcomeData.actual_problem}
                       onChange={(e) => setOutcomeData({...outcomeData, actual_problem: e.target.value})}
-                      className="w-full bg-slate-950 text-white px-4 py-3 rounded-2xl border border-white/10 focus:border-emerald-500 outline-none transition-all resize-none peer placeholder-transparent" 
-                      placeholder="Problem"
+                      className="w-full bg-slate-950 text-white px-4 py-3 rounded-2xl border border-white/10 focus:border-emerald-500 outline-none transition-all resize-none" 
+                      placeholder="Describe the actual problem..."
                       rows={2}
-                    ></textarea>
-                    <label className="absolute left-4 top-[-8px] bg-slate-900 px-1 text-[10px] font-bold text-slate-500 peer-focus:text-emerald-400 transition-all peer-placeholder-shown:top-3.5 peer-placeholder-shown:text-xs pointer-events-none">Actual Problem Found</label>
+                    />
                   </div>
 
-                  <div className="group relative">
-                    <textarea 
-                      value={outcomeData.repair_details}
-                      onChange={(e) => setOutcomeData({...outcomeData, repair_details: e.target.value})}
-                      className="w-full bg-slate-950 text-white px-4 py-3 rounded-2xl border border-white/10 focus:border-emerald-500 outline-none transition-all resize-none peer placeholder-transparent" 
-                      placeholder="Details"
-                      rows={2}
-                    ></textarea>
-                    <label className="absolute left-4 top-[-8px] bg-slate-900 px-1 text-[10px] font-bold text-slate-500 peer-focus:text-emerald-400 transition-all peer-placeholder-shown:top-3.5 peer-placeholder-shown:text-xs pointer-events-none">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
                       {outcomeData.status === 'Completed' ? 'Work Performed / Parts Used' : 
                        outcomeData.status === 'PickedForWorkshop' ? 'Agreed Parts to Change (Warranty)' : 
                        'Inspection Notes & Recommendations'}
                     </label>
+                    <textarea 
+                      value={outcomeData.repair_details}
+                      onChange={(e) => setOutcomeData({...outcomeData, repair_details: e.target.value})}
+                      className="w-full bg-slate-950 text-white px-4 py-3 rounded-2xl border border-white/10 focus:border-emerald-500 outline-none transition-all resize-none" 
+                      placeholder="Enter details..."
+                      rows={2}
+                    />
                   </div>
 
                   {outcomeData.status === 'PickedForWorkshop' ? (
                     <div className="grid grid-cols-2 gap-4">
-                      <div className="group relative">
-                        <div className="absolute left-4 top-3.5 text-slate-500"><CreditCard size={14}/></div>
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Deal Amount</label>
                         <input 
                           type="number"
                           value={outcomeData.total_amount}
                           onChange={(e) => setOutcomeData({...outcomeData, total_amount: e.target.value})}
-                          className="w-full bg-slate-950 text-white pl-9 pr-4 py-3 rounded-2xl border border-white/10 focus:border-emerald-500 outline-none transition-all placeholder-transparent peer" 
-                          placeholder="Deal Amount"
+                          className="w-full bg-slate-950 text-white px-4 py-3 rounded-2xl border border-white/10 focus:border-emerald-500 outline-none transition-all" 
+                          placeholder="0"
                         />
-                        <label className="absolute left-4 top-[-8px] bg-slate-900 px-1 text-[10px] font-bold text-slate-500 peer-focus:text-emerald-400 transition-all peer-placeholder-shown:top-3.5 peer-placeholder-shown:text-xs peer-placeholder-shown:left-9 peer-focus:left-4 pointer-events-none">
-                          Deal Amount
-                        </label>
                       </div>
-                      <div className="group relative">
-                        <div className="absolute left-4 top-3.5 text-slate-500"><CreditCard size={14}/></div>
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Advance Taken</label>
                         <input 
                           type="number"
                           value={outcomeData.collected_amount}
                           onChange={(e) => setOutcomeData({...outcomeData, collected_amount: e.target.value})}
-                          className="w-full bg-slate-950 text-white pl-9 pr-4 py-3 rounded-2xl border border-white/10 focus:border-emerald-500 outline-none transition-all placeholder-transparent peer" 
-                          placeholder="Advance Taken"
+                          className="w-full bg-slate-950 text-white px-4 py-3 rounded-2xl border border-white/10 focus:border-emerald-500 outline-none transition-all" 
+                          placeholder="0"
                         />
-                        <label className="absolute left-4 top-[-8px] bg-slate-900 px-1 text-[10px] font-bold text-slate-500 peer-focus:text-emerald-400 transition-all peer-placeholder-shown:top-3.5 peer-placeholder-shown:text-xs peer-placeholder-shown:left-9 peer-focus:left-4 pointer-events-none">
-                          Advance Taken
-                        </label>
                       </div>
                     </div>
                   ) : (
                     <div className="grid grid-cols-2 gap-4">
-                      <div className="group relative">
-                        <div className="absolute left-4 top-3.5 text-slate-500"><CreditCard size={14}/></div>
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                          {outcomeData.status === 'Completed' ? 'Amount Collected' : 'Charges'}
+                        </label>
                         <input 
                           type="number"
                           value={outcomeData.collected_amount}
                           onChange={(e) => setOutcomeData({...outcomeData, collected_amount: e.target.value})}
-                          className="w-full bg-slate-950 text-white pl-9 pr-4 py-3 rounded-2xl border border-white/10 focus:border-emerald-500 outline-none transition-all placeholder-transparent peer" 
-                          placeholder="Amount"
+                          className="w-full bg-slate-950 text-white px-4 py-3 rounded-2xl border border-white/10 focus:border-emerald-500 outline-none transition-all" 
+                          placeholder="0"
                         />
-                        <label className="absolute left-4 top-[-8px] bg-slate-900 px-1 text-[10px] font-bold text-slate-500 peer-focus:text-emerald-400 transition-all peer-placeholder-shown:top-3.5 peer-placeholder-shown:text-xs peer-placeholder-shown:left-9 peer-focus:left-4 pointer-events-none">
-                          {outcomeData.status === 'Completed' ? 'Amount Collected' : 'Charges'}
-                        </label>
                       </div>
-
-
-                    {outcomeData.status === 'Completed' && (
-                      <div className="group relative">
-                        <select 
-                          value={outcomeData.warranty_months}
-                          onChange={(e) => setOutcomeData({...outcomeData, warranty_months: e.target.value})}
-                          className="w-full bg-slate-950 text-white px-4 py-3 rounded-2xl border border-white/10 focus:border-emerald-500 outline-none transition-all appearance-none"
-                        >
-                          <option value="0">No Warranty</option>
-                          <option value="1">1 Month</option>
-                          <option value="3">3 Months</option>
-                          <option value="6">6 Months</option>
-                          <option value="12">1 Year</option>
-                        </select>
-                        <label className="absolute left-4 top-[-8px] bg-slate-900 px-1 text-[10px] font-bold text-slate-500">Warranty</label>
-                      </div>
-                    )}
+                      {outcomeData.status === 'Completed' && (
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Warranty</label>
+                          <select 
+                            value={outcomeData.warranty_months}
+                            onChange={(e) => setOutcomeData({...outcomeData, warranty_months: e.target.value})}
+                            className="w-full bg-slate-950 text-white px-4 py-3 rounded-2xl border border-white/10 focus:border-emerald-500 outline-none transition-all appearance-none"
+                          >
+                            <option value="0">No Warranty</option>
+                            <option value="1">1 Month</option>
+                            <option value="3">3 Months</option>
+                            <option value="6">6 Months</option>
+                            <option value="12">1 Year</option>
+                          </select>
+                        </div>
+                      )}
                     </div>
                   )}
+
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Voice Note (optional)</label>
+                    <VoiceNoteRecorder value={voiceNote} onChange={setVoiceNote} />
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1 pt-2">
+                      <Camera size={12} /> Machine Photos
+                    </label>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={async (e) => {
+                        const files = Array.from(e.target.files || []);
+                        try {
+                          const results = await Promise.all(files.map(f => compressImageFile(f)));
+                          setOutcomePictures(prev => [...prev, ...results].slice(0, 6));
+                        } catch { toast.error('Failed to process photos'); }
+                        e.target.value = '';
+                      }}
+                      className="w-full bg-slate-950 text-white px-4 py-3 rounded-2xl border border-white/10 text-sm file:mr-3 file:py-1 file:px-3 file:rounded-lg file:border-0 file:bg-emerald-500 file:text-white"
+                    />
+                    {outcomePictures.length > 0 && (
+                      <div className="flex gap-2 overflow-x-auto pb-1">
+                        {outcomePictures.map((pic, idx) => (
+                          <div key={idx} className="relative w-16 h-16 rounded-xl overflow-hidden border border-white/10 shrink-0">
+                            <img src={pic} alt="" className="w-full h-full object-cover" />
+                            <button type="button" onClick={() => setOutcomePictures(prev => prev.filter((_, i) => i !== idx))}
+                              className="absolute top-0.5 right-0.5 bg-red-500/80 text-white rounded-full p-0.5">
+                              <X size={10} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 <div className="flex gap-3 pt-4">
-                  <button type="button" onClick={() => setOutcomeModalOpen(false)} className="flex-1 bg-white/5 hover:bg-white/10 text-white font-bold py-4 rounded-2xl transition-all border border-white/5">Back</button>
-                  <button type="submit" disabled={loading} className="flex-1 bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-bold py-4 rounded-2xl shadow-lg flex items-center justify-center gap-2">
-                    {loading ? <Loader2 className="animate-spin" size={18} /> : <ClipboardCheck size={18} />} Complete
+                  <button type="button" onClick={() => { setOutcomeModalOpen(false); setOutcomePictures([]); }} className="flex-1 bg-white/5 hover:bg-white/10 text-white font-bold py-4 rounded-2xl transition-all border border-white/5">Back</button>
+                  <button type="submit" disabled={outcomeLoading} className="flex-1 bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-bold py-4 rounded-2xl shadow-lg flex items-center justify-center gap-2 disabled:opacity-50">
+                    {outcomeLoading ? <Loader2 className="animate-spin" size={18} /> : <ClipboardCheck size={18} />} Submit Outcome
                   </button>
                 </div>
               </form>
@@ -968,6 +1217,8 @@ const TechnicianDashboard = () => {
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 10px; }
       `}</style>
+      <ImageZoomModal src={zoomImg} onClose={() => setZoomImg(null)} />
+      {historyLead && <LeadHistoryModal lead={historyLead} onClose={() => setHistoryLead(null)} />}
     </div>
   );
 };

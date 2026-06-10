@@ -1,99 +1,84 @@
-import jsPDF from 'jspdf';
-import 'jspdf-autotable';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
+
+const parsePictures = (job: any): string[] => {
+  if (!job.item_pictures) return [];
+  if (Array.isArray(job.item_pictures)) return job.item_pictures;
+  try { return JSON.parse(job.item_pictures); } catch { return []; }
+};
 
 export const generateInspectionReportPDF = (job: any) => {
   const doc = new jsPDF();
-  
-  // Custom font setup (Helvetica is default, using it)
-  doc.setFont("helvetica");
+  const primary: [number, number, number] = [217, 119, 6]; // Amber
 
-  // Header - Primary Color
-  doc.setFillColor(30, 41, 59); // Slate 900
-  doc.rect(0, 0, 210, 40, 'F');
-  
+  doc.setFillColor(30, 41, 59);
+  doc.rect(0, 0, 210, 42, 'F');
+
   doc.setTextColor(255, 255, 255);
   doc.setFontSize(22);
-  doc.setFont("helvetica", "bold");
-  doc.text("SERVICEOS", 14, 25);
-  
+  doc.setFont('helvetica', 'bold');
+  doc.text('SERVICEOS', 15, 22);
   doc.setFontSize(10);
-  doc.setFont("helvetica", "normal");
-  doc.text("Professional Appliance Repair", 14, 32);
+  doc.setFont('helvetica', 'normal');
+  doc.text('Professional Appliance Repair', 15, 30);
 
-  // INspection Report Title
-  doc.setFontSize(24);
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(255, 255, 255);
-  doc.text("INSPECTION REPORT", 120, 25);
+  doc.setFontSize(18);
+  doc.setFont('helvetica', 'bold');
+  doc.text('INSPECTION REPORT', 115, 24);
 
-  // Dates & Details
-  doc.setTextColor(80, 80, 80);
+  doc.setTextColor(50, 50, 50);
   doc.setFontSize(10);
-  doc.setFont("helvetica", "bold");
-  doc.text(`Lead ID:`, 14, 50);
-  doc.text(`Date:`, 14, 57);
-  
-  doc.setFont("helvetica", "normal");
-  doc.text(`${job.lead_id}`, 40, 50);
-  doc.text(`${new Date().toLocaleDateString()}`, 40, 57);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Lead ID:', 15, 55);
+  doc.text('Date:', 15, 62);
+  doc.setFont('helvetica', 'normal');
+  doc.text(job.lead_id, 40, 55);
+  doc.text(new Date().toLocaleDateString('en-GB'), 40, 62);
 
-  // Customer Info
-  doc.setFont("helvetica", "bold");
-  doc.text("Customer Details:", 120, 50);
-  doc.setFont("helvetica", "normal");
-  doc.text(job.customer.name, 120, 57);
-  doc.text(job.customer.phone, 120, 64);
-  doc.text(job.customer.area, 120, 71);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Customer:', 120, 55);
+  doc.setFont('helvetica', 'normal');
+  doc.text(job.customer?.name || 'N/A', 120, 62);
+  doc.text(job.customer?.phone || '', 120, 68);
+  doc.text(job.customer?.area || '', 120, 74);
 
-  // Divider
-  doc.setDrawColor(220, 220, 220);
-  doc.line(14, 80, 196, 80);
-
-  // Appliance Details
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(14);
-  doc.text("Appliance Overview", 14, 95);
-
-  const tableColumn = ["Appliance Type", "Reported Problem", "Current Status"];
-  const tableRows = [
-    [
-      job.product_type,
-      job.problem_details || "N/A",
-      job.status
-    ]
-  ];
-
-  (doc as any).autoTable({
-    startY: 105,
-    head: [tableColumn],
-    body: tableRows,
-    theme: 'grid',
-    headStyles: { fillColor: [99, 102, 241], textColor: 255 }, // Indigo 500
-    styles: { fontSize: 10, cellPadding: 5 },
-    alternateRowStyles: { fillColor: [248, 250, 252] }, // Slate 50
+  autoTable(doc, {
+    startY: 82,
+    head: [['Field', 'Details']],
+    body: [
+      ['Appliance Type', job.product_type],
+      ['Reported Problem', job.problem_details || 'N/A'],
+      ['Actual Problem Found', job.actual_problem || 'N/A'],
+      ['Inspection Notes', job.repair_details || 'N/A'],
+      ['Inspection Charge', `PKR ${Number(job.collected_amount || 0).toLocaleString()}`],
+      ['Technician', job.technician?.name || 'Staff'],
+    ],
+    headStyles: { fillColor: primary },
+    styles: { fontSize: 9, cellPadding: 4 },
+    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 50 } },
   });
 
-  // Technician Initial Findings (Placeholder for technician to fill or software to display)
-  const finalY = (doc as any).lastAutoTable.finalY + 15;
-  
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(14);
-  doc.text("Technician Inspection Notes", 14, finalY);
+  let finalY = (doc as any).lastAutoTable.finalY + 10;
+  const pics = parsePictures(job);
+  if (pics.length > 0) {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.text('Machine Photos', 15, finalY);
+    finalY += 6;
+    pics.slice(0, 2).forEach((pic, i) => {
+      try {
+        doc.addImage(pic, 'JPEG', 15 + i * 90, finalY, 80, 55);
+      } catch { /* skip */ }
+    });
+    finalY += 62;
+  }
 
-  // Draw a big box for manual notes if printed, or show digital notes if any
-  doc.setDrawColor(200, 200, 200);
-  doc.setFillColor(250, 250, 250);
-  doc.rect(14, finalY + 5, 182, 40, 'FD');
-  
-  doc.setFontSize(10);
-  doc.setFont("helvetica", "normal");
-  doc.text("Detailed assessment and recommended repairs:", 18, finalY + 12);
-  
-  // Footer
-  doc.setFontSize(9);
-  doc.setTextColor(150, 150, 150);
-  doc.text("This is an initial inspection report and does not represent a final invoice.", 105, 280, { align: 'center' });
+  doc.setFontSize(8);
+  doc.setTextColor(120, 120, 120);
+  doc.text(
+    'This inspection report documents the assessed problem and inspection charges. It is not a final repair invoice.',
+    105, 285, { align: 'center' }
+  );
 
-  // Download
   doc.save(`Inspection_${job.lead_id}.pdf`);
 };

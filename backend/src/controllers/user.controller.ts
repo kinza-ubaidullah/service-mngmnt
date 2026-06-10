@@ -3,6 +3,7 @@ import { prisma } from '../utils/prisma';
 import { signToken } from '../utils/jwt.utils';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
+import { broadcastDataChange } from '../utils/broadcast';
 
 export const getTechnicians = async (req: Request, res: Response) => {
   try {
@@ -59,6 +60,7 @@ export const createUser = async (req: Request, res: Response) => {
       data: { name, email, phone, password_hash, plain_password: password, role }
     });
 
+    broadcastDataChange('users', 'create');
     res.json({ message: 'User created successfully', user: { id: newUser.id, name: newUser.name, role: newUser.role } });
   } catch (error) {
     console.error('Error creating user:', error);
@@ -86,6 +88,7 @@ export const toggleUserActive = async (req: Request, res: Response) => {
       where: { id: parseInt(id as string) },
       data: { is_active: !user.is_active }
     });
+    broadcastDataChange('users', 'update');
     res.json({ message: `User ${updated.is_active ? 'activated' : 'deactivated'}`, user: updated });
   } catch (error) {
     res.status(500).json({ message: 'Failed to update user' });
@@ -257,6 +260,7 @@ export const deleteUser = async (req: Request, res: Response) => {
       })
     ]);
 
+    broadcastDataChange('users', 'delete');
     res.json({ message: 'User deleted successfully' });
   } catch (error: any) {
     console.error('Delete user error:', error);

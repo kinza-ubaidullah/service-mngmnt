@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Users, UserPlus, Save, Loader2, Pencil, Trash2, Eye, EyeOff } from 'lucide-react';
 import api from '../services/api';
 import toast from 'react-hot-toast';
+import RefreshButton from './RefreshButton';
+import { useLiveData } from '../hooks/useLiveData';
 
 interface StaffModuleProps {
   role?: 'ADMIN' | 'CALL_CENTER';
@@ -26,17 +28,19 @@ const StaffModule: React.FC<StaffModuleProps> = ({ role = 'ADMIN' }) => {
     setVisiblePasswords(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
-  const fetchData = async () => {
+  const fetchData = async (opts?: { silent?: boolean }) => {
     try {
-      setLoading(true);
+      if (!opts?.silent) setLoading(true);
       const usersRes = await (role === 'ADMIN' ? api.get('/users') : api.get('/users/technicians'));
       setTechnicians(role === 'ADMIN' ? usersRes.data.users : usersRes.data.technicians);
     } catch (error) {
       toast.error('Failed to load staff data');
     } finally {
-      setLoading(false);
+      if (!opts?.silent) setLoading(false);
     }
   };
+
+  const { refresh, refreshing } = useLiveData(['users'], () => fetchData({ silent: true }));
 
   useEffect(() => {
     fetchData();
@@ -75,7 +79,7 @@ const StaffModule: React.FC<StaffModuleProps> = ({ role = 'ADMIN' }) => {
 
 
 
-  if (loading) return <div className="flex justify-center py-20"><Loader2 className="animate-spin text-indigo-500" size={32} /></div>;
+  if (loading && technicians.length === 0) return <div className="flex justify-center py-20"><Loader2 className="animate-spin text-indigo-500" size={32} /></div>;
 
   return (
     <div className="space-y-6">
@@ -85,8 +89,10 @@ const StaffModule: React.FC<StaffModuleProps> = ({ role = 'ADMIN' }) => {
           <div className="bg-slate-900/60 border border-white/5 rounded-[2rem] p-8">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-xl font-bold text-white">Staff Directory</h2>
+              <div className="flex gap-2 items-center">
+                <RefreshButton onClick={refresh} loading={refreshing} />
               {role === 'ADMIN' && (
-                <div className="flex gap-2">
+                <>
                   <button 
                     onClick={() => setShowUserModal(true)}
                     className="bg-indigo-500 hover:bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 transition-colors shadow-lg shadow-indigo-500/20"
@@ -99,8 +105,9 @@ const StaffModule: React.FC<StaffModuleProps> = ({ role = 'ADMIN' }) => {
                   >
                     <Save size={16} /> Invite Staff
                   </button>
-                </div>
+                </>
               )}
+              </div>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left">
@@ -125,6 +132,7 @@ const StaffModule: React.FC<StaffModuleProps> = ({ role = 'ADMIN' }) => {
                           ${user?.role === 'ADMIN' ? 'bg-purple-500/20 text-purple-400 border-purple-500/30' :
                             user?.role === 'TECHNICIAN' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' :
                             user?.role === 'CALL_CENTER' ? 'bg-blue-500/20 text-blue-400 border-blue-500/30' :
+                            user?.role === 'WORKSHOP_MANAGER' ? 'bg-orange-500/20 text-orange-400 border-orange-500/30' :
                             'bg-amber-500/20 text-amber-400 border-amber-500/30'}`}>
                           {user?.role?.replace('_', ' ') || 'UNKNOWN'}
                         </span>
@@ -227,6 +235,7 @@ const StaffModule: React.FC<StaffModuleProps> = ({ role = 'ADMIN' }) => {
                 <select value={newUser.role} onChange={(e) => setNewUser({...newUser, role: e.target.value})} className="w-full bg-slate-950 text-white px-4 py-3 rounded-xl border border-white/10 outline-none appearance-none">
                   <option value="CALL_CENTER">Call Center Agent</option>
                   <option value="TECHNICIAN">Technician</option>
+                  <option value="WORKSHOP_MANAGER">Workshop Manager</option>
                   <option value="ADMIN">Admin</option>
                 </select>
               </div>
@@ -254,6 +263,7 @@ const StaffModule: React.FC<StaffModuleProps> = ({ role = 'ADMIN' }) => {
                 <select value={inviteRole} onChange={(e) => setInviteRole(e.target.value)} className="w-full bg-slate-950 text-white px-4 py-3 rounded-xl border border-white/10 outline-none appearance-none">
                   <option value="TECHNICIAN">Technician</option>
                   <option value="CALL_CENTER">Call Center Agent</option>
+                  <option value="WORKSHOP_MANAGER">Workshop Manager</option>
                 </select>
               </div>
 

@@ -3,55 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { ArrowLeft, User, MapPin, Wrench, ClipboardList, ExternalLink, RefreshCw, Filter } from 'lucide-react';
+import { ArrowLeft, User, MapPin, Wrench, ClipboardList, ExternalLink, Filter } from 'lucide-react';
 import api from '../services/api';
 import { socket } from '../services/socket';
-
-// ─── Icons ────────────────────────────────────────────────────────────────────
-const unassignedIcon = L.divIcon({
-  className: 'custom-div-icon',
-  html: `<div class="relative flex items-center justify-center">
-    <div class="absolute w-8 h-8 bg-amber-500/40 rounded-full animate-ping" style="animation-duration:1.8s;"></div>
-    <div class="w-6 h-6 bg-gradient-to-br from-amber-400 to-orange-600 rounded-full border-2 border-white shadow-lg shadow-orange-500/60 flex items-center justify-center text-[10px] text-white font-black">!</div>
-  </div>`,
-  iconSize: [32, 32], iconAnchor: [16, 16],
-});
-const assignedIcon = L.divIcon({
-  className: 'custom-div-icon',
-  html: `<div class="w-6 h-6 bg-gradient-to-br from-indigo-400 to-blue-600 rounded-full border-2 border-white shadow-lg shadow-blue-500/50"></div>`,
-  iconSize: [26, 26], iconAnchor: [13, 13],
-});
-const completedIcon = L.divIcon({
-  className: 'custom-div-icon',
-  html: `<div class="w-5 h-5 bg-gradient-to-br from-emerald-400 to-teal-600 rounded-full border-2 border-white shadow-lg shadow-emerald-500/40 flex items-center justify-center text-[8px] text-white font-black">✓</div>`,
-  iconSize: [22, 22], iconAnchor: [11, 11],
-});
-const techIcon = L.divIcon({
-  className: 'custom-div-icon',
-  html: `<div class="relative flex items-center justify-center">
-    <div class="absolute w-8 h-8 bg-emerald-500/30 rounded-full animate-pulse"></div>
-    <div class="w-6 h-6 bg-gradient-to-br from-emerald-400 to-teal-600 rounded-full border-2 border-white shadow-lg shadow-emerald-500/50 flex items-center justify-center">
-      <span class="w-2 h-2 bg-white rounded-full"></span>
-    </div>
-  </div>`,
-  iconSize: [32, 32], iconAnchor: [16, 16],
-});
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-const getStableCoords = (lead: any): [number, number] => {
-  const baseLat = 31.5204, baseLng = 74.3587;
-  const idStr = String(lead.id || lead.lead_id || '');
-  let hash = 0;
-  for (let i = 0; i < idStr.length; i++) hash = idStr.charCodeAt(i) + ((hash << 5) - hash);
-  return [baseLat + ((hash & 0xFF) / 255) * 0.08 - 0.04, baseLng + (((hash >> 8) & 0xFF) / 255) * 0.08 - 0.04];
-};
-
-const openInGoogleMaps = (lead: any) => {
-  if (lead.customer?.google_map_link) { window.open(lead.customer.google_map_link, '_blank'); return; }
-  const [lat, lng] = getStableCoords(lead);
-  const q = encodeURIComponent(`${lead.customer?.area || ''} ${lead.exact_address || ''}`);
-  window.open(`https://www.google.com/maps/search/?api=1&query=${q}&center=${lat},${lng}`, '_blank');
-};
+import { DEFAULT_MAP_CENTER, getLeadCoords, openLeadInGoogleMaps } from '../utils/leadLocation';
+import RefreshButton from '../components/RefreshButton';
+import { useLiveData } from '../hooks/useLiveData';
+import { getLeadMapIcon, techIcon } from '../utils/mapIcons';
 
 const getPics = (lead: any): string[] => {
   if (!lead.item_pictures) return [];
@@ -59,22 +17,24 @@ const getPics = (lead: any): string[] => {
   try { return JSON.parse(lead.item_pictures); } catch { return []; }
 };
 
-const getIcon = (status: string) => {
-  if (status === 'New') return unassignedIcon;
-  if (status === 'Completed' || status === 'PendingApproval') return completedIcon;
-  return assignedIcon;
-};
-
 // ─── Map auto-fit component ───────────────────────────────────────────────────
-const MapAutoFit: React.FC<{ leads: any[] }> = ({ leads }) => {
+const MapAutoFit: React.FC<{ leads: any[]; technicians: any[] }> = ({ leads, technicians }) => {
   const map = useMap();
-  const fitted = useRef(false);
+  const lastKey = useRef('');
   useEffect(() => {
-    if (fitted.current || leads.length === 0) return;
-    const bounds = leads.filter(l => l.status !== 'Deleted').map(l => getStableCoords(l));
-    if (bounds.length > 0) { map.fitBounds(bounds as any, { padding: [50, 50] }); }
-    fitted.current = true;
-  }, [leads, map]);
+    const points: [number, number][] = leads.map((l) => getLeadCoords(l));
+    technicians.forEach((t) => {
+      if (t.lat != null && t.lng != null) points.push([Number(t.lat), Number(t.lng)]);
+    });
+    const key = points.map((p) => p.join(',')).join('|');
+    if (key === lastKey.current || points.length === 0) return;
+    lastKey.current = key;
+    if (points.length === 1) {
+      map.setView(points[0], 15);
+    } else {
+      map.fitBounds(points as L.LatLngBoundsLiteral, { padding: [50, 50], maxZoom: 16 });
+    }
+  }, [leads, technicians, map]);
   return null;
 };
 
@@ -87,8 +47,8 @@ const MapPage = () => {
   const [filter, setFilter] = useState<'all' | 'new' | 'assigned' | 'completed'>('all');
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);
 
-  const fetchData = async () => {
-    setLoading(true);
+  const fetchData = async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setLoading(true);
     try {
       const [leadsRes, techRes] = await Promise.all([
         api.get('/leads'),
@@ -97,8 +57,10 @@ const MapPage = () => {
       setLeads(leadsRes.data.leads || []);
       setTechnicians(techRes.data.technicians || []);
     } catch (e) { console.error(e); }
-    finally { setLoading(false); }
+    finally { if (!opts?.silent) setLoading(false); }
   };
+
+  const { refresh, refreshing } = useLiveData(['leads', 'all'], () => fetchData({ silent: true }));
 
   useEffect(() => {
     fetchData();
@@ -107,7 +69,7 @@ const MapPage = () => {
     socket.on('tech_location_changed', (data: { techId: number; lat: number; lng: number }) => {
       setTechnicians(prev => prev.map(t => t.id === Number(data.techId) ? { ...t, lat: Number(data.lat), lng: Number(data.lng) } : t));
     });
-    return () => { socket.off('tech_location_changed'); socket.disconnect(); };
+    return () => { socket.off('tech_location_changed'); };
   }, []);
 
   const visibleLeads = leads.filter(l => {
@@ -164,13 +126,7 @@ const MapPage = () => {
           ))}
         </div>
 
-        <button
-          onClick={fetchData}
-          className="bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white p-2 rounded-xl border border-white/10 transition-all"
-          title="Refresh"
-        >
-          <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-        </button>
+        <RefreshButton onClick={refresh} loading={refreshing || loading} />
       </div>
 
       {/* ── Map ── */}
@@ -184,12 +140,12 @@ const MapPage = () => {
           </div>
         ) : (
           <MapContainer
-            center={[31.5204, 74.3587]}
+            center={DEFAULT_MAP_CENTER}
             zoom={12}
             scrollWheelZoom={true}
             style={{ height: '100%', width: '100%' }}
           >
-            <MapAutoFit leads={visibleLeads} />
+            <MapAutoFit leads={visibleLeads} technicians={technicians} />
             <TileLayer
               attribution='&copy; <a href="https://maps.google.com">Google Maps</a>'
               url="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}"
@@ -197,12 +153,12 @@ const MapPage = () => {
 
             {/* Lead Markers */}
             {visibleLeads.map(lead => {
-              const pos = getStableCoords(lead);
+              const pos = getLeadCoords(lead);
               const pics = getPics(lead);
               const thumb = pics[0] || lead.house_image || null;
               const isNew = lead.status === 'New';
               return (
-                <Marker key={`lead-${lead.id}`} position={pos} icon={getIcon(lead.status)}>
+                <Marker key={`lead-${lead.id}`} position={pos} icon={getLeadMapIcon(lead.status)} zIndexOffset={lead.status === 'New' ? 1000 : 0}>
                   <Popup className="map-page-popup">
                     <div className="p-4 w-[300px] bg-slate-900 text-white rounded-2xl border border-white/10 shadow-2xl space-y-3">
                       <div className="flex justify-between items-center">
@@ -237,7 +193,7 @@ const MapPage = () => {
 
                       <button
                         type="button"
-                        onClick={() => openInGoogleMaps(lead)}
+                        onClick={() => openLeadInGoogleMaps(lead)}
                         className="w-full bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/20 text-[10px] font-black py-2.5 rounded-xl transition-all flex items-center justify-center gap-2"
                       >
                         <ExternalLink size={13} /> Open in Google Maps
@@ -322,6 +278,8 @@ const MapPage = () => {
       )}
 
       <style>{`
+        @keyframes pin-ping { 75%, 100% { transform: scale(2); opacity: 0; } }
+        .unassigned-pin { z-index: 1000 !important; }
         .map-page-popup .leaflet-popup-content-wrapper {
           background: #0f172a !important; color: white !important;
           border-radius: 16px; padding: 0 !important; border: 1px solid rgba(255,255,255,0.1);

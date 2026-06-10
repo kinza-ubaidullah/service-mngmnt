@@ -5,18 +5,34 @@ import { logout } from '../store/slices/authSlice';
 import { 
   LogOut, LayoutDashboard, Users, ClipboardList, 
   Wrench, DollarSign, AlertCircle,
-  Activity, ArrowUpRight, Clock, Settings, Loader2, Download, RotateCcw, Trash2, Menu, X, Search
+  Activity, ArrowUpRight, Clock, Settings, Loader2, Download, RotateCcw, Trash2, Menu, X, Search, FileText, Image
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../services/api';
 import { motion } from 'framer-motion';
 import { generateInvoicePDF } from '../utils/invoiceGenerator';
+import { generateInspectionReportPDF } from '../utils/inspectionReportGenerator';
+import { generateWorkshopPickupPDF } from '../utils/workshopPickupGenerator';
 import WorkshopModule from '../components/WorkshopModule';
 import FinanceModule from '../components/FinanceModule';
 import StaffModule from '../components/StaffModule';
 import SettingsModule from '../components/SettingsModule';
 import LeadsModule from '../components/LeadsModule';
+import LogsModule from '../components/LogsModule';
+import TrashModule from '../components/TrashModule';
+import ImageZoomModal from '../components/ImageZoomModal';
+import RefreshButton from '../components/RefreshButton';
+import TechnicianPaymentsModal from '../components/TechnicianPaymentsModal';
+import { useLiveData } from '../hooks/useLiveData';
+import { matchesLeadSearch } from '../utils/leadHelpers';
+import GlobalLeadSearch from '../components/GlobalLeadSearch';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+
+const getLeadPictures = (lead: any): string[] => {
+  if (!lead?.item_pictures) return [];
+  if (Array.isArray(lead.item_pictures)) return lead.item_pictures;
+  try { return JSON.parse(lead.item_pictures); } catch { return []; }
+};
 
 const AdminDashboard = () => {
   const dispatch = useDispatch();
@@ -27,8 +43,13 @@ const AdminDashboard = () => {
   const [chartData, setChartData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [recentSearch, setRecentSearch] = useState('');
+  const [globalSearch, setGlobalSearch] = useState('');
+  const [leadsSearch, setLeadsSearch] = useState('');
+  const [selectedTechChart, setSelectedTechChart] = useState<any | null>(null);
   const [selectedAttention, setSelectedAttention] = useState<any>(null);
   const [selectedLead, setSelectedLead] = useState<any>(null);
+  const [zoomImg, setZoomImg] = useState<string | null>(null);
+  const [paymentsTech, setPaymentsTech] = useState<{ id: number; name: string } | null>(null);
 
   const [activeTab, setActiveTab] = useState(() => sessionStorage.getItem('adminActiveTab') || 'Overview');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -37,15 +58,23 @@ const AdminDashboard = () => {
     sessionStorage.setItem('adminActiveTab', activeTab);
   }, [activeTab]);
 
-  const fetchData = async () => {
+  const fetchData = async (opts?: { silent?: boolean }) => {
     try {
-      const [statsRes, earningsRes, chartRes] = await Promise.all([
+      if (!opts?.silent) setLoading(true);
+      const [statsRes, earningsRes, chartRes, walletsRes] = await Promise.all([
         api.get('/dashboard/admin/stats'),
         api.get('/finance/technician-report'),
-        api.get('/finance/chart-data')
+        api.get('/finance/chart-data'),
+        api.get('/settlements/all').catch(() => ({ data: { wallets: [] } }))
       ]);
+      const walletMap = Object.fromEntries((walletsRes.data.wallets || []).map((w: any) => [w.id, w]));
+      const report = (earningsRes.data?.report || []).map((t: any) => ({
+        ...t,
+        overdue: walletMap[t.id]?.overdue || 0,
+        pendingCount: walletMap[t.id]?.pendingCount || 0,
+      }));
+      setEarningsReport(report);
       setData(statsRes.data || { stats: { revenue: 0, newLeads: 0, assignedJobs: 0, workshopJobs: 0 }, recentLeads: [], technicians: [] });
-      setEarningsReport(earningsRes.data?.report || []);
       setChartData(chartRes.data?.chartData || []);
     } catch (error) {
       toast.error('Failed to load dashboard data');
@@ -54,11 +83,13 @@ const AdminDashboard = () => {
     }
   };
 
+  const { refresh, refreshing } = useLiveData(['all', 'leads', 'workshop', 'finance', 'dashboard', 'users'], () => fetchData({ silent: true }));
+
   useEffect(() => {
     fetchData();
   }, []);
 
-  if (loading) {
+  if (loading && !data) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center">
         <Loader2 className="animate-spin text-indigo-500" size={40} />
@@ -75,7 +106,7 @@ const AdminDashboard = () => {
         <h2 className="text-3xl font-black text-white mb-2">Failed to Load Dashboard</h2>
         <p className="text-slate-400 mb-8 font-medium">There was a problem connecting to the server. Please check your connection or try again.</p>
         <button 
-          onClick={fetchData} 
+          onClick={() => fetchData()} 
           className="bg-indigo-600 text-white px-8 py-3 rounded-2xl font-black shadow-lg shadow-indigo-600/20 flex items-center gap-2"
         >
           <RotateCcw size={20} /> Retry Loading
@@ -84,12 +115,48 @@ const AdminDashboard = () => {
     );
   }
 
+  const handleGlobalSearch = async () => {
+    const q = globalSearch.trim();
+    if (!q) return;
+    try {
+      const res = await api.get('/leads');
+      const allLeads = res.data.leads || res.data || [];
+      const match = allLeads.find((l: any) => matchesLeadSearch(l, q));
+      setLeadsSearch(q);
+      setActiveTab('Service Leads');
+      if (match) {
+        toast.success(`Found: ${match.lead_id}`);
+      } else {
+        toast.error('No lead found');
+      }
+    } catch {
+      toast.error('Search failed');
+    }
+  };
+
+  const buildTechWeeklyChart = (jobs: any[]) => {
+    const chartMap: Record<string, { date: string; revenue: number }> = {};
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const dateStr = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+      chartMap[dateStr] = { date: dateStr, revenue: 0 };
+    }
+    (jobs || []).forEach((j: any) => {
+      const dateStr = new Date(j.updated_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+      if (chartMap[dateStr]) chartMap[dateStr].revenue += Number(j.collected_amount || 0);
+    });
+    return Object.values(chartMap);
+  };
+
   const navItems = [
     { icon: LayoutDashboard, label: 'Overview' },
     { icon: ClipboardList, label: 'Service Leads' },
     { icon: Wrench, label: 'Workshop' },
     { icon: Users, label: 'Staff Management' },
     { icon: DollarSign, label: 'Finance' },
+    { icon: Activity, label: 'System Logs' },
+    { icon: Trash2, label: 'Trash Bin' },
     { icon: Settings, label: 'Settings' },
   ];
 
@@ -205,8 +272,16 @@ const AdminDashboard = () => {
               <p className="text-xs text-slate-400 font-medium hidden sm:block">Welcome back, {user?.name}</p>
             </div>
           </div>
-          <div className="flex items-center gap-4">
-            <div className="bg-indigo-500/10 text-indigo-400 px-3 py-1.5 lg:px-4 lg:py-2 rounded-full border border-indigo-500/20 text-[10px] lg:text-xs font-bold flex items-center gap-2">
+          <div className="flex items-center gap-3 flex-1 justify-end max-w-md ml-4">
+            <GlobalLeadSearch
+              value={globalSearch}
+              onChange={setGlobalSearch}
+              onSubmit={handleGlobalSearch}
+              placeholder="Search lead ID (any tab)..."
+              className="flex-1 max-w-xs hidden sm:block"
+            />
+            <RefreshButton onClick={refresh} loading={refreshing} />
+            <div className="bg-indigo-500/10 text-indigo-400 px-3 py-1.5 lg:px-4 lg:py-2 rounded-full border border-indigo-500/20 text-[10px] lg:text-xs font-bold flex items-center gap-2 shrink-0">
               <Activity size={14} className="animate-pulse" /> <span className="hidden sm:inline">Live Stats</span>
             </div>
           </div>
@@ -220,17 +295,18 @@ const AdminDashboard = () => {
               {/* Stats Grid */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-6">
             {[
-              { label: 'Total Revenue', value: `$${data?.stats?.revenue || 0}`, icon: DollarSign, color: 'text-indigo-400', bg: 'bg-indigo-500/10', trend: '+12%' },
-              { label: 'New Leads', value: data?.stats?.newLeads || 0, icon: ClipboardList, color: 'text-emerald-400', bg: 'bg-emerald-500/10', trend: 'Fresh' },
-              { label: 'Field Jobs', value: data?.stats?.assignedJobs || 0, icon: Activity, color: 'text-blue-400', bg: 'bg-blue-500/10', trend: 'In Progress' },
-              { label: 'Workshop Jobs', value: data?.stats?.workshopJobs || 0, icon: Wrench, color: 'text-amber-400', bg: 'bg-amber-500/10', trend: 'Repairing' },
+              { label: 'Total Revenue', value: `PKR ${Number(data?.stats?.revenue || 0).toLocaleString()}`, icon: DollarSign, color: 'text-indigo-400', bg: 'bg-indigo-500/10', trend: '+12%', tab: 'Finance' },
+              { label: 'New Leads', value: data?.stats?.newLeads || 0, icon: ClipboardList, color: 'text-emerald-400', bg: 'bg-emerald-500/10', trend: 'Fresh', tab: 'Service Leads' },
+              { label: 'Field Jobs', value: data?.stats?.assignedJobs || 0, icon: Activity, color: 'text-blue-400', bg: 'bg-blue-500/10', trend: 'In Progress', tab: 'Service Leads' },
+              { label: 'Workshop Jobs', value: data?.stats?.workshopJobs || 0, icon: Wrench, color: 'text-amber-400', bg: 'bg-amber-500/10', trend: 'Repairing', tab: 'Workshop' },
             ].map((stat, idx) => (
               <motion.div 
                 key={idx}
+                onClick={() => setActiveTab(stat.tab)}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: idx * 0.1 }}
-                className="bg-slate-900/60 border border-white/5 p-4 lg:p-6 rounded-[1.5rem] lg:rounded-[2rem] hover:border-white/10 transition-all group relative overflow-hidden"
+                className="bg-slate-900/60 border border-white/5 p-4 lg:p-6 rounded-[1.5rem] lg:rounded-[2rem] hover:border-indigo-500/30 transition-all group relative overflow-hidden cursor-pointer"
               >
                 <div className={`absolute -right-4 -top-4 w-24 h-24 rounded-full ${stat.bg} blur-3xl opacity-50 transition-all group-hover:scale-150`}></div>
                 <div className="flex justify-between items-start relative z-10">
@@ -270,6 +346,7 @@ const AdminDashboard = () => {
                       className="w-full bg-slate-950/50 border border-white/5 rounded-xl py-2 pl-10 pr-4 text-xs outline-none focus:border-indigo-500/50 transition-all text-white"
                     />
                   </div>
+                  <RefreshButton onClick={refresh} loading={refreshing} />
                   <button onClick={() => setActiveTab('Service Leads')} className="text-xs font-bold text-indigo-400 hover:text-indigo-300 flex items-center gap-1 transition-colors shrink-0">
                     View All <ArrowUpRight size={14} />
                   </button>
@@ -281,6 +358,7 @@ const AdminDashboard = () => {
                   <thead>
                     <tr className="text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-white/5">
                       <th className="px-4 lg:px-8 py-4">Lead ID</th>
+                      <th className="px-4 lg:px-8 py-4">Photo</th>
                       <th className="px-4 lg:px-8 py-4">Customer</th>
                       <th className="px-4 lg:px-8 py-4 hidden md:table-cell">Product</th>
                       <th className="px-4 lg:px-8 py-4">Status</th>
@@ -288,14 +366,21 @@ const AdminDashboard = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5">
-                    {((data?.recentLeads || []).filter((lead: any) => 
-                      lead.lead_id.toLowerCase().includes(recentSearch.toLowerCase()) ||
-                      (lead.customer?.name || '').toLowerCase().includes(recentSearch.toLowerCase()) ||
-                      (lead.customer?.phone || '').includes(recentSearch)
-                    )).map((lead: any, idx: number) => (
+                    {((data?.recentLeads || []).filter((lead: any) => matchesLeadSearch(lead, recentSearch))).map((lead: any, idx: number) => (
                       <tr key={idx} onClick={() => setSelectedLead(lead)} className="group hover:bg-white/[0.02] transition-colors cursor-pointer text-sm">
                         <td className="px-8 py-5">
                           <span className="font-mono text-sm font-bold text-indigo-300">{lead.lead_id}</span>
+                        </td>
+                        <td className="px-4 lg:px-8 py-4">
+                          {getLeadPictures(lead).length > 0 ? (
+                            <div className="w-10 h-10 rounded-lg overflow-hidden border border-white/10 bg-slate-900">
+                              <img src={getLeadPictures(lead)[0]} alt="machine" className="w-full h-full object-cover" />
+                            </div>
+                          ) : (
+                            <div className="w-10 h-10 rounded-lg border border-dashed border-white/10 flex items-center justify-center text-slate-600">
+                              <Image size={14} />
+                            </div>
+                          )}
                         </td>
                         <td className="px-4 lg:px-8 py-4">
                           <div className="text-sm font-bold text-slate-200">{lead.customer.name}</div>
@@ -313,10 +398,15 @@ const AdminDashboard = () => {
                                 lead.status === 'Assigned' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : 
                                 lead.status === 'PendingApproval' ? 'bg-pink-500/10 text-pink-400 border-pink-500/20' : 
                                 lead.status === 'Completed' ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20' :
+                                lead.status === 'InspectionCompleted' ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' :
+                                lead.status === 'PickedForWorkshop' ? 'bg-orange-500/10 text-orange-400 border-orange-500/20' :
                                 lead.status === 'Reopened' ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' :
                                 'bg-slate-800 text-slate-300 border-slate-700'}
                             `}>
-                              {lead.status === 'PendingApproval' ? 'PENDING APPROVAL' : lead.status.toUpperCase()}
+                              {lead.status === 'PendingApproval' ? 'PENDING APPROVAL' : 
+                               lead.status === 'InspectionCompleted' ? 'INSPECTION DONE' :
+                               lead.status === 'PickedForWorkshop' ? 'WORKSHOP PICKUP' :
+                               lead.status.toUpperCase()}
                             </span>
                             {lead.is_warranty_claim && (
                               <span className="px-2 py-1 bg-amber-500/20 text-amber-500 border border-amber-500/30 rounded text-[9px] font-black tracking-tighter">
@@ -338,6 +428,24 @@ const AdminDashboard = () => {
                                   title="Approve Job"
                                 >
                                   Approve
+                                </button>
+                              )}
+                              {lead.status === 'InspectionCompleted' && (
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); generateInspectionReportPDF(lead); }}
+                                  className="p-1.5 bg-white/5 hover:bg-amber-500/20 text-slate-400 hover:text-amber-400 rounded-lg transition-all border border-white/5 hover:border-amber-500/20"
+                                  title="Download Inspection PDF"
+                                >
+                                  <FileText size={14} />
+                                </button>
+                              )}
+                              {lead.status === 'PickedForWorkshop' && (
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); generateWorkshopPickupPDF(lead); }}
+                                  className="p-1.5 bg-white/5 hover:bg-orange-500/20 text-slate-400 hover:text-orange-400 rounded-lg transition-all border border-white/5 hover:border-orange-500/20"
+                                  title="Download Workshop Pickup PDF"
+                                >
+                                  <FileText size={14} />
                                 </button>
                               )}
                               {lead.status === 'Completed' && (
@@ -424,10 +532,13 @@ const AdminDashboard = () => {
               </div>
 
               <div className="bg-slate-900/60 border border-white/5 rounded-[2rem] p-5 lg:p-8 space-y-6">
-                <h3 className="text-sm font-bold text-white uppercase tracking-widest flex items-center gap-2">
-                  <AlertCircle size={16} className="text-amber-400" />
-                  Attention Needed
-                </h3>
+                <div className="flex justify-between items-center">
+                  <h3 className="text-sm font-bold text-white uppercase tracking-widest flex items-center gap-2">
+                    <AlertCircle size={16} className="text-amber-400" />
+                    Attention Needed
+                  </h3>
+                  <RefreshButton onClick={refresh} loading={refreshing} />
+                </div>
                 <div className="space-y-4">
                   {data?.attentionNeeded?.length > 0 ? (
                     data.attentionNeeded.map((alert: any, idx: number) => (
@@ -475,6 +586,7 @@ const AdminDashboard = () => {
                   <p className="text-sm text-slate-500">Performance based on completed jobs (10% Default Rate)</p>
                 </div>
               </div>
+              <RefreshButton onClick={refresh} loading={refreshing} />
             </div>
 
             <div className="overflow-x-auto">
@@ -485,18 +597,24 @@ const AdminDashboard = () => {
                     <th className="px-4 lg:px-8 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-center">Jobs</th>
                     <th className="px-4 lg:px-8 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest hidden sm:table-cell">Revenue</th>
                     <th className="px-4 lg:px-8 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Commission</th>
+                    <th className="px-4 lg:px-8 py-4 text-[10px] font-bold text-rose-500 uppercase tracking-widest">Pending Payments</th>
+                    <th className="px-4 lg:px-8 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-right">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
                   {(earningsReport || []).map((tech: any) => (
                     <tr key={tech.id} className="hover:bg-white/[0.01] transition-colors group">
                       <td className="px-4 lg:px-8 py-4">
-                        <div className="flex items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedTechChart(selectedTechChart?.id === tech.id ? null : tech)}
+                          className="flex items-center gap-3 text-left hover:opacity-80 transition-opacity"
+                        >
                           <div className="w-10 h-10 rounded-full bg-blue-500/10 flex items-center justify-center text-blue-400 font-bold border border-blue-500/20">
                             {tech.name.charAt(0)}
                           </div>
                           <span className="font-bold text-slate-200">{tech.name}</span>
-                        </div>
+                        </button>
                       </td>
                       <td className="px-4 lg:px-8 py-4 text-center">
                         <span className="bg-slate-800 text-slate-300 px-3 py-1 rounded-full text-xs font-bold border border-slate-700">
@@ -507,23 +625,66 @@ const AdminDashboard = () => {
                         <span className="text-sm font-bold text-slate-300">$ {tech.totalRevenue.toLocaleString()}</span>
                       </td>
                       <td className="px-4 lg:px-8 py-4">
-                        <span className="text-sm font-black text-emerald-400">$ {tech.totalCommission.toLocaleString()}</span>
+                        <span className="text-sm font-black text-emerald-400">PKR {tech.totalCommission.toLocaleString()}</span>
+                      </td>
+                      <td className="px-4 lg:px-8 py-4">
+                        <div className="flex items-center gap-2">
+                          <span className={`text-sm font-black ${Number(tech.overdue || 0) > 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                            PKR {Number(tech.overdue || 0).toLocaleString()}
+                          </span>
+                          {tech.pendingCount > 0 && (
+                            <span className="text-[10px] font-bold text-rose-400 bg-rose-500/10 border border-rose-500/20 px-2 py-0.5 rounded-full">
+                              {tech.pendingCount} task{tech.pendingCount > 1 ? 's' : ''}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 lg:px-8 py-4 text-right">
+                        <button
+                          onClick={() => setPaymentsTech({ id: tech.id, name: tech.name })}
+                          className="bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 text-xs font-bold px-4 py-2 rounded-xl border border-indigo-500/20 transition-all">
+                          Task Payments
+                        </button>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
+
+            {selectedTechChart && (
+              <div className="p-6 border-t border-white/5 bg-slate-950/30">
+                <h4 className="text-sm font-bold text-white mb-4">
+                  Weekly Sales — {selectedTechChart.name}
+                </h4>
+                <div className="h-48">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={buildTechWeeklyChart(selectedTechChart.jobs || [])}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" />
+                      <XAxis dataKey="date" stroke="#64748b" fontSize={10} />
+                      <YAxis stroke="#64748b" fontSize={10} />
+                      <Tooltip contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #ffffff10', borderRadius: '12px' }} />
+                      <Bar dataKey="revenue" fill="#6366f1" radius={[4, 4, 0, 0]} name="Revenue (PKR)" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+                <p className="text-[10px] text-slate-500 mt-2">Click technician name again to hide chart</p>
+              </div>
+            )}
           </motion.div>
             </>
           ) : activeTab === 'Service Leads' ? (
-            <LeadsModule />
+            <LeadsModule externalSearch={leadsSearch} />
           ) : activeTab === 'Workshop' ? (
             <WorkshopModule />
           ) : activeTab === 'Finance' ? (
             <FinanceModule />
           ) : activeTab === 'Staff Management' ? (
             <StaffModule role="ADMIN" />
+          ) : activeTab === 'System Logs' ? (
+            <LogsModule />
+          ) : activeTab === 'Trash Bin' ? (
+            <TrashModule />
           ) : (
             <SettingsModule />
           )
@@ -609,7 +770,20 @@ const AdminDashboard = () => {
                   </div>
                 </div>
 
-                {(selectedLead.status === 'Completed' || selectedLead.status === 'PendingApproval' || selectedLead.status === 'Reopened') && (
+                {getLeadPictures(selectedLead).length > 0 && (
+                  <div className="bg-slate-950/50 p-5 rounded-2xl border border-white/5">
+                    <h4 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-4">Machine Pictures</h4>
+                    <div className="flex gap-3 overflow-x-auto pb-2">
+                      {getLeadPictures(selectedLead).map((pic: string, idx: number) => (
+                        <div key={idx} className="w-24 h-24 rounded-xl overflow-hidden border border-white/10 shrink-0 cursor-pointer hover:ring-2 hover:ring-pink-500/50" onClick={() => setZoomImg(pic)}>
+                          <img src={pic} alt={`machine-${idx}`} className="w-full h-full object-cover" />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {(selectedLead.status === 'Completed' || selectedLead.status === 'PendingApproval' || selectedLead.status === 'Reopened' || selectedLead.status === 'InspectionCompleted' || selectedLead.status === 'PickedForWorkshop') && (
                   <div className="bg-slate-950/50 p-5 rounded-2xl border border-white/5">
                     <h4 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-4">Outcome</h4>
                     <div className="space-y-3">
@@ -657,6 +831,18 @@ const AdminDashboard = () => {
                   Approve Job
                 </button>
               )}
+              {selectedLead.status === 'InspectionCompleted' && (
+                <button onClick={() => generateInspectionReportPDF(selectedLead)}
+                  className="px-6 py-3 bg-amber-500 hover:bg-amber-600 text-white font-black rounded-xl transition-all shadow-lg shadow-amber-500/20 flex items-center gap-2">
+                  <FileText size={18} /> Inspection PDF
+                </button>
+              )}
+              {selectedLead.status === 'PickedForWorkshop' && (
+                <button onClick={() => generateWorkshopPickupPDF(selectedLead)}
+                  className="px-6 py-3 bg-orange-500 hover:bg-orange-600 text-white font-black rounded-xl transition-all shadow-lg shadow-orange-500/20 flex items-center gap-2">
+                  <FileText size={18} /> Workshop Pickup PDF
+                </button>
+              )}
               {selectedLead.status === 'Completed' && (
                 <button 
                   onClick={() => generateInvoicePDF(selectedLead)}
@@ -673,6 +859,15 @@ const AdminDashboard = () => {
         </div>
       )}
 
+      <ImageZoomModal src={zoomImg} onClose={() => setZoomImg(null)} />
+
+      {paymentsTech && (
+        <TechnicianPaymentsModal
+          technician={paymentsTech}
+          onClose={() => setPaymentsTech(null)}
+          onSettled={() => fetchData({ silent: true })}
+        />
+      )}
     </div>
   );
 };

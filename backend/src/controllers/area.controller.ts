@@ -1,5 +1,6 @@
 import type { Request, Response } from 'express';
 import { prisma } from '../utils/prisma';
+import { resolveAreaCoords } from '../utils/areaCoords';
 
 export const getAreas = async (req: Request, res: Response) => {
   try {
@@ -21,7 +22,14 @@ export const createArea = async (req: Request, res: Response) => {
     const existing = await prisma.area.findUnique({ where: { name } });
     if (existing) return res.status(400).json({ message: 'Area already exists' });
 
-    const newArea = await prisma.area.create({ data: { name } });
+    const coords = resolveAreaCoords(name);
+    const newArea = await prisma.area.create({
+      data: {
+        name,
+        lat: coords?.[0] ?? null,
+        lng: coords?.[1] ?? null,
+      }
+    });
     res.status(201).json({ area: newArea });
   } catch (error) {
     console.error('Error creating area:', error);
