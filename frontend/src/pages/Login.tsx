@@ -58,7 +58,13 @@ const Login = () => {
       
     } catch (error: any) {
       console.error('Login error details:', error.response?.data || error.message);
-      toast.error(error.response?.data?.message || 'Login failed. Try again.');
+      if (!error.response) {
+        toast.error('Cannot reach API server. Check api.aljaroshi.com is running.');
+      } else if (error.response.status === 503) {
+        toast.error('API server is down (503). Restart Node.js app in cPanel.');
+      } else {
+        toast.error(error.response?.data?.message || 'Login failed. Try again.');
+      }
     } finally {
       setLoading(false);
     }

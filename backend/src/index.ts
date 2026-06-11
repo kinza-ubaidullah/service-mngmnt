@@ -24,9 +24,22 @@ const io = new Server(server, {
 });
 setSocketServer(io);
 
+const allowedOrigins = [
+  'http://localhost:5173',
+  'https://crm.aljaroshi.com',
+  'https://www.crm.aljaroshi.com',
+  process.env.FRONTEND_URL,
+].filter(Boolean) as string[];
+
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
-  credentials: true
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(null, true); // allow other subdomains in production
+    }
+  },
+  credentials: true,
 }));
 app.use(helmet({
   contentSecurityPolicy: false,
@@ -111,7 +124,7 @@ io.on('connection', (socket) => {
   });
 });
 
-server.listen(PORT, () => {
+server.listen(Number(PORT), '0.0.0.0', () => {
   console.log(`Server running on port ${PORT} with WebSockets enabled`);
 });
 

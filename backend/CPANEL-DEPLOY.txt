@@ -12,12 +12,23 @@ ServiceOS Backend — cPanel Deploy Guide
      JWT_SECRET=your-secret
      PORT=5000
 
-3. INSTALL (SSH or cPanel Terminal)
+3. INSTALL (SSH or cPanel Terminal) — REQUIRED after every zip upload
    cd /path/to/backend
    npm install --production
    npx prisma generate
 
-4. DATABASE SQL (run once in phpMyAdmin if not done before)
+4. cPanel Node.js App settings
+   - Application startup file: dist/index.js
+   - Application mode: Production
+   - Add env variable: FRONTEND_URL=https://crm.aljaroshi.com
+   - Click SAVE then RESTART (if 503 error, app is not running)
+
+5. TEST API is up (browser):
+   https://api.aljaroshi.com/health
+   Should show: {"status":"ok","message":"Server is healthy"}
+   If 503 → Node.js app not started — fix in cPanel Setup Node.js App
+
+6. DATABASE SQL (run once in phpMyAdmin if not done before)
    - fix-missing-columns-v2.sql
    - fix-image-columns.sql
    - create-posts-table.sql (only if using Create Post feature)
