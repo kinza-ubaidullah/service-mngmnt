@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import { Wrench, Sparkles, User, Mail, Phone, Lock, Loader2, ArrowRight, CheckCircle2, Eye, EyeOff, AlertCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -73,8 +73,8 @@ const Register = () => {
         token
       });
 
-      toast.success('Registration successful!');
-      
+      toast.success(response.data?.reset ? 'Password reset successful!' : 'Registration successful!');
+
       const { user, token: authToken } = response.data;
       if (user && authToken) {
         dispatch(setCredentials({ user, token: authToken }));
@@ -109,7 +109,7 @@ const Register = () => {
 
   if (validating) {
     return (
-      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-center">
+      <div className="crm-shell flex flex-col items-center justify-center p-6 text-center">
         <Loader2 className="text-indigo-500 animate-spin mb-4" size={40} />
         <p className="text-slate-400 font-bold tracking-widest uppercase text-xs">Validating Invite Token...</p>
       </div>
@@ -118,20 +118,20 @@ const Register = () => {
 
   if (success) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6">
+      <div className="crm-shell flex items-center justify-center p-6">
         <motion.div 
           initial={{ scale: 0.9, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
-          className="bg-slate-900 border border-white/10 rounded-[2.5rem] p-10 max-w-md w-full text-center shadow-2xl"
+          className="crm-modal border rounded-[2.5rem] p-10 max-w-md w-full text-center shadow-2xl"
         >
           <div className="w-20 h-20 bg-emerald-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
-            <CheckCircle2 size={40} className="text-emerald-400" />
+            <CheckCircle2 size={40} className="text-mint-600" />
           </div>
-          <h2 className="text-3xl font-black text-white mb-2">Welcome Aboard!</h2>
+          <h2 className="text-3xl font-black text-slate-800 mb-2">Welcome Aboard!</h2>
           <p className="text-slate-400 mb-8 font-medium">Your account has been created successfully. You can now log in to access your dashboard.</p>
           <Link 
             to="/login" 
-            className="w-full bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/20"
+            className="w-full bg-gradient-to-r from-indigo-500 to-purple-600 text-slate-800 font-black py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-mint-300/25"
           >
             Go to Login <ArrowRight size={20} />
           </Link>
@@ -143,7 +143,7 @@ const Register = () => {
   const roleName = (role || '').replace('_', ' ');
 
   return (
-    <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6 relative overflow-hidden font-sans">
+    <div className="crm-shell h-full min-h-0 flex items-center justify-center p-6 relative overflow-y-auto font-sans">
       {/* Background Orbs */}
       <div className="absolute top-[-20%] left-[-10%] w-[60%] h-[60%] bg-indigo-600/10 blur-[120px] rounded-full"></div>
       <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-purple-600/10 blur-[100px] rounded-full"></div>
@@ -154,19 +154,19 @@ const Register = () => {
         className="w-full max-w-xl z-10"
       >
         <div className="flex items-center justify-center gap-4 mb-10">
-          <div className="bg-gradient-to-br from-indigo-500 to-purple-600 p-3 rounded-2xl shadow-xl shadow-indigo-500/20">
+          <div className="bg-gradient-to-br from-indigo-500 to-purple-600 p-3 rounded-2xl shadow-xl shadow-mint-300/25">
             <Wrench size={32} className="text-white" />
           </div>
           <div>
             <h1 className="text-4xl font-black text-white tracking-tight leading-none capitalize">Join as {roleName}</h1>
-            <p className="text-indigo-400 font-bold text-xs tracking-[0.2em] uppercase mt-2">Secure Member Onboarding <Sparkles size={14} className="inline ml-1" /></p>
+            <p className="text-mint-600 font-bold text-xs tracking-[0.2em] uppercase mt-2">Secure Member Onboarding <Sparkles size={14} className="inline ml-1" /></p>
           </div>
         </div>
 
-        <div className="bg-slate-900/50 backdrop-blur-2xl border border-white/10 rounded-[3rem] p-8 md:p-12 shadow-2xl relative overflow-hidden">
+        <div className="crm-card-soft backdrop-blur-2xl border border-slate-200/70 rounded-[3rem] p-8 md:p-12 shadow-2xl relative overflow-hidden">
           <div className="absolute top-0 right-0 p-8">
-            <div className="w-12 h-12 bg-indigo-500/10 rounded-full border border-indigo-500/20 flex items-center justify-center">
-              <User size={20} className="text-indigo-400" />
+            <div className="w-12 h-12 bg-mint-100 rounded-full border border-mint-300/40 flex items-center justify-center">
+              <User size={20} className="text-mint-600" />
             </div>
           </div>
 
@@ -175,7 +175,7 @@ const Register = () => {
               <div className="group relative">
                 <label className="block text-xs font-bold text-slate-500 mb-2 pl-1 uppercase tracking-wider">Full Name</label>
                 <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-500 group-focus-within:text-indigo-400 transition-colors">
+                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-500 group-focus-within:text-mint-600 transition-colors">
                     <User size={18} />
                   </div>
                   <input 
@@ -183,7 +183,7 @@ const Register = () => {
                     type="text" 
                     value={form.name}
                     onChange={(e) => setForm({...form, name: e.target.value})}
-                    className="w-full bg-slate-950 text-white pl-12 pr-4 py-3 rounded-2xl border border-white/10 focus:border-indigo-500 outline-none transition-all placeholder:text-slate-600" 
+                    className="w-full crm-input text-slate-800 pl-12 pr-4 py-3 rounded-2xl border border-slate-200/70 focus:border-mint-400 outline-none transition-all placeholder:text-slate-400" 
                     placeholder="Enter your full name" 
                   />
                 </div>
@@ -192,7 +192,7 @@ const Register = () => {
               <div className="group relative">
                 <label className="block text-xs font-bold text-slate-500 mb-2 pl-1 uppercase tracking-wider">Email Address</label>
                 <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-500 group-focus-within:text-indigo-400 transition-colors">
+                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-500 group-focus-within:text-mint-600 transition-colors">
                     <Mail size={18} />
                   </div>
                   <input 
@@ -203,7 +203,7 @@ const Register = () => {
                       setForm({...form, email: e.target.value});
                       setErrors({...errors, email: ''});
                     }}
-                    className={`w-full bg-slate-950 text-white pl-12 pr-4 py-3 rounded-2xl border ${errors.email ? 'border-rose-500 focus:border-rose-500 shadow-lg shadow-rose-500/5' : 'border-white/10 focus:border-indigo-500'} outline-none transition-all placeholder:text-slate-600`}
+                    className={`w-full crm-input text-slate-800 pl-12 pr-4 py-3 rounded-2xl border ${errors.email ? 'border-rose-500 focus:border-rose-500 shadow-lg shadow-rose-500/5' : 'border-slate-200/70 focus:border-mint-400'} outline-none transition-all placeholder:text-slate-400`}
                     placeholder="Enter email address" 
                   />
                 </div>
@@ -217,7 +217,7 @@ const Register = () => {
               <div className="group relative">
                 <label className="block text-xs font-bold text-slate-500 mb-2 pl-1 uppercase tracking-wider">Phone Number</label>
                 <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-500 group-focus-within:text-indigo-400 transition-colors">
+                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-500 group-focus-within:text-mint-600 transition-colors">
                     <Phone size={18} />
                   </div>
                   <input 
@@ -228,7 +228,7 @@ const Register = () => {
                       setForm({...form, phone: e.target.value});
                       setErrors({...errors, phone: ''});
                     }}
-                    className={`w-full bg-slate-950 text-white pl-12 pr-4 py-3 rounded-2xl border ${errors.phone ? 'border-rose-500 focus:border-rose-500 shadow-lg shadow-rose-500/5' : 'border-white/10 focus:border-indigo-500'} outline-none transition-all placeholder:text-slate-600`}
+                    className={`w-full crm-input text-slate-800 pl-12 pr-4 py-3 rounded-2xl border ${errors.phone ? 'border-rose-500 focus:border-rose-500 shadow-lg shadow-rose-500/5' : 'border-slate-200/70 focus:border-mint-400'} outline-none transition-all placeholder:text-slate-400`}
                     placeholder="Enter phone number" 
                   />
                 </div>
@@ -242,7 +242,7 @@ const Register = () => {
               <div className="group relative">
                 <label className="block text-xs font-bold text-slate-500 mb-2 pl-1 uppercase tracking-wider">Password</label>
                 <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-500 group-focus-within:text-indigo-400 transition-colors">
+                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-500 group-focus-within:text-mint-600 transition-colors">
                     <Lock size={18} />
                   </div>
                   <input 
@@ -253,13 +253,13 @@ const Register = () => {
                       setForm({...form, password: e.target.value});
                       setErrors({...errors, password: '', confirmPassword: ''});
                     }}
-                    className="w-full bg-slate-950 text-white pl-12 pr-12 py-3 rounded-2xl border border-white/10 focus:border-indigo-500 outline-none transition-all placeholder:text-slate-600" 
+                    className="w-full crm-input text-slate-800 pl-12 pr-12 py-3 rounded-2xl border border-slate-200/70 focus:border-mint-400 outline-none transition-all placeholder:text-slate-400" 
                     placeholder="Enter a secure password" 
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute inset-y-0 right-0 pr-4 flex items-center text-slate-500 hover:text-indigo-400 transition-colors"
+                    className="absolute inset-y-0 right-0 pr-4 flex items-center text-slate-500 hover:text-mint-600 transition-colors"
                   >
                     {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                   </button>
@@ -269,7 +269,7 @@ const Register = () => {
               <div className="group relative md:col-span-2">
                 <label className="block text-xs font-bold text-slate-500 mb-2 pl-1 uppercase tracking-wider">Confirm Password</label>
                 <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-500 group-focus-within:text-indigo-400 transition-colors">
+                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-500 group-focus-within:text-mint-600 transition-colors">
                     <Lock size={18} />
                   </div>
                   <input 
@@ -280,13 +280,13 @@ const Register = () => {
                       setForm({...form, confirmPassword: e.target.value});
                       setErrors({...errors, confirmPassword: ''});
                     }}
-                    className={`w-full bg-slate-950 text-white pl-12 pr-12 py-3 rounded-2xl border ${errors.confirmPassword ? 'border-rose-500 focus:border-rose-500 shadow-lg shadow-rose-500/5' : 'border-white/10 focus:border-indigo-500'} outline-none transition-all placeholder:text-slate-600`}
+                    className={`w-full crm-input text-slate-800 pl-12 pr-12 py-3 rounded-2xl border ${errors.confirmPassword ? 'border-rose-500 focus:border-rose-500 shadow-lg shadow-rose-500/5' : 'border-slate-200/70 focus:border-mint-400'} outline-none transition-all placeholder:text-slate-400`}
                     placeholder="Repeat your password" 
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute inset-y-0 right-0 pr-4 flex items-center text-slate-500 hover:text-indigo-400 transition-colors"
+                    className="absolute inset-y-0 right-0 pr-4 flex items-center text-slate-500 hover:text-mint-600 transition-colors"
                   >
                     {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                   </button>
@@ -302,7 +302,7 @@ const Register = () => {
             <button 
               type="submit" 
               disabled={loading}
-              className="w-full bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-black py-5 rounded-[2rem] shadow-xl shadow-indigo-500/20 flex items-center justify-center gap-3 transition-transform active:scale-[0.98] disabled:opacity-50"
+              className="w-full bg-gradient-to-r from-indigo-500 to-purple-600 text-slate-800 font-black py-5 rounded-[2rem] shadow-xl shadow-mint-300/25 flex items-center justify-center gap-3 transition-transform active:scale-[0.98] disabled:opacity-50"
             >
               {loading ? <Loader2 className="animate-spin" size={24} /> : (
                 <>Complete Registration <ArrowRight size={24} /></>
@@ -311,7 +311,7 @@ const Register = () => {
           </form>
 
           <p className="mt-8 text-center text-slate-500 text-sm font-medium">
-            Already have an account? <Link to="/login" className="text-indigo-400 hover:text-indigo-300 transition-colors font-bold">Log in here</Link>
+            Already have an account? <Link to="/login" className="text-mint-600 hover:text-mint-600 transition-colors font-bold">Log in here</Link>
           </p>
         </div>
       </motion.div>

@@ -1,11 +1,14 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+﻿import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { MapContainer, TileLayer, Marker, Popup, Tooltip, Polyline, useMap } from 'react-leaflet';
 import { useNavigate } from 'react-router-dom';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { User, MapPin, Wrench, ClipboardList, Maximize2, ExternalLink } from 'lucide-react';
-import { DEFAULT_MAP_CENTER, getLeadCoords, openLeadInGoogleMaps } from '../utils/leadLocation';
-import { techIcon, getLeadMapIcon } from '../utils/mapIcons';
+import { User, MapPin, Wrench, ClipboardList, Maximize2, RefreshCw, XCircle, UserMinus } from 'lucide-react';
+import { DEFAULT_MAP_CENTER, getLeadMapPosition, buildMapLeadPositions } from '../utils/leadLocation';
+import { isUnassignedLead, isMapVisibleLead, isAssignedTaskStatus, getMapStatusLabel } from '../utils/leadHelpers';
+import { isTechnicianLive } from '../services/liveTechnicianStore';
+import { techIcon, getTechIcon, getLeadMapIcon } from '../utils/mapIcons';
+import CopyText from './CopyText';
 
 const getPictures = (lead: any): string[] => {
   if (!lead.item_pictures) return [];
@@ -13,34 +16,41 @@ const getPictures = (lead: any): string[] => {
   try { return JSON.parse(lead.item_pictures); } catch { return []; }
 };
 
-// ─── PROPS ───────────────────────────────────────────────────────────────────
+const CANCELLABLE = ['New', 'Assigned', 'InProgress', 'Reopened', 'Complaint'];
+const REASSIGNABLE = ['Assigned', 'InProgress', 'Reopened', 'Complaint'];
+const UNASSIGNABLE = ['Assigned', 'InProgress', 'Reopened'];
+
 interface JobMapProps {
   leads: any[];
   technicians?: any[];
   onAssign?: (lead: any) => void;
+  onUnassign?: (lead: any) => void;
+  onCancel?: (lead: any) => void;
   showOnlyUnassigned?: boolean;
+  showFullMapLink?: boolean;
+  showLegend?: boolean;
+  showStatsBadge?: boolean;
+  locationKey?: string;
 }
 
-// ── Force Leaflet to re-measure when container resizes (fullscreen toggle) ──
 const MapResizer: React.FC<{ trigger: boolean }> = ({ trigger }) => {
   const map = useMap();
   useEffect(() => {
-    // Small delay to let CSS transition finish before measuring
     const t = setTimeout(() => { map.invalidateSize(); }, 350);
     return () => clearTimeout(t);
   }, [trigger, map]);
   return null;
 };
 
-const MapAutoFit: React.FC<{ leads: any[]; technicians?: any[] }> = ({ leads, technicians = [] }) => {
+const MapAutoFit: React.FC<{ leads: any[]; technicians?: any[]; leadPositions: Map<string | number, [number, number]>; locationKey?: string }> = ({ leads, technicians = [], leadPositions, locationKey }) => {
   const map = useMap();
   const lastKey = useRef('');
   useEffect(() => {
-    const points: [number, number][] = leads.map((l) => getLeadCoords(l));
+    const points: [number, number][] = leads.map((l) => getLeadMapPosition(l, leadPositions));
     technicians.forEach((t) => {
       if (t.lat != null && t.lng != null) points.push([Number(t.lat), Number(t.lng)]);
     });
-    const key = points.map((p) => p.join(',')).join('|');
+    const key = `${locationKey || ''}|${points.map((p) => p.join(',')).join('|')}`;
     if (key === lastKey.current || points.length === 0) return;
     lastKey.current = key;
     if (points.length === 1) {
@@ -48,47 +58,140 @@ const MapAutoFit: React.FC<{ leads: any[]; technicians?: any[] }> = ({ leads, te
     } else {
       map.fitBounds(points as L.LatLngBoundsLiteral, { padding: [40, 40], maxZoom: 16 });
     }
-  }, [leads, technicians, map]);
+  }, [leads, technicians, leadPositions, locationKey, map]);
   return null;
 };
 
-// ─── COMPONENT ───────────────────────────────────────────────────────────────
-const JobMap: React.FC<JobMapProps> = ({ leads, technicians = [], onAssign, showOnlyUnassigned = false }) => {
+const UpdatingMarker: React.FC<{
+  position: [number, number];
+  icon: L.DivIcon | L.Icon;
+  zIndexOffset?: number;
+  eventHandlers?: L.LeafletEventHandlerFnMap;
+  children?: React.ReactNode;
+}> = ({ position, icon, zIndexOffset = 0, eventHandlers, children }) => {
+  const markerRef = useRef<L.Marker | null>(null);
+
+  useEffect(() => {
+    markerRef.current?.setLatLng(position);
+  }, [position[0], position[1]]);
+
+  return (
+    <Marker
+      ref={markerRef}
+      position={position}
+      icon={icon}
+      zIndexOffset={zIndexOffset}
+      eventHandlers={eventHandlers}
+    >
+      {children}
+    </Marker>
+  );
+};
+
+/** Prevent Leaflet from swallowing button clicks inside popups */
+const PopupActions: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    L.DomEvent.disableClickPropagation(el);
+    L.DomEvent.disableScrollPropagation(el);
+  }, []);
+  return <div ref={ref}>{children}</div>;
+};
+
+const stopMapEvent = (e: React.MouseEvent) => {
+  e.preventDefault();
+  e.stopPropagation();
+};
+
+const JobMap: React.FC<JobMapProps> = ({
+  leads,
+  technicians = [],
+  onAssign,
+  onUnassign,
+  onCancel,
+  showOnlyUnassigned = false,
+  showFullMapLink = true,
+  showLegend = true,
+  showStatsBadge = false,
+  locationKey,
+}) => {
   const navigate = useNavigate();
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);
+  const [techTrails, setTechTrails] = useState<Record<number, [number, number][]>>({});
   const center: [number, number] = DEFAULT_MAP_CENTER;
 
+  useEffect(() => {
+    setTechTrails((prev) => {
+      const next = { ...prev };
+      technicians.forEach((t) => {
+        if (t.lat == null || t.lng == null) return;
+        const pos: [number, number] = [Number(t.lat), Number(t.lng)];
+        const trail = [...(next[t.id] || []), pos];
+        const last = trail[trail.length - 2];
+        if (last && last[0] === pos[0] && last[1] === pos[1]) {
+          next[t.id] = trail;
+        } else {
+          next[t.id] = trail.slice(-10);
+        }
+      });
+      return next;
+    });
+  }, [technicians]);
+
+  const getTechDestination = (tech: any): [number, number] | null => {
+    const job = tech.assigned_jobs?.[0];
+    if (!job) return null;
+    return getLeadMapPosition(job, buildMapLeadPositions([job]));
+  };
+
+  const hoverHandlers = {
+    mouseover: (e: L.LeafletEvent) => e.target.openTooltip(),
+    mouseout: (e: L.LeafletEvent) => e.target.closeTooltip(),
+  };
+
   const visibleLeads = leads.filter(l => {
-    if (l.status === 'Deleted') return false;
-    if (showOnlyUnassigned) return l.status === 'New';
+    if (!isMapVisibleLead(l)) return false;
+    if (showOnlyUnassigned) return isUnassignedLead(l);
     return true;
   });
 
+  const leadPositions = useMemo(() => buildMapLeadPositions(visibleLeads), [visibleLeads, locationKey]);
+
+  const statusBadgeClass = (status: string, isNew: boolean) => {
+    if (isNew) return 'bg-amber-400/20 text-amber-200 border-amber-400/40';
+    if (status === 'Assigned' || status === 'InProgress') return 'bg-sky-400/20 text-sky-100 border-sky-400/40';
+    if (status === 'Completed') return 'bg-emerald-400/20 text-emerald-100 border-emerald-400/40';
+    if (status === 'Cancelled') return 'bg-rose-400/20 text-rose-100 border-rose-400/40';
+    return 'bg-violet-400/20 text-violet-100 border-violet-400/40';
+  };
+
   return (
     <>
-      {/* Main map container */}
       <div
         style={{ height: '100%', width: '100%', position: 'relative' }}
-        className="rounded-[2.5rem] overflow-hidden border border-white/10 shadow-2xl"
+        className={showFullMapLink ? 'rounded-[2.5rem] overflow-hidden border border-teal-700/40 shadow-2xl' : 'overflow-hidden'}
       >
+        {showFullMapLink && (
+          <div className="absolute top-3 left-3 z-[2000] flex gap-2">
+            <button
+              type="button"
+              onClick={() => navigate('/map')}
+              className="bg-teal-900/95 backdrop-blur-sm hover:bg-teal-800 text-teal-50 px-3 py-2.5 rounded-xl border border-teal-600/50 shadow-xl transition-all hover:scale-105 flex items-center gap-2 text-xs font-bold"
+            >
+              <Maximize2 size={15} className="text-amber-300" />
+              <span>Full Map View</span>
+            </button>
+          </div>
+        )}
 
-        {/* ── Full Map button ── */}
-        <div className="absolute top-3 left-3 z-[2000] flex gap-2">
-          <button
-            type="button"
-            onClick={() => navigate('/map')}
-            className="bg-slate-900/95 backdrop-blur-sm hover:bg-slate-800 text-white p-2.5 rounded-xl border border-white/10 shadow-xl transition-all hover:scale-105 flex items-center gap-2 text-xs font-bold"
-          >
-            <Maximize2 size={15} className="text-indigo-400" />
-            <span>Full Map View</span>
-          </button>
-        </div>
-
-        {/* Unassigned count badge */}
-        <div className="absolute top-3 right-3 z-[2000] bg-slate-900/95 backdrop-blur-sm border border-amber-500/30 text-amber-400 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider shadow-xl">
-          {leads.filter(l => l.status === 'New').length} Unassigned ·{' '}
-          <span className="text-emerald-400">{technicians.filter(t => t.lat && t.lng).length} Techs Online</span>
-        </div>
+        {showStatsBadge && (
+          <div className="absolute top-3 right-3 z-[2000] bg-teal-900/95 backdrop-blur-sm border border-teal-600/50 text-teal-100 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider shadow-xl">
+            {leads.filter(l => l.status === 'New').length} Unassigned ·{' '}
+            <span className="text-emerald-300">{technicians.filter(t => t.lat && t.lng).length} Techs Online</span>
+          </div>
+        )}
 
         <MapContainer
           center={center}
@@ -96,195 +199,330 @@ const JobMap: React.FC<JobMapProps> = ({ leads, technicians = [], onAssign, show
           scrollWheelZoom={true}
           style={{ height: '100%', width: '100%' }}
         >
-          {/* Force re-measure on fullscreen toggle */}
           <MapResizer trigger={false} />
-          <MapAutoFit leads={visibleLeads} technicians={technicians} />
-          {/* Google Maps paid-style tiles */}
+          <MapAutoFit leads={visibleLeads} technicians={technicians} leadPositions={leadPositions} locationKey={locationKey} />
           <TileLayer
             attribution='&copy; <a href="https://maps.google.com">Google Maps</a>'
             url="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}"
           />
 
-          {/* ── Lead Markers ── */}
+          {technicians.filter((t) => t.lat && t.lng).flatMap((tech) => {
+            const dest = getTechDestination(tech);
+            const trail = techTrails[tech.id] || [];
+            const out: React.ReactNode[] = [];
+            if (trail.length > 1) {
+              out.push(
+                <Polyline
+                  key={`trail-${tech.id}`}
+                  positions={trail}
+                  pathOptions={{ color: '#10b981', weight: 3, opacity: 0.7 }}
+                />
+              );
+            }
+            if (dest) {
+              out.push(
+                <Polyline
+                  key={`route-${tech.id}`}
+                  positions={[[Number(tech.lat), Number(tech.lng)], dest]}
+                  pathOptions={{ color: '#6366f1', weight: 2, opacity: 0.8, dashArray: '8 6' }}
+                />
+              );
+            }
+            return out;
+          })}
+
           {visibleLeads.map((lead) => {
-            const pos = getLeadCoords(lead);
-            const isNew = lead.status === 'New' || lead.status === 'Complaint';
+            const pos = getLeadMapPosition(lead, leadPositions);
+            const isNew = isUnassignedLead(lead);
+            const canAssign = isNew && !!onAssign;
+            const canReassign = REASSIGNABLE.includes(lead.status) && !!onAssign;
+            const canUnassign = UNASSIGNABLE.includes(lead.status) && !!onUnassign;
+            const canCancel = CANCELLABLE.includes(lead.status) && !!onCancel;
             const pics = getPictures(lead);
             const thumbSrc = pics[0] || lead.house_image || null;
 
             return (
-              <Marker
-                key={`lead-${lead.id}`}
+              <UpdatingMarker
+                key={`lead-${lead.id}-${pos[0].toFixed(6)}-${pos[1].toFixed(6)}`}
                 position={pos}
-                icon={getLeadMapIcon(lead.status)}
+                icon={getLeadMapIcon(lead)}
                 zIndexOffset={isNew ? 1000 : 0}
-                eventHandlers={{ mouseover: (e) => e.target.openPopup() }}
+                eventHandlers={hoverHandlers}
               >
-                <Popup className="custom-popup">
-                  <div className="p-4 w-[290px] bg-slate-900 text-white rounded-2xl border border-white/10 shadow-2xl space-y-3">
-                    {/* Header */}
-                    <div className="flex justify-between items-center">
-                      <span className={`text-[9px] font-black uppercase tracking-widest px-2.5 py-0.5 rounded-full border ${
-                        isNew ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' : 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20'
-                      }`}>
-                        {isNew ? '● Unassigned' : `● ${lead.status}`}
+                <Tooltip direction="top" offset={[0, -44]} opacity={0.95} className="map-hover-tip">
+                  <div className="text-xs font-bold text-slate-900 space-y-0.5 min-w-[120px]">
+                    <CopyText value={lead.lead_id} label="Lead ID" className="font-mono text-teal-700 block" />
+                    <div>{lead.customer?.name}</div>
+                    {lead.customer?.phone && (
+                      <div className="text-[10px] font-mono font-bold text-sky-700">{lead.customer.phone}</div>
+                    )}
+                    <div className="text-[10px] text-slate-600">{lead.product_type} · {lead.customer?.area}</div>
+                    <div className={`text-[9px] font-black uppercase ${isNew ? 'text-amber-600' : 'text-blue-600'}`}>
+                      {isNew ? 'Unassigned' : getMapStatusLabel(lead)}
+                    </div>
+                  </div>
+                </Tooltip>
+                <Popup className="custom-popup" closeButton>
+                  <div className="p-4 w-[300px] map-lead-card rounded-2xl space-y-3">
+                    <div className="flex justify-between items-center gap-2">
+                      <span className={`text-[9px] font-black uppercase tracking-widest px-2.5 py-0.5 rounded-full border ${statusBadgeClass(lead.status, isNew)}`}>
+                        {isNew ? '● Unassigned' : `● ${getMapStatusLabel(lead)}`}
                       </span>
-                      <span className="font-mono text-[10px] font-bold text-slate-500">{lead.lead_id}</span>
+                      <CopyText
+                        value={lead.lead_id}
+                        label="Lead ID"
+                        className="font-mono text-[11px] font-bold text-amber-200"
+                      />
                     </div>
 
-                    {/* Appliance image */}
                     {thumbSrc && (
                       <div
-                        className="relative w-full h-28 overflow-hidden rounded-xl bg-slate-950 border border-white/5 cursor-zoom-in group"
+                        className="relative w-full h-44 overflow-hidden rounded-xl bg-teal-950 border border-teal-600/40 cursor-zoom-in group"
                         onClick={() => setZoomedImage(thumbSrc)}
                       >
-                        <img src={thumbSrc} alt="appliance" className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110" />
+                        <img src={thumbSrc} alt="appliance" className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" />
                         {pics.length > 1 && (
-                          <div className="absolute top-2 right-2 bg-slate-950/80 text-white text-[8px] font-bold px-1.5 py-0.5 rounded border border-white/10">
+                          <div className="absolute top-2 right-2 bg-teal-900/90 text-amber-200 text-[8px] font-bold px-1.5 py-0.5 rounded border border-teal-600/50">
                             +{pics.length - 1} more
                           </div>
                         )}
-                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
-                          <span className="opacity-0 group-hover:opacity-100 transition-opacity text-white text-[10px] font-bold bg-black/50 px-2 py-1 rounded-lg">Click to zoom</span>
-                        </div>
                       </div>
                     )}
 
-                    {/* House image (shown below if different from item_pictures) */}
                     {lead.house_image && !thumbSrc?.startsWith('data:') && lead.house_image !== thumbSrc && (
                       <div
-                        className="relative w-full h-20 overflow-hidden rounded-xl bg-slate-950 border border-white/5 cursor-zoom-in group"
+                        className="relative w-full h-24 overflow-hidden rounded-xl bg-teal-950 border border-teal-600/40 cursor-zoom-in group"
                         onClick={() => setZoomedImage(lead.house_image)}
                       >
-                        <img src={lead.house_image} alt="house" className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110" />
-                        <div className="absolute top-1 left-1 bg-slate-950/80 text-slate-400 text-[8px] font-bold px-1.5 py-0.5 rounded border border-white/10">House</div>
+                        <img src={lead.house_image} alt="house" className="w-full h-full object-cover" />
+                        <div className="absolute top-1 left-1 bg-teal-900/90 text-teal-200 text-[8px] font-bold px-1.5 py-0.5 rounded">House</div>
                       </div>
                     )}
 
-                    {/* Info */}
                     <div className="space-y-1.5">
-                      <h4 className="font-bold text-sm text-slate-100 flex items-center gap-2">
-                        <User size={13} className="text-slate-400" /> {lead.customer.name}
+                      <h4 className="map-lead-name font-bold text-sm flex items-center gap-2">
+                        <User size={13} className="text-emerald-200 shrink-0" /> {lead.customer.name}
                       </h4>
-                      <p className="text-xs text-indigo-400 font-bold flex items-center gap-2">
-                        <Wrench size={13} /> {lead.product_type}
+                      {lead.customer?.phone && (
+                        <CopyText
+                          value={lead.customer.phone}
+                          label="Phone"
+                          className="map-lead-phone text-xs font-mono flex items-center gap-1"
+                        />
+                      )}
+                      <p className="map-lead-meta text-xs font-bold flex items-center gap-2">
+                        <Wrench size={13} className="text-amber-200 shrink-0" /> {lead.product_type}
                       </p>
-                      <p className="text-xs text-slate-300 flex items-start gap-2">
-                        <MapPin size={13} className="text-rose-400/80 shrink-0 mt-0.5" />
+                      <p className="map-lead-area text-xs flex items-start gap-2">
+                        <MapPin size={13} className="text-rose-200 shrink-0 mt-0.5" />
                         <span>{lead.customer.area}{lead.exact_address ? ` — ${lead.exact_address}` : ''}</span>
                       </p>
                       {lead.problem_details && (
-                        <div className="text-[11px] text-slate-400 bg-white/[0.02] border border-white/5 p-2 rounded-lg italic">
-                          "{lead.problem_details}"
+                        <div className="map-lead-quote text-[11px] bg-teal-950/60 border border-teal-700/50 p-2 rounded-lg italic">
+                          &ldquo;{lead.problem_details}&rdquo;
+                        </div>
+                      )}
+                      {lead.technician && isAssignedTaskStatus(lead.status) && (
+                        <div className="flex items-center gap-2 bg-sky-500/20 border border-sky-400/40 rounded-lg px-2.5 py-2">
+                          <User size={12} className="text-sky-200 shrink-0" />
+                          <div>
+                            <p className="text-[9px] font-black uppercase text-sky-200/80 tracking-wider">Assigned to</p>
+                            <p className="text-xs font-black text-white">{lead.technician.name}</p>
+                          </div>
                         </div>
                       )}
                     </div>
 
-                    {/* Actions */}
-                    <div className="flex gap-2">
-                      {/* Open full Google Maps window */}
-                      <button
-                        type="button"
-                        onClick={() => openLeadInGoogleMaps(lead)}
-                        className="flex-1 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/20 text-[10px] font-black py-2 rounded-xl transition-all flex items-center justify-center gap-1.5"
-                      >
-                        <ExternalLink size={12} /> Open in Maps
-                      </button>
-                      {isNew && onAssign && (
-                        <button
-                          type="button"
-                          onClick={() => onAssign(lead)}
-                          className="flex-1 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-white text-[10px] font-black py-2 rounded-xl transition-all shadow-lg shadow-orange-500/20 flex items-center justify-center gap-1.5"
-                        >
-                          <ClipboardList size={12} /> Assign
-                        </button>
-                      )}
-                    </div>
+                    {(canAssign || canReassign || canUnassign || canCancel) && (
+                      <PopupActions>
+                        <div className="flex flex-wrap gap-2 pt-1">
+                          {canAssign && (
+                            <button
+                              type="button"
+                              onMouseDown={stopMapEvent}
+                              onClick={(e) => { stopMapEvent(e); onAssign!(lead); }}
+                              className="flex-1 min-w-[45%] bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-teal-950 text-[10px] font-black py-2.5 rounded-xl transition-all shadow-lg flex items-center justify-center gap-1.5"
+                            >
+                              <ClipboardList size={12} /> Assign
+                            </button>
+                          )}
+                          {canReassign && (
+                            <button
+                              type="button"
+                              onMouseDown={stopMapEvent}
+                              onClick={(e) => { stopMapEvent(e); onAssign!(lead); }}
+                              className="flex-1 min-w-[45%] bg-gradient-to-r from-sky-500 to-indigo-500 hover:from-sky-400 hover:to-indigo-400 text-white text-[10px] font-black py-2.5 rounded-xl transition-all shadow-lg flex items-center justify-center gap-1.5"
+                            >
+                              <RefreshCw size={12} /> Reassign
+                            </button>
+                          )}
+                          {canUnassign && (
+                            <button
+                              type="button"
+                              onMouseDown={stopMapEvent}
+                              onClick={(e) => { stopMapEvent(e); onUnassign!(lead); }}
+                              className="flex-1 min-w-[45%] bg-slate-700 hover:bg-slate-600 text-white text-[10px] font-black py-2.5 rounded-xl transition-all border border-slate-500/50 flex items-center justify-center gap-1.5"
+                            >
+                              <UserMinus size={12} /> Unassign
+                            </button>
+                          )}
+                          {canCancel && (
+                            <button
+                              type="button"
+                              onMouseDown={stopMapEvent}
+                              onClick={(e) => { stopMapEvent(e); onCancel!(lead); }}
+                              className="flex-1 min-w-[45%] bg-rose-600/90 hover:bg-rose-500 text-white text-[10px] font-black py-2.5 rounded-xl transition-all border border-rose-400/30 flex items-center justify-center gap-1.5"
+                            >
+                              <XCircle size={12} /> Cancel
+                            </button>
+                          )}
+                        </div>
+                      </PopupActions>
+                    )}
                   </div>
                 </Popup>
-              </Marker>
+              </UpdatingMarker>
             );
           })}
 
-          {/* ── Technician Markers ── */}
-          {technicians.filter(t => t.lat && t.lng).map((tech) => (
+          {technicians.filter(t => t.lat != null && t.lng != null).map((tech) => {
+            const activeJob = tech.assigned_jobs?.[0];
+            const destArea = activeJob?.customer?.area || activeJob?.exact_address;
+            const live = isTechnicianLive(tech);
+            return (
             <Marker
               key={`tech-${tech.id}`}
               position={[Number(tech.lat), Number(tech.lng)]}
-              icon={techIcon}
-              eventHandlers={{ mouseover: (e) => e.target.openPopup() }}
+              icon={getTechIcon(tech.name)}
+              zIndexOffset={live ? 2500 : 1500}
+              eventHandlers={hoverHandlers}
             >
-              <Popup className="tech-popup">
-                <div className="p-4 w-[240px] bg-slate-900 text-white rounded-2xl border border-white/10 shadow-2xl space-y-3">
+              <Tooltip direction="top" offset={[0, -36]} opacity={0.95} className="map-hover-tip">
+                <div className="text-xs font-bold text-slate-900 space-y-0.5">
+                  <div className={`flex items-center gap-1 ${live ? 'text-emerald-700' : 'text-amber-700'}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full inline-block ${live ? 'bg-emerald-500 animate-pulse' : 'bg-amber-400'}`} />
+                    {tech.name} — {live ? 'LIVE' : 'Last known'}
+                  </div>
+                  {activeJob ? (
+                    <>
+                      <div className="text-[10px]">→ {activeJob.lead_id} ({activeJob.customer?.name})</div>
+                      <div className="text-[10px] text-indigo-600">Going to: {destArea || 'Job site'}</div>
+                    </>
+                  ) : (
+                    <div className="text-[10px] text-slate-500">Available — no active job</div>
+                  )}
+                </div>
+              </Tooltip>
+              <Popup className="tech-popup" closeButton>
+                <div className="p-4 w-[240px] map-lead-card rounded-2xl space-y-3">
                   <div className="flex justify-between items-start">
                     <div>
-                      <p className="font-bold text-sm text-slate-100">{tech.name}</p>
-                      <p className="text-[9px] text-indigo-400 font-black tracking-widest uppercase mt-0.5">{tech.specialization || 'General Tech'}</p>
+                      <p className="font-bold text-sm text-teal-50">{tech.name}</p>
+                      <p className="text-[9px] text-emerald-300 font-black tracking-widest uppercase mt-0.5">{tech.specialization || 'General Tech'}</p>
                     </div>
-                    <div className="flex items-center gap-1 text-[8px] font-bold text-emerald-400 bg-emerald-400/10 border border-emerald-400/20 px-2 py-0.5 rounded-full">
-                      <div className="w-1 h-1 bg-emerald-500 rounded-full animate-pulse" /> LIVE
+                    <div className="flex items-center gap-1 text-[8px] font-bold text-emerald-200 bg-emerald-500/20 border border-emerald-400/30 px-2 py-0.5 rounded-full">
+                      <div className="w-1 h-1 bg-emerald-400 rounded-full animate-pulse" /> LIVE
                     </div>
                   </div>
                   {tech.assigned_jobs?.length > 0 ? (
                     <div className="space-y-1.5">
-                      <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest border-b border-white/5 pb-1">Active Jobs</p>
+                      <p className="text-[9px] font-bold text-teal-300 uppercase tracking-widest border-b border-teal-700/50 pb-1">Active Jobs</p>
                       {tech.assigned_jobs.map((job: any) => (
-                        <div key={job.id} className="bg-slate-950/50 rounded-xl p-2.5 border border-white/5 space-y-0.5">
+                        <div key={job.id} className="bg-teal-950/60 rounded-xl p-2.5 border border-teal-700/40 space-y-0.5">
                           <div className="flex justify-between items-center">
-                            <span className="text-[9px] font-mono font-bold text-indigo-400">{job.lead_id}</span>
-                            <span className="text-[8px] font-black uppercase text-blue-400 bg-blue-500/10 border border-blue-500/20 px-1 rounded">{job.status}</span>
+                            <CopyText value={job.lead_id} label="Lead ID" className="text-[9px] font-mono font-bold text-amber-200" />
+                            <span className="text-[8px] font-black uppercase text-sky-200 bg-sky-500/20 border border-sky-400/30 px-1 rounded">{job.status}</span>
                           </div>
-                          <p className="text-[10px] font-bold text-slate-300">{job.customer?.name}</p>
-                          <p className="text-[9px] text-slate-500 truncate">{job.product_type} · {job.customer?.area}</p>
+                          <p className="text-[10px] font-bold text-teal-100">{job.customer?.name}</p>
                         </div>
                       ))}
                     </div>
                   ) : (
-                    <div className="py-3 text-center bg-slate-950/30 rounded-xl border border-dashed border-white/5">
-                      <p className="text-[9px] font-bold text-slate-500 uppercase">No active jobs</p>
+                    <div className="py-3 text-center bg-teal-950/40 rounded-xl border border-dashed border-teal-700/50">
+                      <p className="text-[9px] font-bold text-teal-400 uppercase">No active jobs</p>
                     </div>
                   )}
                 </div>
               </Popup>
             </Marker>
-          ))}
+          );
+          })}
         </MapContainer>
 
-        {/* Legend */}
-        <div className="absolute bottom-4 right-4 bg-slate-950/90 backdrop-blur-md p-3 rounded-2xl border border-white/10 z-[1000] space-y-2">
+        {showLegend && (
+        <div className="absolute bottom-4 right-4 bg-teal-900/95 backdrop-blur-md p-3 rounded-2xl border border-teal-600/50 z-[1000] space-y-2 shadow-xl">
           <div className="flex items-center gap-2.5">
             <div className="w-3.5 h-3.5 bg-gradient-to-br from-amber-400 to-orange-600 rounded-full border border-white shadow-[0_0_8px_rgba(245,158,11,0.5)]" />
-            <span className="text-[9px] font-bold text-white tracking-wider">UNASSIGNED</span>
+            <span className="text-[9px] font-bold text-amber-200 tracking-wider">UNASSIGNED</span>
           </div>
           <div className="flex items-center gap-2.5">
             <div className="w-3.5 h-3.5 bg-gradient-to-br from-indigo-400 to-blue-600 rounded-full border border-white shadow-[0_0_8px_rgba(59,130,246,0.5)]" />
-            <span className="text-[9px] font-bold text-white tracking-wider">ASSIGNED</span>
+            <span className="text-[9px] font-bold text-sky-200 tracking-wider">ASSIGNED</span>
           </div>
-          <div className="flex items-center gap-2.5 border-t border-white/5 pt-2">
+          <div className="flex items-center gap-2.5">
             <div className="relative w-3.5 h-3.5 flex items-center justify-center">
               <div className="absolute inset-0 bg-emerald-500/30 rounded-full animate-pulse" />
               <div className="w-2.5 h-2.5 bg-emerald-400 rounded-full border border-white" />
             </div>
-            <span className="text-[9px] font-bold text-emerald-400 tracking-wider">TECHNICIANS</span>
+            <span className="text-[9px] font-bold text-emerald-200 tracking-wider">TECHNICIANS</span>
           </div>
         </div>
+        )}
 
         <style>{`
           @keyframes pin-ping { 75%, 100% { transform: scale(2); opacity: 0; } }
           .unassigned-pin { z-index: 1000 !important; }
-          .leaflet-container { background: #e5e7eb !important; }
+          .leaflet-container { background: #cbd5e1 !important; }
+          .map-lead-card {
+            background: linear-gradient(145deg, #0f4c5c 0%, #134e4a 50%, #115e59 100%) !important;
+            color: #ecfdf5 !important;
+            border: 1px solid rgba(45, 212, 191, 0.35) !important;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.35) !important;
+          }
+          /* Override crm-shell light-mode text rules inside map popups */
+          .crm-shell .map-lead-card h4,
+          .map-lead-card .map-lead-name {
+            color: #f0fdfa !important;
+          }
+          .crm-shell .map-lead-card p,
+          .map-lead-card .map-lead-meta,
+          .map-lead-card .map-lead-area {
+            color: #ccfbf1 !important;
+          }
+          .map-lead-card .map-lead-phone {
+            color: #a5f3fc !important;
+          }
+          .map-lead-card .map-lead-meta {
+            color: #99f6e4 !important;
+            font-weight: 700 !important;
+          }
+          .map-lead-card .map-lead-quote {
+            color: #ecfdf5 !important;
+          }
           .custom-popup .leaflet-popup-content-wrapper,
           .tech-popup .leaflet-popup-content-wrapper {
-            background: #0f172a !important; color: white !important;
-            border-radius: 16px; padding: 0 !important; border: 1px solid rgba(255,255,255,0.1);
+            background: transparent !important;
+            color: #ecfdf5 !important;
+            border-radius: 16px; padding: 0 !important; border: none;
+            box-shadow: none !important;
           }
           .custom-popup .leaflet-popup-content,
           .tech-popup .leaflet-popup-content { margin: 0 !important; padding: 0 !important; }
-          .leaflet-popup-tip { background: #0f172a !important; }
+          .leaflet-popup-tip { background: #134e4a !important; }
+          .map-hover-tip {
+            background: #f0fdfa !important;
+            border: 1px solid rgba(20, 184, 166, 0.35) !important;
+            border-radius: 10px !important;
+            padding: 6px 8px !important;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.2) !important;
+          }
+          .leaflet-tooltip-left.map-hover-tip::before,
+          .leaflet-tooltip-right.map-hover-tip::before,
+          .leaflet-tooltip-top.map-hover-tip::before,
+          .leaflet-tooltip-bottom.map-hover-tip::before { border-top-color: #f0fdfa !important; }
         `}</style>
       </div>
 
-      {/* ── Image Zoom Overlay ── */}
       {zoomedImage && (
         <div
           className="fixed inset-0 z-[99999] bg-black/90 backdrop-blur-md flex items-center justify-center p-4 cursor-zoom-out"
@@ -294,7 +532,7 @@ const JobMap: React.FC<JobMapProps> = ({ leads, technicians = [], onAssign, show
             <img src={zoomedImage} alt="zoomed" className="w-full h-full object-contain rounded-2xl shadow-2xl" />
             <button
               onClick={() => setZoomedImage(null)}
-              className="absolute top-3 right-3 bg-slate-900/90 text-white p-2 rounded-xl border border-white/10 hover:bg-slate-800 transition-all"
+              className="absolute top-3 right-3 bg-teal-900/90 text-teal-50 p-2 rounded-xl border border-teal-600/50 hover:bg-teal-800 transition-all"
             >
               ✕
             </button>

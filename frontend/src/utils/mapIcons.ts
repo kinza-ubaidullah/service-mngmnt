@@ -41,6 +41,18 @@ export const completedIcon = L.divIcon({
   popupAnchor: [0, -34],
 });
 
+export const workshopIcon = L.divIcon({
+  className: 'custom-div-icon',
+  html: `
+    <svg width="32" height="40" viewBox="0 0 32 40" style="filter:drop-shadow(0 3px 6px rgba(249,115,22,0.65));">
+      <path d="M16 0C8.82 0 3 5.82 3 13c0 10.5 13 27 13 27s13-16.5 13-27C29 5.82 23.18 0 16 0z" fill="#f97316" stroke="#fff" stroke-width="2"/>
+      <text x="16" y="17" text-anchor="middle" fill="#fff" font-size="11" font-weight="900">W</text>
+    </svg>`,
+  iconSize: [32, 40],
+  iconAnchor: [16, 40],
+  popupAnchor: [0, -36],
+});
+
 export const complaintIcon = L.divIcon({
   className: 'custom-div-icon complaint-pin',
   html: `
@@ -57,22 +69,36 @@ export const complaintIcon = L.divIcon({
   popupAnchor: [0, -52],
 });
 
-export const techIcon = L.divIcon({
-  className: 'custom-div-icon',
-  html: `
-    <div class="relative flex items-center justify-center">
-      <div class="absolute w-8 h-8 bg-emerald-500/30 rounded-full animate-pulse"></div>
-      <div class="w-6 h-6 bg-gradient-to-br from-emerald-400 to-teal-600 rounded-full border-2 border-white shadow-lg shadow-emerald-500/50 flex items-center justify-center">
-        <span class="w-2 h-2 bg-white rounded-full"></span>
-      </div>
-    </div>`,
-  iconSize: [32, 32],
-  iconAnchor: [16, 16],
-});
+export const getTechIcon = (name: string) => {
+  const short = (name || 'Tech').split(' ')[0].slice(0, 10);
+  return L.divIcon({
+    className: 'custom-div-icon tech-pin',
+    html: `
+      <div style="display:flex;flex-direction:column;align-items:center;gap:2px;">
+        <div style="position:relative;display:flex;align-items:center;justify-content:center;">
+          <div style="position:absolute;width:32px;height:32px;background:rgba(16,185,129,0.35);border-radius:50%;animation:pin-ping 1.5s ease-out infinite;"></div>
+          <div style="width:24px;height:24px;background:linear-gradient(135deg,#34d399,#0d9488);border-radius:50%;border:2px solid #fff;box-shadow:0 4px 12px rgba(16,185,129,0.55);display:flex;align-items:center;justify-content:center;">
+            <span style="width:8px;height:8px;background:#fff;border-radius:50%;"></span>
+          </div>
+        </div>
+        <div style="background:rgba(15,23,42,0.92);color:#6ee7b7;font-size:9px;font-weight:800;padding:2px 6px;border-radius:6px;border:1px solid rgba(16,185,129,0.35);white-space:nowrap;max-width:90px;overflow:hidden;text-overflow:ellipsis;">${short}</div>
+      </div>`,
+    iconSize: [90, 48],
+    iconAnchor: [45, 24],
+    popupAnchor: [0, -28],
+  });
+};
 
-export const getLeadMapIcon = (status: string) => {
+/** @deprecated use getTechIcon(name) */
+export const techIcon = getTechIcon('Tech');
+
+export const getLeadMapIcon = (lead: { status: string; pending_outcome?: string | null }) => {
+  const status = lead.status;
+  if (status === 'Completed' || status === 'InspectionCompleted') return completedIcon;
+  if (status === 'PickedForWorkshop' || (status === 'PendingApproval' && lead.pending_outcome === 'PickedForWorkshop')) {
+    return workshopIcon;
+  }
   if (status === 'New') return unassignedIcon;
   if (status === 'Complaint' || status === 'Reopened') return complaintIcon;
-  if (status === 'Completed' || status === 'PendingApproval') return completedIcon;
   return assignedIcon;
 };

@@ -1,12 +1,12 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import type { RootState } from '../store';
 import { logout, setUser } from '../store/slices/authSlice';
 import { 
   LogOut, Wrench, MapPin, Clock, ClipboardCheck, 
-  ChevronRight, CheckCircle2, Package, Wallet, Plus,
+  ChevronRight, ChevronDown, CheckCircle2, Package, Wallet, Plus,
   Loader2, Sparkles, X, CreditCard, Info, User, TrendingDown, History, Download,
-  AlertCircle, Search, Filter, Activity, Truck, RefreshCw, Settings, Camera
+  AlertCircle, Search, Filter, Activity, Truck, RefreshCw, Settings, Camera, PhoneOff, Phone, Eye
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../services/api';
@@ -15,15 +15,18 @@ import { generateInvoicePDF } from '../utils/invoiceGenerator';
 import { generateInspectionReportPDF } from '../utils/inspectionReportGenerator';
 import { generateWorkshopPickupPDF } from '../utils/workshopPickupGenerator';
 import SettingsModule from '../components/SettingsModule';
-import TechnicianWorkshopView from '../components/TechnicianWorkshopView';
+import WorkshopModule from '../components/WorkshopModule';
 import ImageZoomModal from '../components/ImageZoomModal';
 import LeadHistoryModal from '../components/LeadHistoryModal';
-import { socket } from '../services/socket';
-import { getLeadPictures, formatPKR, getFinalAmount, matchesLeadSearch } from '../utils/leadHelpers';
-import { parseGoogleMapsCoords } from '../utils/leadLocation';
+import { getLeadPictures, getProductPictures, formatPKR, getFinalAmount, matchesLeadSearch } from '../utils/leadHelpers';
+import { parseGoogleMapsCoords, getLeadCoords, calculateDistanceKm, formatDistanceKm, hasExactLeadLocation } from '../utils/leadLocation';
 import RefreshButton from '../components/RefreshButton';
+import ThemeToggle from '../components/ThemeToggle';
 import VoiceNoteRecorder from '../components/VoiceNoteRecorder';
 import { useLiveData } from '../hooks/useLiveData';
+import { useMyLivePosition } from '../hooks/useMyLivePosition';
+import LeadSummaryHeader from '../components/LeadSummaryHeader';
+import TechnicianJobBrief from '../components/TechnicianJobBrief';
 import { compressImageFile } from '../utils/compressImage';
 
 interface Lead {
@@ -42,6 +45,9 @@ interface Lead {
   agreed_amount?: number;
   total_amount?: number;
   collected_amount?: number;
+  pending_outcome?: string | null;
+  rejection_note?: string | null;
+  voice_note?: string | null;
   warranty_months?: number;
   lat?: number;
   lng?: number;
@@ -52,23 +58,38 @@ interface Lead {
     exact_address?: string;
     google_map_link?: string;
   };
+  workshop_job?: {
+    id: number;
+    status: string;
+    delivery_assigned_to?: number | null;
+  } | null;
 }
 
 const JOB_FILTERS = [
   { id: 'active', label: 'Active' },
+  { id: 'delivery', label: 'Ready for Delivery' },
   { id: 'new', label: 'New' },
-  { id: 'complaint', label: 'Complaint' },
+  { id: 'complaint', label: 'Returned' },
   { id: 'pending', label: 'Pending' },
   { id: 'completed', label: 'Completed' },
   { id: 'all', label: 'All' },
 ] as const;
 
-const matchesJobFilter = (job: Lead, filter: string) => {
+const isDeliveryJob = (job: Lead, userId?: number) =>
+  !!userId &&
+  job.workshop_job?.delivery_assigned_to === userId &&
+  job.workshop_job?.status === 'Ready';
+
+const isReturnedJob = (job: Lead) =>
+  job.status === 'Complaint' || job.status === 'Reopened';
+
+const matchesJobFilter = (job: Lead, filter: string, userId?: number) => {
+  if (filter === 'delivery') return isDeliveryJob(job, userId);
   if (filter === 'active') return !['Completed', 'PickedForWorkshop', 'PendingApproval', 'Cancelled', 'Deleted'].includes(job.status);
   if (filter === 'new') return job.status === 'Assigned' || job.status === 'InProgress';
-  if (filter === 'complaint') return job.status === 'Complaint' || job.status === 'Reopened';
+  if (filter === 'complaint') return isReturnedJob(job);
   if (filter === 'pending') return job.status === 'PendingApproval';
-  if (filter === 'completed') return job.status === 'Completed' || job.status === 'PickedForWorkshop' || job.status === 'InspectionCompleted';
+  if (filter === 'completed') return job.status === 'Completed' || job.status === 'PickedForWorkshop' || job.status === 'InspectionCompleted' || job.status === 'PendingApproval';
   return true;
 };
 
@@ -116,6 +137,7 @@ const TechnicianDashboard = () => {
   const [voiceNote, setVoiceNote] = useState<string>('');
   const [outcomeLoading, setOutcomeLoading] = useState(false);
   const [historyLead, setHistoryLead] = useState<Lead | null>(null);
+  const [expandedJobIds, setExpandedJobIds] = useState<Set<number>>(new Set());
   const [walletDetail, setWalletDetail] = useState<any>(null);
 
   // Wallet State
@@ -140,29 +162,38 @@ const TechnicianDashboard = () => {
     profile_picture: user?.profile_picture || ''
   });
 
-  // Calculate distance between two coordinates in km
-  const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
-    const R = 6371; // Radius of the earth in km
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-      Math.sin(dLon/2) * Math.sin(dLon/2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    return R * c;
-  };
+  const livePosition = useMyLivePosition(user?.id);
 
   const getDistanceDisplay = (job: Lead) => {
-    if (!user?.lat || !user?.lng) return null;
-    let lat: number | null = job.lat ?? null;
-    let lng: number | null = job.lng ?? null;
-    if (lat == null || lng == null) {
-      const parsed = parseGoogleMapsCoords(job.customer?.google_map_link);
-      if (parsed) { lat = parsed[0]; lng = parsed[1]; }
+    const techLat = livePosition?.lat ?? user?.lat;
+    const techLng = livePosition?.lng ?? user?.lng;
+    if (techLat == null || techLng == null) return null;
+    if (!hasExactLeadLocation(job)) return null;
+    const [lat, lng] = getLeadCoords(job);
+    const dist = calculateDistanceKm(techLat, techLng, lat, lng);
+    return formatDistanceKm(dist);
+  };
+
+  const toggleJobExpanded = (jobId: number) => {
+    setExpandedJobIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(jobId)) next.delete(jobId);
+      else next.add(jobId);
+      return next;
+    });
+  };
+
+  const handleNoAnswer = async (job: Lead) => {
+    if (!window.confirm('Customer did not answer? This will return the lead to Unassigned for reassignment.')) return;
+    try {
+      await api.patch(`/leads/${job.id}/technician-no-answer`, {
+        reason: 'Customer did not answer phone',
+      });
+      toast.success('Lead returned to unassigned queue');
+      fetchJobs();
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || 'Failed to return lead');
     }
-    if (lat == null || lng == null) return null;
-    const dist = calculateDistance(user.lat, user.lng, lat, lng);
-    return `${dist.toFixed(1)} km away`;
   };
 
   const fetchJobs = async (opts?: { silent?: boolean }) => {
@@ -218,44 +249,6 @@ const TechnicianDashboard = () => {
     fetchJobs();
     fetchWalletData();
     fetchWorkshopJobs();
-
-    // Establish WebSocket Connection and start Geolocation tracking
-    socket.connect();
-    console.log('Technician socket connecting...');
-
-    let watchId: number | null = null;
-    if (navigator.geolocation && user?.id) {
-      console.log('Starting Geolocation watcher for technician:', user.id);
-      watchId = navigator.geolocation.watchPosition(
-        (position) => {
-          const { latitude, longitude } = position.coords;
-          console.log(`Live location update: lat ${latitude}, lng ${longitude}`);
-          
-          // Emit coordinate update over WebSocket channel
-          socket.emit('location_update', {
-            userId: Number(user.id),
-            lat: latitude,
-            lng: longitude
-          });
-        },
-        (error) => {
-          console.warn('Geolocation access failed/timeout:', error);
-        },
-        {
-          enableHighAccuracy: true,
-          timeout: 15000,
-          maximumAge: 10000
-        }
-      );
-    } else {
-      console.warn('Browser Geolocation is not supported or User ID is missing.');
-    }
-
-    return () => {
-      if (watchId !== null) {
-        navigator.geolocation.clearWatch(watchId);
-      }
-    };
   }, [user?.id, isAuthenticated]);
 
   const buildWalletTimeline = () => {
@@ -299,7 +292,7 @@ const TechnicianDashboard = () => {
   const filteredJobs = jobs.filter(job => {
     if (!matchesLeadSearch(job, jobSearch)) return false;
     if (isGlobalSearch) return true;
-    return matchesJobFilter(job, jobFilter);
+    return matchesJobFilter(job, jobFilter, user?.id);
   });
 
   const updateWorkshopStatus = async (jobId: number, status: string) => {
@@ -310,6 +303,19 @@ const TechnicianDashboard = () => {
       fetchJobs();
     } catch (error) {
       toast.error('Failed to update workshop status');
+    }
+  };
+
+  const handleMarkDelivered = async (job: Lead) => {
+    if (!job.workshop_job?.id) return toast.error('No workshop job linked');
+    if (!window.confirm(`Mark ${job.lead_id} as delivered to customer?`)) return;
+    try {
+      await api.patch(`/workshop/jobs/${job.workshop_job.id}/status`, { status: 'Delivered' });
+      toast.success('Marked as delivered — sent for final approval');
+      fetchJobs();
+      fetchWalletData();
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || 'Failed to mark delivered');
     }
   };
 
@@ -331,7 +337,12 @@ const TechnicianDashboard = () => {
           }))
         : undefined;
       await api.patch(`/leads/${selectedJob.id}/outcome`, {
-        ...outcomeData,
+        status: outcomeData.status,
+        actual_problem: outcomeData.actual_problem,
+        repair_details: outcomeData.repair_details,
+        total_amount: outcomeData.total_amount || outcomeData.collected_amount || undefined,
+        collected_amount: outcomeData.collected_amount || outcomeData.total_amount || undefined,
+        warranty_months: outcomeData.warranty_months,
         item_pictures: compressedPics,
         voice_note: voiceNote || undefined
       });
@@ -407,9 +418,20 @@ const TechnicianDashboard = () => {
 
   const openOutcomeModal = (job: Lead) => {
     setSelectedJob(job);
-    setOutcomeData({ status: 'Completed', actual_problem: '', repair_details: '', total_amount: '', collected_amount: '', warranty_months: '3' });
-    setOutcomePictures([]);
-    setVoiceNote('');
+    const outcomeType =
+      job.pending_outcome === 'PickedForWorkshop' ? 'PickedForWorkshop'
+      : job.pending_outcome === 'InspectionCompleted' ? 'InspectionCompleted'
+      : 'Completed';
+    setOutcomeData({
+      status: outcomeType,
+      actual_problem: job.actual_problem || '',
+      repair_details: job.repair_details || '',
+      total_amount: job.total_amount != null ? String(job.total_amount) : '',
+      collected_amount: job.collected_amount != null ? String(job.collected_amount) : '',
+      warranty_months: job.warranty_months != null ? String(job.warranty_months) : '3',
+    });
+    setOutcomePictures(getProductPictures(job));
+    setVoiceNote(job.voice_note || '');
     setOutcomeModalOpen(true);
   };
 
@@ -421,7 +443,7 @@ const TechnicianDashboard = () => {
 
   if (!isAuthenticated || !user) {
     return (
-      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-center">
+      <div className="crm-shell flex flex-col items-center justify-center p-6 text-center">
         <Loader2 className="text-emerald-500 animate-spin mb-4" size={40} />
         <p className="text-slate-400 font-bold tracking-widest uppercase text-xs">Authenticating Technician...</p>
       </div>
@@ -429,28 +451,28 @@ const TechnicianDashboard = () => {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-200 flex flex-col font-sans selection:bg-emerald-500/30">
+    <div className="crm-shell text-slate-800 flex flex-col font-sans selection:bg-mint-200/50 min-h-screen">
       
       {/* Background Glow */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
-        <div className="absolute top-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-emerald-600/5 blur-[120px]"></div>
-        <div className="absolute bottom-[-10%] left-[-10%] w-[30%] h-[30%] rounded-full bg-blue-600/5 blur-[100px]"></div>
+        <div className="absolute top-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-mint-300/25 blur-[120px]"></div>
+        <div className="absolute bottom-[-10%] left-[-10%] w-[30%] h-[30%] rounded-full bg-sky-soft/40 blur-[100px]"></div>
       </div>
 
       {/* Navbar */}
       <motion.nav 
         initial={{ y: -20, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
-        className="bg-slate-900/50 backdrop-blur-xl border-b border-white/5 px-6 py-4 flex justify-between items-center sticky top-0 z-20"
+        className="crm-nav backdrop-blur-xl px-6 py-4 flex justify-between items-center sticky top-0 z-20"
       >
         <div className="flex items-center gap-3">
-          <div className="bg-gradient-to-br from-emerald-500 to-teal-600 p-2 rounded-lg shadow-lg shadow-emerald-500/20">
+          <div className="crm-icon-box p-2 rounded-lg shadow-lg shadow-mint-300/30">
             <Wrench size={20} className="text-white" />
           </div>
 
           <div>
-            <h1 className="text-lg font-bold text-white tracking-wide flex items-center gap-2">
-              TechPanel <Sparkles size={14} className="text-emerald-400" />
+            <h1 className="text-lg font-bold text-slate-800 tracking-wide flex items-center gap-2">
+              TechPanel <Sparkles size={14} className="text-mint-600" />
             </h1>
           </div>
         </div>
@@ -458,11 +480,12 @@ const TechnicianDashboard = () => {
         <div className="flex items-center gap-4">
           <div className="hidden sm:block text-right">
             <p className="text-xs text-slate-400 font-medium">Technician</p>
-            <p className="text-sm font-bold text-white">{user?.name}</p>
+            <p className="text-sm font-bold text-slate-800">{user?.name}</p>
           </div>
+          <ThemeToggle />
           <button 
             onClick={() => dispatch(logout())}
-            className="p-2.5 bg-white/5 hover:bg-white/10 text-white rounded-xl transition-all border border-white/10 hover:border-white/20"
+            className="p-2.5 crm-btn-ghost rounded-xl transition-all border border-slate-200/70 hover:border-mint-300/50"
           >
             <LogOut size={18} />
           </button>
@@ -474,11 +497,11 @@ const TechnicianDashboard = () => {
         {/* Profile Completion Warning Removed */}
 
         {/* Tab Switcher */}
-        <div className="flex bg-slate-900/50 p-1 rounded-2xl border border-white/5 mb-8 shadow-xl">
+        <div className="flex crm-tabs rounded-2xl mb-8 shadow-xl">
           <button 
             onClick={() => setActiveTab('tasks')}
             className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm transition-all
-              ${activeTab === 'tasks' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' : 'text-slate-500 hover:text-slate-300'}
+              ${activeTab === 'tasks' ? 'crm-tab-active shadow-sm' : 'text-slate-500 hover:text-slate-300'}
             `}
           >
             <ClipboardCheck size={18} /> Tasks
@@ -486,7 +509,7 @@ const TechnicianDashboard = () => {
           <button 
             onClick={() => setActiveTab('workshop')}
             className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-[10px] sm:text-sm transition-all
-              ${activeTab === 'workshop' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' : 'text-slate-500 hover:text-slate-300'}
+              ${activeTab === 'workshop' ? 'crm-tab-active shadow-sm' : 'text-slate-500 hover:text-slate-300'}
             `}
           >
             <Package size={18} /> Workshop
@@ -495,7 +518,7 @@ const TechnicianDashboard = () => {
           <button 
             onClick={() => setActiveTab('history')}
             className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-[10px] sm:text-sm transition-all
-              ${activeTab === 'history' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' : 'text-slate-500 hover:text-slate-300'}
+              ${activeTab === 'history' ? 'crm-tab-active shadow-sm' : 'text-slate-500 hover:text-slate-300'}
             `}
           >
             <History size={18} /> History
@@ -503,7 +526,7 @@ const TechnicianDashboard = () => {
           <button 
             onClick={() => setActiveTab('wallet')}
             className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-[10px] sm:text-sm transition-all
-              ${activeTab === 'wallet' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' : 'text-slate-500 hover:text-slate-300'}
+              ${activeTab === 'wallet' ? 'crm-tab-active shadow-sm' : 'text-slate-500 hover:text-slate-300'}
             `}
           >
             <Wallet size={18} /> Wallet
@@ -511,7 +534,7 @@ const TechnicianDashboard = () => {
           <button 
             onClick={() => setActiveTab('settings')}
             className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-[10px] sm:text-sm transition-all
-              ${activeTab === 'settings' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' : 'text-slate-500 hover:text-slate-300'}
+              ${activeTab === 'settings' ? 'crm-tab-active shadow-sm' : 'text-slate-500 hover:text-slate-300'}
             `}
           >
             <Settings size={18} /> Settings
@@ -522,27 +545,27 @@ const TechnicianDashboard = () => {
           <>
             <div className="mb-4 flex flex-col sm:flex-row sm:justify-between sm:items-end gap-4">
               <div>
-                <h2 className="text-2xl font-bold text-white">My Jobs</h2>
+                <h2 className="text-2xl font-bold text-slate-800">My Jobs</h2>
                 <p className="text-sm text-slate-400">
-                  {jobs.filter(j => matchesJobFilter(j, 'active')).length} active • {jobs.filter(j => j.status === 'Complaint' || j.status === 'Reopened').length} complaints
+                  {jobs.filter(j => matchesJobFilter(j, 'active', user?.id)).length} active • {jobs.filter(j => isReturnedJob(j)).length} returned
                 </p>
               </div>
               <div className="flex items-center gap-3 w-full sm:w-auto">
                 <div className="relative flex-1 sm:w-48 group">
-                  <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-emerald-400 transition-colors" />
+                  <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-mint-600 transition-colors" />
                   <input 
                     type="text" 
                     placeholder="Search lead ID, name, phone (any tab)..." 
                     value={jobSearch}
                     onChange={(e) => setJobSearch(e.target.value)}
-                    className="w-full bg-slate-900/50 border border-white/5 rounded-xl py-2 pl-10 pr-4 text-xs outline-none focus:border-emerald-500/50 transition-all text-white"
+                    className="w-full crm-card-soft border border-slate-200/60 rounded-xl py-2 pl-10 pr-4 text-xs outline-none focus:border-mint-400/50 transition-all text-slate-800"
                   />
                 </div>
-                <RefreshButton onClick={refreshTasksBtn} loading={tasksRefreshing} className="text-emerald-400 hover:text-emerald-300" />
+                <RefreshButton onClick={refreshTasksBtn} loading={tasksRefreshing} className="text-mint-600 hover:text-emerald-300" />
               </div>
             </div>
 
-            <div className="flex flex-wrap gap-1 bg-slate-900/50 p-1 rounded-xl border border-white/5 mb-6">
+            <div className="flex flex-wrap gap-1 crm-card-soft p-1 rounded-xl border border-slate-200/60 mb-6">
               {JOB_FILTERS.map((f) => (
                 <button
                   key={f.id}
@@ -550,179 +573,199 @@ const TechnicianDashboard = () => {
                   onClick={() => setJobFilter(f.id)}
                   className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
                     jobFilter === f.id
-                      ? f.id === 'complaint' ? 'bg-red-500 text-white' : 'bg-emerald-500 text-white'
-                      : 'text-slate-400 hover:text-white'
+                      ? f.id === 'complaint' ? 'bg-rose-400 text-white' : f.id === 'delivery' ? 'crm-tab-active' : 'crm-tab-active'
+                      : 'text-slate-400 hover:text-slate-800'
                   }`}
                 >
                   {f.label}
-                  <span className="ml-1 opacity-70">({jobs.filter(j => matchesJobFilter(j, f.id)).length})</span>
+                  <span className="ml-1 opacity-70">({jobs.filter(j => matchesJobFilter(j, f.id, user?.id)).length})</span>
                 </button>
               ))}
             </div>
 
             {loading ? (
               <div className="h-64 flex justify-center items-center">
-                <Loader2 className="animate-spin text-emerald-500" size={32} />
+                <Loader2 className="animate-spin text-mint-500" size={32} />
               </div>
             ) : filteredJobs.length === 0 ? (
-              <div className="bg-slate-900/50 border border-white/5 rounded-3xl p-12 text-center">
-                <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-4">
+              <div className="crm-card-soft border border-slate-200/60 rounded-3xl p-12 text-center">
+                <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4">
                   <ClipboardCheck size={32} className="text-slate-600" />
                 </div>
-                <h3 className="text-white font-bold mb-1">No Jobs Found</h3>
+                <h3 className="text-slate-800 font-bold mb-1">No Jobs Found</h3>
                 <p className="text-sm text-slate-500">No jobs match the current filter.</p>
               </div>
             ) : (
-              <div className="space-y-4">
+              <div className="space-y-5">
                 <AnimatePresence mode="popLayout">
                   {filteredJobs.map((job, idx) => {
-                    const isComplaint = job.status === 'Complaint' || job.status === 'Reopened';
-                    const pics = getLeadPictures(job);
+                    const isReturned = isReturnedJob(job);
+                    const isDelivery = isDeliveryJob(job, user?.id);
+                    const distanceLabel = getDistanceDisplay(job);
+                    const extraProductPics = getProductPictures(job).slice(1);
+                    const isExpanded = expandedJobIds.has(job.id);
+                    const statusLabel = isReturned ? 'RETURNED' : isDelivery ? 'READY FOR DELIVERY' : job.status;
+                    const statusTone = isReturned
+                      ? 'returned'
+                      : isDelivery
+                      ? 'delivery'
+                      : job.status === 'Assigned'
+                      ? 'assigned'
+                      : job.status === 'Completed'
+                      ? 'completed'
+                      : 'default';
                     return (
                     <motion.div
                       key={job.id}
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: idx * 0.1 }}
-                      className={`backdrop-blur-xl border rounded-2xl p-5 transition-all group ${
-                        isComplaint
-                          ? 'bg-red-950/30 border-red-500/40 shadow-lg shadow-red-500/10'
-                          : 'bg-slate-900/60 border-white/10 hover:border-emerald-500/40'
-                      }`}
+                      className="space-y-0"
                     >
-                      <div className="flex justify-between items-start mb-4">
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest bg-white/5 px-2 py-0.5 rounded">
-                            {job.lead_id}
-                          </span>
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase
-                            ${isComplaint ? 'bg-red-500/20 text-red-400' :
-                              job.status === 'Assigned' ? 'bg-blue-500/20 text-blue-400' : 
-                              job.status === 'Completed' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-500/20 text-slate-400'}
-                          `}>
-                            {isComplaint ? 'COMPLAINT' : job.status}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {job.status === 'Completed' && (
-                            <button 
-                              onClick={(e) => { e.stopPropagation(); generateInvoicePDF(job); }}
-                              className="p-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 rounded-lg transition-colors border border-emerald-500/20"
-                              title="Download Invoice"
-                            >
-                              <Download size={14} />
-                            </button>
-                          )}
-                          {job.status === 'InspectionCompleted' && (
-                            <button
-                              onClick={(e) => { e.stopPropagation(); generateInspectionReportPDF(job); }}
-                              className="p-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 rounded-lg transition-colors border border-amber-500/20"
-                              title="Inspection PDF"
-                            >
-                              <Download size={14} />
-                            </button>
-                          )}
-                          {job.status === 'PickedForWorkshop' && (
-                            <button
-                              onClick={(e) => { e.stopPropagation(); generateWorkshopPickupPDF(job); }}
-                              className="p-1.5 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 rounded-lg transition-colors border border-blue-500/20"
-                              title="Pickup PDF"
-                            >
-                              <Download size={14} />
-                            </button>
-                          )}
-                          <ChevronRight size={16} className="text-slate-600 group-hover:text-emerald-400 group-hover:translate-x-1 transition-all" />
-                        </div>
-                      </div>
+                      <TechnicianJobBrief
+                        job={job}
+                        statusLabel={statusLabel}
+                        statusTone={statusTone}
+                        distanceLabel={distanceLabel}
+                        isExpanded={isExpanded}
+                        onToggle={() => toggleJobExpanded(job.id)}
+                        onZoom={setZoomImg}
+                      />
 
-                      <h3 className="text-lg font-bold text-white mb-1">{job.customer?.name}</h3>
-                      <div className="text-sm text-amber-300/95 bg-amber-500/10 border border-amber-500/20 p-3 rounded-xl mb-3">
-                        <p className="text-[10px] font-black text-amber-500 uppercase tracking-wider mb-1">Customer Issue / Complaint</p>
-                        <p className="text-sm leading-relaxed whitespace-pre-wrap">{job.problem_details || 'No description provided.'}</p>
-                      </div>
-                      {(job.agreed_amount || getFinalAmount(job) > 0) && (
-                        <p className="text-xs text-emerald-400 font-bold mb-2">
-                          {job.agreed_amount ? `Agreed: ${formatPKR(job.agreed_amount)}` : `Amount: ${formatPKR(getFinalAmount(job))}`}
-                        </p>
-                      )}
-                      <div className="flex flex-col gap-1 text-slate-400 text-sm mb-3">
-                        <div className="flex items-center gap-2">
-                          <MapPin size={14} className="text-emerald-500/70" />
-                          <span className="truncate flex-1">{job.customer?.area}</span>
-                          {getDistanceDisplay(job) && (
-                            <span className="text-xs text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded">
-                              {getDistanceDisplay(job)}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="flex gap-2 mb-4">
-                        <a href={`tel:${job.customer?.phone?.replace(/[^0-9+]/g, '')}`} onClick={(e) => e.stopPropagation()} className="flex-1 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 text-xs font-bold py-2.5 rounded-xl border border-blue-500/20 transition-all flex items-center justify-center gap-1">
-                          Call
-                        </a>
-                        <a href={`https://wa.me/${job.customer?.phone?.replace(/[^0-9]/g, '')}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="flex-1 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 text-xs font-bold py-2.5 rounded-xl border border-emerald-500/20 transition-all flex items-center justify-center gap-1">
-                          WhatsApp
-                        </a>
-                        {job.customer?.google_map_link && (
-                          <a href={job.customer?.google_map_link} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="flex-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 text-xs font-bold py-2.5 rounded-xl border border-amber-500/20 transition-all flex items-center justify-center gap-1">
-                            Location
-                          </a>
-                        )}
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-3 pt-3 border-t border-white/5 mb-4">
-                        <div className="flex flex-col gap-0.5">
-                          <span className="text-[10px] font-bold text-slate-500 uppercase">Appliance</span>
-                          <span className="text-sm font-semibold text-slate-200">{job.product_type}</span>
-                        </div>
-                        <div className="flex flex-col gap-0.5">
-                          <span className="text-[10px] font-bold text-slate-500 uppercase">Visit Date</span>
-                          <span className="text-sm font-semibold text-slate-200">
-                            {job.visit_date ? new Date(job.visit_date).toLocaleDateString() : 'Today'}
-                          </span>
-                        </div>
-                      </div>
-
-                      {pics.length > 0 && (
-                        <div className="flex gap-2 mb-4 overflow-x-auto pb-1 custom-scrollbar">
-                           {pics.map((pic: string, pIdx: number) => (
-                             <img 
-                               key={pIdx} 
-                               src={pic} 
-                               alt="item" 
-                               className="w-14 h-14 rounded-lg object-cover border border-white/10 shrink-0 cursor-pointer hover:ring-2 hover:ring-emerald-500/50"
-                               onClick={() => setZoomImg(pic)}
-                             />
-                           ))}
+                      {job.rejection_note && (
+                        <div className="mx-1 -mt-1 mb-1 rounded-b-xl border border-rose-300 border-t-0 bg-rose-50 px-3 py-2">
+                          <p className="text-[10px] font-black uppercase text-rose-600 tracking-wider">Admin Rejection Note</p>
+                          <p className="text-xs font-semibold text-rose-800 mt-0.5">{job.rejection_note}</p>
                         </div>
                       )}
 
-                      <div className="flex gap-2 pt-2 border-t border-white/5">
-                        <button type="button" onClick={() => setHistoryLead(job)} className="flex-1 bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-bold py-2.5 rounded-xl border border-white/10 flex items-center justify-center gap-1">
-                          <History size={14} /> History
-                        </button>
-                        {!['Completed', 'PickedForWorkshop', 'PendingApproval'].includes(job.status) && (
-                          <button type="button" onClick={() => openOutcomeModal(job)} className="flex-1 bg-gradient-to-r from-emerald-500 to-teal-600 text-white text-xs font-bold py-2.5 rounded-xl flex items-center justify-center gap-1">
-                            <ClipboardCheck size={14} /> Update Outcome
-                          </button>
+                      <AnimatePresence initial={false}>
+                        {isExpanded && (
+                          <motion.div
+                            key={`expand-${job.id}`}
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: 'auto', opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            transition={{ duration: 0.22, ease: 'easeInOut' }}
+                            className="overflow-hidden -mt-1"
+                          >
+                            <div className="mx-1 rounded-b-2xl border-2 border-t-0 border-slate-200 bg-white px-4 pb-5 pt-4 space-y-4">
+                              {job.problem_details && (
+                                <div className="rounded-xl bg-amber-50 border-2 border-amber-200 px-4 py-3">
+                                  <p className="text-xs font-black uppercase tracking-wider text-amber-800 mb-1">Full Issue Description</p>
+                                  <p className="text-base font-semibold text-amber-950 leading-relaxed">{job.problem_details}</p>
+                                </div>
+                              )}
+
+                              {(job.agreed_amount || getFinalAmount(job) > 0) && (
+                                <div className="rounded-xl bg-emerald-50 border-2 border-emerald-200 px-4 py-3">
+                                  <p className="text-xs font-black uppercase tracking-wider text-emerald-800 mb-1">Payment</p>
+                                  <p className="text-lg font-black text-emerald-900">
+                                    {job.agreed_amount ? `Agreed: ${formatPKR(job.agreed_amount)}` : `Amount: ${formatPKR(getFinalAmount(job))}`}
+                                  </p>
+                                </div>
+                              )}
+
+                              <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3">
+                                <p className="text-xs font-black uppercase tracking-wider text-slate-500 mb-1">Full Address</p>
+                                <p className="text-base font-semibold text-slate-800 flex items-start gap-2 leading-relaxed">
+                                  <MapPin size={18} className="text-emerald-600 shrink-0 mt-0.5" />
+                                  {job.exact_address || job.customer?.exact_address || job.customer?.area || '—'}
+                                </p>
+                              </div>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                <a href={`tel:${job.customer?.phone?.replace(/[^0-9+]/g, '')}`} onClick={(e) => e.stopPropagation()} className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold py-3.5 rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm">
+                                  <Phone size={18} /> Call
+                                </a>
+                                <a href={`https://wa.me/${job.customer?.phone?.replace(/[^0-9]/g, '')}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold py-3.5 rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm">
+                                  WhatsApp
+                                </a>
+                                {job.customer?.google_map_link ? (
+                                  <a href={job.customer.google_map_link} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold py-3.5 rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm">
+                                    <MapPin size={18} /> Map
+                                  </a>
+                                ) : (
+                                  <div className="hidden sm:block" />
+                                )}
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-3">
+                                <div className="rounded-xl bg-white border-2 border-slate-200 px-4 py-3">
+                                  <p className="text-xs font-black uppercase tracking-wider text-slate-500 mb-1">Appliance</p>
+                                  <p className="text-base font-bold text-slate-900">{job.product_type}</p>
+                                </div>
+                                <div className="rounded-xl bg-white border-2 border-slate-200 px-4 py-3">
+                                  <p className="text-xs font-black uppercase tracking-wider text-slate-500 mb-1">Visit Date</p>
+                                  <p className="text-base font-bold text-slate-900">
+                                    {job.visit_date ? new Date(job.visit_date).toLocaleDateString() : 'Today'}
+                                  </p>
+                                </div>
+                              </div>
+
+                              {(job.status === 'Completed' || job.status === 'InspectionCompleted' || job.status === 'PickedForWorkshop') && (
+                                <div className="flex flex-wrap gap-2">
+                                  {job.status === 'Completed' && (
+                                    <button type="button" onClick={() => generateInvoicePDF(job)} className="text-sm font-bold px-4 py-2 rounded-xl bg-mint-100 text-mint-800 border-2 border-mint-300 flex items-center gap-2">
+                                      <Download size={16} /> Download Invoice
+                                    </button>
+                                  )}
+                                  {job.status === 'InspectionCompleted' && (
+                                    <button type="button" onClick={() => generateInspectionReportPDF(job)} className="text-sm font-bold px-4 py-2 rounded-xl bg-amber-100 text-amber-800 border-2 border-amber-300 flex items-center gap-2">
+                                      <Download size={16} /> Inspection PDF
+                                    </button>
+                                  )}
+                                  {job.status === 'PickedForWorkshop' && (
+                                    <button type="button" onClick={async () => {
+                                      try { await generateWorkshopPickupPDF(job); } catch { toast.error('Failed to generate Pickup PDF'); }
+                                    }} className="text-sm font-bold px-4 py-2 rounded-xl bg-blue-100 text-blue-800 border-2 border-blue-300 flex items-center gap-2">
+                                      <Download size={16} /> Pickup PDF
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+
+                              {extraProductPics.length > 0 && (
+                                <div>
+                                  <p className="text-xs font-black uppercase tracking-wider text-slate-500 mb-2">More Photos</p>
+                                  <div className="flex gap-2 overflow-x-auto pb-1 custom-scrollbar">
+                                    {extraProductPics.map((pic: string, pIdx: number) => (
+                                      <img
+                                        key={pIdx}
+                                        src={pic}
+                                        alt="Product"
+                                        className="w-20 h-20 rounded-xl object-cover border-2 border-slate-200 shrink-0 cursor-pointer hover:ring-2 hover:ring-emerald-500"
+                                        onClick={() => setZoomImg(pic)}
+                                      />
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              <div className="flex flex-col sm:flex-row flex-wrap gap-2 pt-2 border-t-2 border-slate-100">
+                                <button type="button" onClick={() => setHistoryLead(job)} className="flex-1 min-w-[140px] bg-white hover:bg-slate-50 text-slate-800 text-sm font-bold py-3.5 rounded-xl border-2 border-slate-200 flex items-center justify-center gap-2">
+                                  <Eye size={18} /> View Details
+                                </button>
+                                {!['Completed', 'PickedForWorkshop', 'PendingApproval'].includes(job.status) && !isDelivery && (
+                                  <>
+                                    <button type="button" onClick={() => handleNoAnswer(job)} className="flex-1 min-w-[140px] bg-rose-50 hover:bg-rose-100 text-rose-800 text-sm font-bold py-3.5 rounded-xl border-2 border-rose-200 flex items-center justify-center gap-2">
+                                      <PhoneOff size={18} /> No Answer
+                                    </button>
+                                    <button type="button" onClick={() => openOutcomeModal(job)} className="flex-1 min-w-[140px] crm-btn-primary text-sm font-bold py-3.5 rounded-xl flex items-center justify-center gap-2">
+                                      <ClipboardCheck size={18} /> Update Outcome
+                                    </button>
+                                  </>
+                                )}
+                                {isDelivery && (
+                                  <button type="button" onClick={() => handleMarkDelivered(job)} className="flex-1 bg-gradient-to-r from-violet-600 to-purple-600 text-white text-sm font-bold py-3.5 rounded-xl flex items-center justify-center gap-2 shadow-md">
+                                    <Truck size={18} /> Mark Delivered
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          </motion.div>
                         )}
-                        {job.status === 'Completed' && (
-                          <button type="button" onClick={() => generateInvoicePDF(job)} className="flex-1 bg-indigo-500/10 text-indigo-400 text-xs font-bold py-2.5 rounded-xl border border-indigo-500/20 flex items-center justify-center gap-1">
-                            <Download size={14} /> Invoice
-                          </button>
-                        )}
-                        {job.status === 'InspectionCompleted' && (
-                          <button type="button" onClick={() => generateInspectionReportPDF(job)} className="flex-1 bg-amber-500/10 text-amber-400 text-xs font-bold py-2.5 rounded-xl border border-amber-500/20 flex items-center justify-center gap-1">
-                            <Download size={14} /> Inspection
-                          </button>
-                        )}
-                        {job.status === 'PickedForWorkshop' && (
-                          <button type="button" onClick={() => generateWorkshopPickupPDF(job)} className="flex-1 bg-blue-500/10 text-blue-400 text-xs font-bold py-2.5 rounded-xl border border-blue-500/20 flex items-center justify-center gap-1">
-                            <Download size={14} /> Pickup
-                          </button>
-                        )}
-                      </div>
+                      </AnimatePresence>
                     </motion.div>
                     );
                   })}
@@ -732,15 +775,15 @@ const TechnicianDashboard = () => {
           </>
         ) : activeTab === 'workshop' ? (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-            <TechnicianWorkshopView />
+            <WorkshopModule showGateInApproval={false} mode="technician" />
           </motion.div>
         ) : activeTab === 'wallet' ? (
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
             <div className="flex justify-between items-center">
-              <h2 className="text-2xl font-bold text-white">My Wallet</h2>
-              <RefreshButton onClick={refreshTasksBtn} loading={tasksRefreshing} className="text-emerald-400 hover:text-emerald-300" />
+              <h2 className="text-2xl font-bold text-slate-800">My Wallet</h2>
+              <RefreshButton onClick={refreshTasksBtn} loading={tasksRefreshing} className="text-mint-600 hover:text-emerald-300" />
             </div>
-            <div className="bg-gradient-to-br from-emerald-600 to-teal-700 rounded-3xl p-6 text-white shadow-xl shadow-emerald-500/20">
+            <div className="crm-header-banner rounded-3xl p-6 text-white shadow-xl shadow-mint-300/30">
               <div className="flex justify-between items-start mb-6">
                 <div>
                   <p className="text-emerald-100 text-sm font-medium mb-1">Total Collected</p>
@@ -769,8 +812,8 @@ const TechnicianDashboard = () => {
               </div>
             </div>
 
-            <div className="bg-slate-900/60 border border-white/10 rounded-2xl p-5">
-              <h3 className="text-sm font-bold text-white mb-1">All Transactions</h3>
+            <div className="crm-card border rounded-2xl p-5">
+              <h3 className="text-sm font-bold text-slate-800 mb-1">All Transactions</h3>
               <p className="text-[10px] text-slate-500 mb-4">Complete wallet activity — collections, pending returns, expenses</p>
               {walletTimeline.length === 0 ? (
                 <p className="text-xs text-slate-500 italic">No transactions yet.</p>
@@ -786,11 +829,11 @@ const TechnicianDashboard = () => {
                           ? 'bg-amber-500/5 border-amber-500/15'
                           : entry.type === 'received'
                           ? 'bg-emerald-500/5 border-emerald-500/15'
-                          : 'bg-white/[0.02] border-white/5'
+                          : 'bg-slate-50/80 border-slate-200/60'
                       }`}
                     >
                       <div className="min-w-0">
-                        <p className="text-slate-200 font-bold">{entry.title}</p>
+                        <p className="text-slate-700 font-bold">{entry.title}</p>
                         <p className="text-slate-500 text-[10px] mt-0.5 truncate">{entry.subtitle}</p>
                         <p className="text-[10px] text-slate-600 mt-1">
                           {entry.date.toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
@@ -799,7 +842,7 @@ const TechnicianDashboard = () => {
                       <div className="text-right shrink-0">
                         <p className={`font-black ${
                           entry.type === 'expense' ? 'text-rose-400' :
-                          entry.type === 'pending' ? 'text-amber-400' : 'text-emerald-400'
+                          entry.type === 'pending' ? 'text-amber-600' : 'text-mint-600'
                         }`}>
                           {entry.type === 'expense' ? '-' : '+'}{formatPKR(entry.amount)}
                         </p>
@@ -817,29 +860,29 @@ const TechnicianDashboard = () => {
             </div>
 
             {walletDetail?.settlements?.length > 0 && (
-              <div className="bg-slate-900/60 border border-white/10 rounded-2xl p-5">
-                <h3 className="text-sm font-bold text-white mb-3">Received Payments</h3>
+              <div className="crm-card border rounded-2xl p-5">
+                <h3 className="text-sm font-bold text-slate-800 mb-3">Received Payments</h3>
                 <div className="space-y-2">
                   {walletDetail.settlements.filter((s: any) => s.is_received).map((s: any) => (
                     <div key={s.id} className="flex justify-between text-xs bg-emerald-500/5 border border-emerald-500/10 p-3 rounded-xl">
                       <span className="text-slate-300">{s.description}</span>
-                      <span className="text-emerald-400 font-bold">{formatPKR(s.amount)}</span>
+                      <span className="text-mint-600 font-bold">{formatPKR(s.amount)}</span>
                     </div>
                   ))}
                 </div>
               </div>
             )}
 
-            <div className="bg-slate-900/60 border border-white/10 rounded-2xl p-5">
-              <h3 className="text-sm font-bold text-white mb-3">My Expenses</h3>
+            <div className="crm-card border rounded-2xl p-5">
+              <h3 className="text-sm font-bold text-slate-800 mb-3">My Expenses</h3>
               {expenses.length === 0 ? (
                 <p className="text-xs text-slate-500 italic">No expenses recorded. Tap + to add.</p>
               ) : (
                 <div className="space-y-2 max-h-64 overflow-y-auto">
                   {expenses.map((exp) => (
-                    <div key={exp.id} className="flex justify-between text-xs bg-white/[0.02] border border-white/5 p-3 rounded-xl">
+                    <div key={exp.id} className="flex justify-between text-xs bg-slate-50/80 border border-slate-200/60 p-3 rounded-xl">
                       <div>
-                        <p className="text-slate-200 font-bold">{exp.category}</p>
+                        <p className="text-slate-700 font-bold">{exp.category}</p>
                         <p className="text-slate-500">{exp.description || new Date(exp.date).toLocaleDateString()}</p>
                       </div>
                       <span className="text-rose-400 font-bold">-{formatPKR(exp.amount)}</span>
@@ -850,8 +893,8 @@ const TechnicianDashboard = () => {
             </div>
 
             {(walletDetail?.jobs?.length > 0 || walletDetail?.completedJobs?.length > 0) && (
-              <div className="bg-slate-900/60 border border-white/10 rounded-2xl p-5">
-                <h3 className="text-sm font-bold text-white mb-1">Task Payments</h3>
+              <div className="crm-card border rounded-2xl p-5">
+                <h3 className="text-sm font-bold text-slate-800 mb-1">Task Payments</h3>
                 <p className="text-[10px] text-slate-500 mb-3">Har task ki payment admin ko alag jama hoti hai</p>
                 <div className="space-y-2 max-h-72 overflow-y-auto">
                   {(walletDetail.jobs || walletDetail.completedJobs || []).map((j: any) => {
@@ -860,7 +903,7 @@ const TechnicianDashboard = () => {
                       <div key={j.id} className={`p-3 rounded-xl border text-xs ${settled ? 'bg-emerald-500/5 border-emerald-500/15' : 'bg-rose-500/5 border-rose-500/20'}`}>
                         <div className="flex justify-between items-center gap-2">
                           <div className="min-w-0">
-                            <p className="text-slate-200 font-bold truncate">{j.lead_id} — {j.customer?.name}</p>
+                            <p className="text-slate-700 font-bold truncate">{j.lead_id} — {j.customer?.name}</p>
                             <p className="text-slate-500 text-[10px] mt-0.5">
                               {j.product_type ? `${j.product_type} • ` : ''}
                               {new Date(j.completed_at || j.updated_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}
@@ -870,7 +913,7 @@ const TechnicianDashboard = () => {
                             </p>
                           </div>
                           <div className="text-right shrink-0">
-                            <p className={`font-black ${settled ? 'text-emerald-400' : 'text-rose-400'}`}>{formatPKR(j.amount ?? j.collected_amount)}</p>
+                            <p className={`font-black ${settled ? 'text-mint-600' : 'text-rose-400'}`}>{formatPKR(j.amount ?? j.collected_amount)}</p>
                             <span className={`text-[9px] font-black uppercase ${settled ? 'text-emerald-500' : 'text-rose-500'}`}>
                               {settled ? 'Paid to Admin' : 'Pending'}
                             </span>
@@ -890,46 +933,39 @@ const TechnicianDashboard = () => {
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
             <div className="flex justify-between items-end mb-6">
                <div>
-                  <h2 className="text-2xl font-bold text-white tracking-tight">Job History</h2>
+                  <h2 className="text-2xl font-bold text-slate-800 tracking-tight">Job History</h2>
                   <p className="text-sm text-slate-400">Recently completed tasks</p>
                </div>
-               <RefreshButton onClick={refreshTasksBtn} loading={tasksRefreshing} className="text-emerald-400 hover:text-emerald-300" />
+               <RefreshButton onClick={refreshTasksBtn} loading={tasksRefreshing} className="text-mint-600 hover:text-emerald-300" />
             </div>
-            {jobs.filter(j => matchesJobFilter(j, 'completed')).length === 0 ? (
-              <div className="bg-slate-900/50 border border-white/5 rounded-3xl p-12 text-center">
-                 <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-4">
+            {jobs.filter(j => matchesJobFilter(j, 'completed', user?.id)).length === 0 ? (
+              <div className="crm-card-soft border border-slate-200/60 rounded-3xl p-12 text-center">
+                 <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4">
                    <History size={32} className="text-slate-600" />
                  </div>
-                 <h3 className="text-white font-bold mb-1">No History</h3>
+                 <h3 className="text-slate-800 font-bold mb-1">No History</h3>
                  <p className="text-sm text-slate-500">You haven't completed any jobs yet.</p>
                </div>
             ) : (
               <div className="space-y-4">
-                {jobs.filter(j => matchesJobFilter(j, 'completed')).map((job, idx) => (
+                {jobs.filter(j => matchesJobFilter(j, 'completed', user?.id)).map((job, idx) => (
                   <motion.div 
                     key={job.id}
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: idx * 0.05 }}
-                    className="bg-slate-900/60 backdrop-blur-xl border border-white/10 rounded-2xl p-5 cursor-pointer hover:border-emerald-500/30"
+                    className="crm-card backdrop-blur-xl border border-slate-200/70 rounded-2xl p-5 cursor-pointer hover:border-emerald-500/30"
                     onClick={() => setHistoryLead(job)}
                   >
-                    <div className="flex justify-between items-start mb-2">
-                       <div className="flex items-center gap-2">
-                          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest bg-white/5 px-2 py-0.5 rounded">
-                             {job.lead_id}
-                          </span>
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase
-                             ${job.status === 'Completed' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-blue-500/20 text-blue-400'}
-                          `}>
-                             {job.status}
-                          </span>
-                       </div>
-                       <span className="text-emerald-400 font-black text-sm">{formatPKR(getFinalAmount(job))}</span>
+                    <LeadSummaryHeader lead={job} onZoom={setZoomImg} className="mb-3" />
+                    <div className="flex justify-between items-start">
+                       <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase
+                          ${job.status === 'Completed' ? 'bg-emerald-500/20 text-mint-600' : 'bg-blue-500/20 text-blue-400'}
+                       `}>
+                          {job.status}
+                       </span>
+                       <span className="text-mint-600 font-black text-sm">{formatPKR(getFinalAmount(job))}</span>
                     </div>
-                    <h3 className="text-lg font-bold text-white mb-1">{job.customer?.name}</h3>
-                    <p className="text-xs text-slate-400">{job.product_type} • {job.customer?.area}</p>
-                    <p className="text-xs text-amber-400/80 mt-2 line-clamp-2">{job.problem_details}</p>
                   </motion.div>
                 ))}
               </div>
@@ -945,41 +981,41 @@ const TechnicianDashboard = () => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md"
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 crm-modal-overlay backdrop-blur-md"
           >
             <motion.div
               initial={{ y: 50, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: 50, opacity: 0 }}
-              className="bg-slate-900 border border-white/10 rounded-[32px] w-full max-w-md overflow-hidden shadow-2xl flex flex-col max-h-[90vh]"
+              className="crm-modal border rounded-[32px] w-full max-w-md overflow-hidden shadow-2xl flex flex-col max-h-[90vh]"
             >
               {/* Modal Header */}
-              <div className="p-6 border-b border-white/5 flex justify-between items-center bg-white/[0.02]">
+              <div className="p-6 border-b border-slate-200/60 flex justify-between items-center bg-slate-50/80 shrink-0">
                 <div>
-                  <h3 className="text-lg font-bold text-white">Update Job Outcome</h3>
+                  <h3 className="text-lg font-bold text-slate-800">Update Job Outcome</h3>
                   <p className="text-xs text-slate-500">Lead ID: {selectedJob.lead_id}</p>
                 </div>
-                <button onClick={() => setOutcomeModalOpen(false)} className="p-2 bg-white/5 rounded-full text-slate-400 hover:text-white transition">
+                <button type="button" onClick={() => setOutcomeModalOpen(false)} className="p-2 bg-slate-50 rounded-full text-slate-400 hover:text-slate-800 transition">
                   <X size={20} />
                 </button>
               </div>
 
-              <form onSubmit={handleOutcomeSubmit} className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
-                <div className="p-4 bg-white/5 rounded-2xl border border-white/5 space-y-2">
-                  <div className="flex items-center gap-2 text-sm font-bold text-slate-300">
-                    <User size={14} className="text-emerald-400" /> {selectedJob.customer?.name}
+              <form id="tech-outcome-form" onSubmit={handleOutcomeSubmit} className="flex-1 overflow-y-auto min-h-0 p-6 space-y-6 custom-scrollbar">
+                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200/60 space-y-2">
+                  <div className="flex items-center gap-2 text-sm font-bold text-slate-700">
+                    <User size={14} className="text-mint-600" /> {selectedJob.customer?.name}
                   </div>
-                  <div className="flex items-start gap-2 text-xs text-slate-300 bg-slate-950/50 p-2 rounded-lg">
+                  <div className="flex items-start gap-2 text-xs text-slate-600 bg-white p-2 rounded-lg">
                     <MapPin size={14} className="text-emerald-500 mt-0.5 shrink-0" />
                     <div>
                       <p className="font-bold">{selectedJob.customer?.area}</p>
                       <p>{selectedJob.exact_address || selectedJob.customer?.exact_address || 'No exact address'}</p>
                       {selectedJob.customer?.google_map_link && (
-                        <a href={selectedJob.customer.google_map_link} target="_blank" rel="noreferrer" className="text-amber-400 underline mt-1 inline-block">Open Google Maps →</a>
+                        <a href={selectedJob.customer.google_map_link} target="_blank" rel="noreferrer" className="text-amber-600 underline mt-1 inline-block">Open Google Maps →</a>
                       )}
                     </div>
                   </div>
-                  <div className="text-xs text-amber-400 bg-amber-500/5 p-3 rounded-lg border border-amber-500/10">
+                  <div className="text-xs text-amber-600 bg-amber-500/5 p-3 rounded-lg border border-amber-500/10">
                     <p className="text-[10px] font-black uppercase text-amber-500 mb-1">Reported Issue</p>
                     {selectedJob.problem_details || 'No description'}
                   </div>
@@ -987,9 +1023,9 @@ const TechnicianDashboard = () => {
 
                 <div className="grid grid-cols-3 gap-3">
                   {[
-                    { id: 'Completed', label: 'Fixed', icon: CheckCircle2, color: 'text-emerald-400' },
+                    { id: 'Completed', label: 'Fixed', icon: CheckCircle2, color: 'text-mint-600' },
                     { id: 'PickedForWorkshop', label: 'Pickup', icon: Package, color: 'text-blue-400' },
-                    { id: 'InspectionCompleted', label: 'Inspect', icon: Info, color: 'text-amber-400' }
+                    { id: 'InspectionCompleted', label: 'Inspect', icon: Info, color: 'text-amber-600' }
                   ].map(opt => (
                     <button
                       key={opt.id}
@@ -997,13 +1033,13 @@ const TechnicianDashboard = () => {
                       onClick={() => setOutcomeData({...outcomeData, status: opt.id})}
                       className={`flex flex-col items-center gap-2 p-3 rounded-2xl border transition-all
                         ${outcomeData.status === opt.id 
-                          ? 'bg-white/10 border-emerald-500/50 scale-[1.05] shadow-[0_0_15px_rgba(16,185,129,0.1)]' 
-                          : 'bg-white/5 border-white/5 opacity-60'
+                          ? 'bg-mint-50 border-emerald-500/50 scale-[1.05] shadow-[0_0_15px_rgba(16,185,129,0.1)]' 
+                          : 'bg-slate-50 border-slate-200/60 opacity-60'
                         }
                       `}
                     >
                       <opt.icon size={20} className={opt.color} />
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-300">{opt.label}</span>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600">{opt.label}</span>
                     </button>
                   ))}
                 </div>
@@ -1015,7 +1051,7 @@ const TechnicianDashboard = () => {
                       required
                       value={outcomeData.actual_problem}
                       onChange={(e) => setOutcomeData({...outcomeData, actual_problem: e.target.value})}
-                      className="w-full bg-slate-950 text-white px-4 py-3 rounded-2xl border border-white/10 focus:border-emerald-500 outline-none transition-all resize-none" 
+                      className="w-full crm-input text-slate-800 px-4 py-3 rounded-2xl border border-slate-200/70 focus:border-mint-400 outline-none transition-all resize-none" 
                       placeholder="Describe the actual problem..."
                       rows={2}
                     />
@@ -1030,7 +1066,7 @@ const TechnicianDashboard = () => {
                     <textarea 
                       value={outcomeData.repair_details}
                       onChange={(e) => setOutcomeData({...outcomeData, repair_details: e.target.value})}
-                      className="w-full bg-slate-950 text-white px-4 py-3 rounded-2xl border border-white/10 focus:border-emerald-500 outline-none transition-all resize-none" 
+                      className="w-full crm-input text-slate-800 px-4 py-3 rounded-2xl border border-slate-200/70 focus:border-mint-400 outline-none transition-all resize-none" 
                       placeholder="Enter details..."
                       rows={2}
                     />
@@ -1044,7 +1080,7 @@ const TechnicianDashboard = () => {
                           type="number"
                           value={outcomeData.total_amount}
                           onChange={(e) => setOutcomeData({...outcomeData, total_amount: e.target.value})}
-                          className="w-full bg-slate-950 text-white px-4 py-3 rounded-2xl border border-white/10 focus:border-emerald-500 outline-none transition-all" 
+                          className="w-full crm-input text-slate-800 px-4 py-3 rounded-2xl border border-slate-200/70 focus:border-mint-400 outline-none transition-all" 
                           placeholder="0"
                         />
                       </div>
@@ -1054,7 +1090,7 @@ const TechnicianDashboard = () => {
                           type="number"
                           value={outcomeData.collected_amount}
                           onChange={(e) => setOutcomeData({...outcomeData, collected_amount: e.target.value})}
-                          className="w-full bg-slate-950 text-white px-4 py-3 rounded-2xl border border-white/10 focus:border-emerald-500 outline-none transition-all" 
+                          className="w-full crm-input text-slate-800 px-4 py-3 rounded-2xl border border-slate-200/70 focus:border-mint-400 outline-none transition-all" 
                           placeholder="0"
                         />
                       </div>
@@ -1069,7 +1105,7 @@ const TechnicianDashboard = () => {
                           type="number"
                           value={outcomeData.collected_amount}
                           onChange={(e) => setOutcomeData({...outcomeData, collected_amount: e.target.value})}
-                          className="w-full bg-slate-950 text-white px-4 py-3 rounded-2xl border border-white/10 focus:border-emerald-500 outline-none transition-all" 
+                          className="w-full crm-input text-slate-800 px-4 py-3 rounded-2xl border border-slate-200/70 focus:border-mint-400 outline-none transition-all" 
                           placeholder="0"
                         />
                       </div>
@@ -1079,7 +1115,7 @@ const TechnicianDashboard = () => {
                           <select 
                             value={outcomeData.warranty_months}
                             onChange={(e) => setOutcomeData({...outcomeData, warranty_months: e.target.value})}
-                            className="w-full bg-slate-950 text-white px-4 py-3 rounded-2xl border border-white/10 focus:border-emerald-500 outline-none transition-all appearance-none"
+                            className="w-full crm-input text-slate-800 px-4 py-3 rounded-2xl border border-slate-200/70 focus:border-mint-400 outline-none transition-all appearance-none"
                           >
                             <option value="0">No Warranty</option>
                             <option value="1">1 Month</option>
@@ -1110,12 +1146,12 @@ const TechnicianDashboard = () => {
                         } catch { toast.error('Failed to process photos'); }
                         e.target.value = '';
                       }}
-                      className="w-full bg-slate-950 text-white px-4 py-3 rounded-2xl border border-white/10 text-sm file:mr-3 file:py-1 file:px-3 file:rounded-lg file:border-0 file:bg-emerald-500 file:text-white"
+                      className="w-full crm-input text-slate-800 px-4 py-3 rounded-2xl border border-slate-200/70 text-sm file:mr-3 file:py-1 file:px-3 file:rounded-lg file:border-0 file:bg-mint-400 file:text-slate-800"
                     />
                     {outcomePictures.length > 0 && (
                       <div className="flex gap-2 overflow-x-auto pb-1">
                         {outcomePictures.map((pic, idx) => (
-                          <div key={idx} className="relative w-16 h-16 rounded-xl overflow-hidden border border-white/10 shrink-0">
+                          <div key={idx} className="relative w-16 h-16 rounded-xl overflow-hidden border border-slate-200/70 shrink-0">
                             <img src={pic} alt="" className="w-full h-full object-cover" />
                             <button type="button" onClick={() => setOutcomePictures(prev => prev.filter((_, i) => i !== idx))}
                               className="absolute top-0.5 right-0.5 bg-red-500/80 text-white rounded-full p-0.5">
@@ -1127,14 +1163,14 @@ const TechnicianDashboard = () => {
                     )}
                   </div>
                 </div>
-
-                <div className="flex gap-3 pt-4">
-                  <button type="button" onClick={() => { setOutcomeModalOpen(false); setOutcomePictures([]); }} className="flex-1 bg-white/5 hover:bg-white/10 text-white font-bold py-4 rounded-2xl transition-all border border-white/5">Back</button>
-                  <button type="submit" disabled={outcomeLoading} className="flex-1 bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-bold py-4 rounded-2xl shadow-lg flex items-center justify-center gap-2 disabled:opacity-50">
-                    {outcomeLoading ? <Loader2 className="animate-spin" size={18} /> : <ClipboardCheck size={18} />} Submit Outcome
-                  </button>
-                </div>
               </form>
+
+              <div className="shrink-0 p-6 border-t border-slate-200/60 bg-slate-50/80 flex gap-3">
+                <button type="button" onClick={() => { setOutcomeModalOpen(false); setOutcomePictures([]); }} className="flex-1 bg-white hover:bg-slate-50 text-slate-800 font-bold py-4 rounded-2xl transition-all border border-slate-200/60">Back</button>
+                <button type="submit" form="tech-outcome-form" disabled={outcomeLoading} className="flex-1 crm-btn-primary font-bold py-4 rounded-2xl shadow-lg flex items-center justify-center gap-2 disabled:opacity-50">
+                  {outcomeLoading ? <Loader2 className="animate-spin" size={18} /> : <ClipboardCheck size={18} />} Submit Outcome
+                </button>
+              </div>
             </motion.div>
           </motion.div>
         )}
@@ -1147,17 +1183,17 @@ const TechnicianDashboard = () => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md"
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 crm-modal-overlay backdrop-blur-md"
           >
             <motion.div
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-slate-900 border border-white/10 rounded-[32px] w-full max-w-sm overflow-hidden shadow-2xl"
+              className="crm-modal border rounded-[32px] w-full max-w-sm overflow-hidden shadow-2xl"
             >
-              <div className="p-6 border-b border-white/5 flex justify-between items-center bg-white/[0.02]">
-                <h3 className="text-lg font-bold text-white">Record Expense</h3>
-                <button onClick={() => setExpenseModalOpen(false)} className="p-2 text-slate-400 hover:text-white transition"><X size={20} /></button>
+              <div className="p-6 border-b border-slate-200/60 flex justify-between items-center bg-slate-50/80">
+                <h3 className="text-lg font-bold text-slate-800">Record Expense</h3>
+                <button onClick={() => setExpenseModalOpen(false)} className="p-2 text-slate-400 hover:text-slate-800 transition"><X size={20} /></button>
               </div>
 
               <form onSubmit={handleExpenseSubmit} className="p-6 space-y-6">
@@ -1169,7 +1205,7 @@ const TechnicianDashboard = () => {
                       required
                       value={expenseForm.amount}
                       onChange={(e) => setExpenseForm({...expenseForm, amount: e.target.value})}
-                      className="w-full bg-slate-950 text-white pl-10 pr-4 py-4 rounded-2xl border border-white/10 focus:border-emerald-500 outline-none transition-all" 
+                      className="w-full crm-input text-slate-800 pl-10 pr-4 py-4 rounded-2xl border border-slate-200/70 focus:border-mint-400 outline-none transition-all" 
                       placeholder="Amount"
                     />
                   </div>
@@ -1178,7 +1214,7 @@ const TechnicianDashboard = () => {
                     <select 
                       value={expenseForm.category}
                       onChange={(e) => setExpenseForm({...expenseForm, category: e.target.value})}
-                      className="w-full bg-slate-950 text-white px-4 py-4 rounded-2xl border border-white/10 focus:border-emerald-500 outline-none transition-all appearance-none"
+                      className="w-full crm-input text-slate-800 px-4 py-4 rounded-2xl border border-slate-200/70 focus:border-mint-400 outline-none transition-all appearance-none"
                     >
                       <option value="Petrol">Petrol / Fuel</option>
                       <option value="Food">Food / Meals</option>
@@ -1193,7 +1229,7 @@ const TechnicianDashboard = () => {
                       type="text" 
                       value={expenseForm.description}
                       onChange={(e) => setExpenseForm({...expenseForm, description: e.target.value})}
-                      className="w-full bg-slate-950 text-white px-4 py-4 rounded-2xl border border-white/10 focus:border-emerald-500 outline-none transition-all" 
+                      className="w-full crm-input text-slate-800 px-4 py-4 rounded-2xl border border-slate-200/70 focus:border-mint-400 outline-none transition-all" 
                       placeholder="Notes (optional)"
                     />
                   </div>
@@ -1202,7 +1238,7 @@ const TechnicianDashboard = () => {
                 <button 
                   type="submit" 
                   disabled={expenseLoading}
-                  className="w-full bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-black py-4 rounded-2xl shadow-lg flex items-center justify-center gap-2"
+                  className="w-full crm-btn-primary font-black py-4 rounded-2xl shadow-lg flex items-center justify-center gap-2"
                 >
                   {expenseLoading ? <Loader2 className="animate-spin" size={18} /> : <TrendingDown size={18} />}
                   Save Expense

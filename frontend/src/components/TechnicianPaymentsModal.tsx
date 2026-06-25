@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+﻿import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, Loader2, CheckCircle2, Clock, Banknote, User, Phone, MapPin, HandCoins
@@ -14,7 +14,7 @@ interface TechnicianPaymentsModalProps {
   onSettled?: () => void;
 }
 
-const formatPKR = (n: number) => `PKR ${Number(n || 0).toLocaleString()}`;
+const formatSAR = (n: number) => `SAR ${Number(n || 0).toLocaleString()}`;
 
 const TechnicianPaymentsModal: React.FC<TechnicianPaymentsModalProps> = ({ technician, onClose, onSettled }) => {
   const [wallet, setWallet] = useState<any>(null);
@@ -39,7 +39,7 @@ const TechnicianPaymentsModal: React.FC<TechnicianPaymentsModalProps> = ({ techn
   useEffect(() => { fetchWallet(); }, [technician.id]);
 
   const receivePayment = async (job: any) => {
-    if (!window.confirm(`Receive ${formatPKR(job.amount)} for task ${job.lead_id} (${job.customer?.name})?`)) return;
+    if (!window.confirm(`Receive ${formatSAR(job.amount)} for task ${job.lead_id} (${job.customer?.name})?`)) return;
     setReceivingId(job.id);
     try {
       const res = await api.post(`/settlements/${technician.id}/receive`, { lead_id: job.id });
@@ -62,15 +62,15 @@ const TechnicianPaymentsModal: React.FC<TechnicianPaymentsModalProps> = ({ techn
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md overflow-y-auto">
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 crm-modal-overlay backdrop-blur-md overflow-y-auto">
         <motion.div
           initial={{ scale: 0.95, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           exit={{ scale: 0.95, opacity: 0 }}
-          className="bg-slate-900 border border-white/10 rounded-[2rem] w-full max-w-3xl shadow-2xl my-8 flex flex-col max-h-[90vh]"
+          className="crm-modal border rounded-[2rem] w-full max-w-3xl shadow-2xl my-8 flex flex-col max-h-[90vh]"
         >
           {/* Header */}
-          <div className="p-6 border-b border-white/5 flex justify-between items-center bg-white/[0.02] shrink-0">
+          <div className="p-6 border-b border-slate-200/60 flex justify-between items-center bg-slate-50/80 shrink-0">
             <div className="flex items-center gap-4">
               <div className="w-12 h-12 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400 font-black text-lg">
                 {technician.name.charAt(0)}
@@ -82,7 +82,7 @@ const TechnicianPaymentsModal: React.FC<TechnicianPaymentsModalProps> = ({ techn
             </div>
             <div className="flex items-center gap-2">
               <RefreshButton onClick={refresh} loading={refreshing} />
-              <button onClick={onClose} className="p-2 bg-white/5 rounded-full text-slate-400 hover:text-white transition">
+              <button onClick={onClose} className="p-2 bg-slate-50 rounded-full text-slate-400 hover:text-slate-800 transition">
                 <X size={20} />
               </button>
             </div>
@@ -90,36 +90,36 @@ const TechnicianPaymentsModal: React.FC<TechnicianPaymentsModalProps> = ({ techn
 
           {loading ? (
             <div className="flex justify-center items-center py-24">
-              <Loader2 className="animate-spin text-indigo-500" size={32} />
+              <Loader2 className="animate-spin text-mint-500" size={32} />
             </div>
           ) : (
             <>
               {/* Summary */}
               <div className="grid grid-cols-3 gap-3 p-6 shrink-0">
-                <div className="bg-slate-950/60 border border-white/5 rounded-2xl p-4">
+                <div className="bg-white/95 border border-slate-200/60 rounded-2xl p-4">
                   <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Total Collected</p>
-                  <p className="text-lg font-black text-white">{formatPKR(wallet?.totalCollected)}</p>
+                  <p className="text-lg font-black text-white">{formatSAR(wallet?.totalCollected)}</p>
                 </div>
-                <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-2xl p-4">
+                <div className="bg-emerald-500/5 border border-mint-300/40 rounded-2xl p-4">
                   <p className="text-[10px] font-black text-emerald-500 uppercase tracking-widest mb-1">Received</p>
-                  <p className="text-lg font-black text-emerald-400">{formatPKR(wallet?.totalReceived)}</p>
+                  <p className="text-lg font-black text-mint-600">{formatSAR(wallet?.totalReceived)}</p>
                 </div>
                 <div className="bg-rose-500/5 border border-rose-500/20 rounded-2xl p-4">
                   <p className="text-[10px] font-black text-rose-500 uppercase tracking-widest mb-1">Pending ({wallet?.pendingCount || 0} tasks)</p>
-                  <p className="text-lg font-black text-rose-400">{formatPKR(wallet?.overdue)}</p>
+                  <p className="text-lg font-black text-rose-400">{formatSAR(wallet?.overdue)}</p>
                 </div>
               </div>
 
               {/* Filter Tabs */}
               <div className="px-6 shrink-0">
-                <div className="flex gap-1 bg-slate-950/50 p-1 rounded-xl border border-white/5 w-fit">
+                <div className="flex gap-1 bg-white p-1 rounded-xl border border-slate-200/60 w-fit">
                   {([
                     { id: 'pending', label: `Pending (${jobs.filter(j => !j.is_settled && j.amount > 0).length})` },
                     { id: 'paid', label: `Paid (${jobs.filter(j => j.is_settled).length})` },
                     { id: 'all', label: 'All' },
                   ] as const).map(t => (
                     <button key={t.id} onClick={() => setFilter(t.id)}
-                      className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${filter === t.id ? 'bg-indigo-500 text-white' : 'text-slate-400 hover:text-white'}`}>
+                      className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${filter === t.id ? 'crm-tab-active' : 'text-slate-400 hover:text-slate-800'}`}>
                       {t.label}
                     </button>
                   ))}
@@ -136,18 +136,18 @@ const TechnicianPaymentsModal: React.FC<TechnicianPaymentsModalProps> = ({ techn
                   <div key={job.id}
                     className={`border rounded-2xl p-5 transition-all ${job.is_settled
                       ? 'bg-emerald-500/[0.03] border-emerald-500/15'
-                      : 'bg-slate-950/60 border-rose-500/20 hover:border-rose-500/40'}`}>
+                      : 'bg-white/95 border-rose-500/20 hover:border-rose-500/40'}`}>
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                       <div className="space-y-2 flex-1 min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-xs font-mono font-bold text-indigo-400 bg-indigo-500/10 border border-indigo-500/25 px-2.5 py-1 rounded-lg">
+                          <span className="text-xs font-mono font-bold text-mint-600 bg-mint-100 border border-indigo-500/25 px-2.5 py-1 rounded-lg">
                             {job.lead_id}
                           </span>
-                          <span className="text-[10px] font-bold text-white uppercase bg-white/5 border border-white/10 px-2 py-0.5 rounded">
+                          <span className="text-[10px] font-bold text-slate-800 uppercase bg-slate-50 border border-slate-200/70 px-2 py-0.5 rounded">
                             {job.product_type}
                           </span>
                           {job.is_settled ? (
-                            <span className="flex items-center gap-1 text-[10px] font-black text-emerald-400 bg-emerald-500/10 border border-emerald-500/25 px-2 py-0.5 rounded-full uppercase">
+                            <span className="flex items-center gap-1 text-[10px] font-black text-mint-600 bg-mint-100 border border-emerald-500/25 px-2 py-0.5 rounded-full uppercase">
                               <CheckCircle2 size={11} /> Paid
                             </span>
                           ) : (
@@ -174,7 +174,7 @@ const TechnicianPaymentsModal: React.FC<TechnicianPaymentsModalProps> = ({ techn
                       <div className="flex items-center gap-3 shrink-0 self-end sm:self-center">
                         <div className="text-right">
                           <p className="text-[10px] font-black text-slate-500 uppercase">Amount</p>
-                          <p className={`text-lg font-black ${job.is_settled ? 'text-emerald-400' : 'text-rose-400'}`}>{formatPKR(job.amount)}</p>
+                          <p className={`text-lg font-black ${job.is_settled ? 'text-mint-600' : 'text-rose-400'}`}>{formatSAR(job.amount)}</p>
                         </div>
                         {!job.is_settled && job.amount > 0 && (
                           <button
@@ -186,7 +186,7 @@ const TechnicianPaymentsModal: React.FC<TechnicianPaymentsModalProps> = ({ techn
                           </button>
                         )}
                         {job.is_settled && (
-                          <div className="p-2.5 bg-emerald-500/10 text-emerald-400 rounded-xl border border-emerald-500/20">
+                          <div className="p-2.5 bg-mint-100 text-mint-600 rounded-xl border border-mint-300/40">
                             <Banknote size={16} />
                           </div>
                         )}

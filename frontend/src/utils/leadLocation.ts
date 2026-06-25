@@ -49,6 +49,30 @@ export function parseGoogleMapsCoords(url?: string | null): [number, number] | n
   return null;
 }
 
+/** Haversine distance in kilometres */
+export function calculateDistanceKm(
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number
+): number {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+export function formatDistanceKm(km: number): string {
+  if (km < 1) return `${Math.round(km * 1000)} m away`;
+  return `${km.toFixed(km < 10 ? 1 : 0)} km away`;
+}
+
 function resolveAreaCoords(areaName?: string | null): [number, number] | null {
   if (!areaName) return null;
   const key = areaName.toLowerCase().trim();
@@ -82,6 +106,56 @@ export function getLeadCoords(lead: {
   if (fromArea) return fromArea;
 
   return DEFAULT_MAP_CENTER;
+}
+
+function coordBucketKey([lat, lng]: [number, number]): string {
+  return `${lat.toFixed(4)},${lng.toFixed(4)}`;
+}
+
+/** Spread overlapping pins so all unassigned leads in same area remain visible */
+export function buildMapLeadPositions(
+  leads: Array<{ id?: number; lead_id?: string } & Parameters<typeof getLeadCoords>[0]>
+): Map<string | number, [number, number]> {
+  const groups = new Map<string, typeof leads>();
+
+  for (const lead of leads) {
+    const key = coordBucketKey(getLeadCoords(lead));
+    const group = groups.get(key) || [];
+    group.push(lead);
+    groups.set(key, group);
+  }
+
+  const positions = new Map<string | number, [number, number]>();
+
+  for (const group of groups.values()) {
+    const base = getLeadCoords(group[0]);
+    if (group.length === 1) {
+      const id = group[0].id ?? group[0].lead_id ?? 0;
+      positions.set(id, base);
+      continue;
+    }
+
+    group.forEach((lead, index) => {
+      const id = lead.id ?? lead.lead_id ?? index;
+      const angle = (index * (360 / group.length)) * (Math.PI / 180);
+      const radius = 0.0025 + index * 0.00035;
+      positions.set(id, [
+        base[0] + radius * Math.cos(angle),
+        base[1] + radius * Math.sin(angle),
+      ]);
+    });
+  }
+
+  return positions;
+}
+
+export function getLeadMapPosition(
+  lead: { id?: number; lead_id?: string } & Parameters<typeof getLeadCoords>[0],
+  positions: Map<string | number, [number, number]>
+): [number, number] {
+  const id = lead.id ?? lead.lead_id;
+  if (id != null && positions.has(id)) return positions.get(id)!;
+  return getLeadCoords(lead);
 }
 
 export function hasExactLeadLocation(lead: {

@@ -1,6 +1,6 @@
 generator client {
-  provider = "prisma-client-js"
-  binaryTargets = ["native", "rhel-openssl-1.0.x", "rhel-openssl-1.1.x", "rhel-openssl-3.0.x", "debian-openssl-1.0.x"]
+  provider      = "prisma-client-js"
+  binaryTargets = ["native"]
 }
 
 datasource db {
@@ -60,6 +60,9 @@ model User {
   lng             Float?
   specialization  String?
   address         String?
+
+  totp_secret     String?
+  totp_enabled    Boolean  @default(false)
 
   created_at    DateTime @default(now())
 
@@ -145,6 +148,7 @@ model Lead {
   agreed_amount     Decimal? @db.Decimal(10, 2)
   payment_confirmed Boolean  @default(false)
   pending_outcome   String?
+  rejection_note    String?  @db.Text
   voice_note        String?  @db.LongText
   lat               Float?
   lng               Float?
@@ -161,8 +165,22 @@ model Lead {
 
   history           JobHistory[]
   workshop_job      WorkshopJob?
+  products          LeadProduct[]
 
   @@map("leads")
+}
+
+model LeadProduct {
+  id              Int      @id @default(autoincrement())
+  lead_id         Int
+  lead            Lead     @relation(fields: [lead_id], references: [id], onDelete: Cascade)
+  product_type    String
+  problem_details String?  @db.Text
+  sort_order      Int      @default(0)
+  created_at      DateTime @default(now())
+
+  @@index([lead_id])
+  @@map("lead_products")
 }
 
 model JobHistory {
@@ -191,6 +209,9 @@ model WorkshopJob {
   status             WorkshopStatus @default(Received)
   current_day_count  Int           @default(0)
   notes              String?       @db.Text
+  agreed_parts       String?       @db.Text
+  additional_parts   String?       @db.Text
+  parts_media        Json?
 
   delivered_at           DateTime?
   delivered_by           Int?
@@ -291,4 +312,15 @@ model Trash {
   deleted_at   DateTime @default(now())
 
   @@map("trash")
+}
+
+model PasswordResetOtp {
+  id         Int      @id @default(autoincrement())
+  email      String
+  otp        String
+  expires_at DateTime
+  is_used    Boolean  @default(false)
+  created_at DateTime @default(now())
+
+  @@map("password_reset_otps")
 }

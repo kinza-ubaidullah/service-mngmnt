@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   DollarSign, TrendingDown, TrendingUp, Plus, Loader2, RefreshCw,
@@ -31,11 +31,11 @@ const getCategoryColor = (cat: string) => {
   const map: Record<string, string> = {
     Salary: 'bg-violet-500/20 text-violet-400 border-violet-500/30',
     Rent: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
-    'Spare Parts': 'bg-amber-500/20 text-amber-400 border-amber-500/30',
+    'Spare Parts': 'bg-amber-500/20 text-amber-600 border-amber-500/30',
     Food: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
     Marketing: 'bg-pink-500/20 text-pink-400 border-pink-500/30',
     Vehicle: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30',
-    Tools: 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30',
+    Tools: 'bg-indigo-500/20 text-mint-600 border-indigo-500/30',
     Petrol: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
     Transport: 'bg-teal-500/20 text-teal-400 border-teal-500/30',
     Utility: 'bg-green-500/20 text-green-400 border-green-500/30',
@@ -58,7 +58,7 @@ const renderCustomFieldInput = (
   if (field.field_type === 'Dropdown') {
     return (
       <select required={field.is_required} value={values[field.field_name] || ''} onChange={e => onChange(e.target.value)}
-        className="w-full bg-slate-950 text-white px-3 py-2.5 rounded-xl border border-white/10 outline-none focus:border-indigo-500 text-sm">
+        className="w-full crm-input text-slate-800 px-3 py-2.5 rounded-xl border border-slate-200/70 outline-none focus:border-mint-400 text-sm">
         <option value="">-- Select --</option>
         {(field.options || []).map((opt: string) => <option key={opt} value={opt}>{opt}</option>)}
       </select>
@@ -72,7 +72,7 @@ const renderCustomFieldInput = (
         const reader = new FileReader();
         reader.onload = () => onChange(reader.result as string);
         reader.readAsDataURL(file);
-      }} className="w-full bg-slate-950 text-white px-3 py-2 rounded-xl border border-white/10 text-sm file:mr-3 file:py-1 file:px-3 file:rounded-lg file:border-0 file:bg-indigo-500 file:text-white" />
+      }} className="w-full crm-input text-slate-800 px-3 py-2 rounded-xl border border-slate-200/70 text-sm file:mr-3 file:py-1 file:px-3 file:rounded-lg file:border-0 file:bg-indigo-500 file:text-white" />
     );
   }
   return (
@@ -81,7 +81,7 @@ const renderCustomFieldInput = (
       required={field.is_required}
       value={values[field.field_name] || ''}
       onChange={e => onChange(e.target.value)}
-      className="w-full bg-slate-950 text-white px-3 py-2.5 rounded-xl border border-white/10 outline-none focus:border-indigo-500 text-sm"
+      className="w-full crm-input text-slate-800 px-3 py-2.5 rounded-xl border border-slate-200/70 outline-none focus:border-mint-400 text-sm"
     />
   );
 };
@@ -91,7 +91,7 @@ const CustomDataBadges = ({ data }: { data: Record<string, any> | null }) => {
   return (
     <div className="flex flex-wrap gap-1.5 mt-2">
       {Object.entries(data).map(([key, val]) => (
-        <span key={key} className="text-[10px] bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 px-2 py-0.5 rounded-lg font-bold">
+        <span key={key} className="text-[10px] bg-mint-100 text-mint-600 border border-mint-300/40 px-2 py-0.5 rounded-lg font-bold">
           {key}: {typeof val === 'string' && val.startsWith('data:') ? '📎 Attached' : String(val)}
         </span>
       ))}
@@ -211,7 +211,7 @@ const FinanceModule = () => {
     setPayingId(schedule.id);
     try {
       await api.post(`/finance/recurring/${schedule.id}/pay`);
-      toast.success(`✅ Payment of PKR ${Number(schedule.amount).toLocaleString()} recorded for ${schedule.category}`);
+      toast.success(`✅ Payment of SAR ${Number(schedule.amount).toLocaleString()} recorded for ${schedule.category}`);
       fetchData();
     } catch { toast.error('Failed to record payment'); }
     finally { setPayingId(null); }
@@ -226,7 +226,7 @@ const FinanceModule = () => {
 
   if (loading && expenses.length === 0 && schedules.length === 0) return (
     <div className="flex flex-col justify-center items-center h-96 gap-4">
-      <RefreshCw className="animate-spin text-indigo-500" size={32} />
+      <RefreshCw className="animate-spin text-mint-500" size={32} />
       <span className="text-sm font-bold text-slate-500 uppercase tracking-widest animate-pulse">Loading Financial Data...</span>
     </div>
   );
@@ -237,11 +237,11 @@ const FinanceModule = () => {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <motion.button type="button" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0 }}
           onClick={() => openDetailModal('revenue')}
-          className="relative overflow-hidden bg-gradient-to-br from-indigo-600 to-blue-700 rounded-[2rem] p-7 text-white shadow-xl shadow-indigo-900/30 text-left w-full cursor-pointer hover:scale-[1.02] hover:shadow-indigo-500/20 transition-all group">
-          <div className="absolute -right-6 -bottom-6 w-32 h-32 bg-white/10 rounded-full blur-3xl" />
+          className="relative overflow-hidden crm-header-banner rounded-[2rem] p-7 text-white shadow-xl shadow-indigo-900/30 text-left w-full cursor-pointer hover:scale-[1.02] hover:shadow-mint-300/25 transition-all group">
+          <div className="absolute -right-6 -bottom-6 w-32 h-32 bg-mint-50 rounded-full blur-3xl" />
           <TrendingUp size={28} className="mb-3 opacity-80" />
           <p className="text-indigo-200 text-[11px] font-bold uppercase tracking-widest mb-1">Total Revenue</p>
-          <h3 className="text-3xl font-black">PKR {revenue.toLocaleString()}</h3>
+          <h3 className="text-3xl font-black">SAR {revenue.toLocaleString()}</h3>
           <p className="text-indigo-200/70 text-xs mt-1">From all completed jobs</p>
           <p className="text-indigo-200/50 text-[10px] mt-2 font-bold uppercase tracking-wider opacity-0 group-hover:opacity-100 transition-opacity">Click for task-wise details →</p>
         </motion.button>
@@ -249,10 +249,10 @@ const FinanceModule = () => {
         <motion.button type="button" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08 }}
           onClick={() => openDetailModal('expenses')}
           className="relative overflow-hidden bg-gradient-to-br from-rose-500 to-red-600 rounded-[2rem] p-7 text-white shadow-xl shadow-red-900/30 text-left w-full cursor-pointer hover:scale-[1.02] hover:shadow-rose-500/20 transition-all group">
-          <div className="absolute -right-6 -bottom-6 w-32 h-32 bg-white/10 rounded-full blur-3xl" />
+          <div className="absolute -right-6 -bottom-6 w-32 h-32 bg-mint-50 rounded-full blur-3xl" />
           <TrendingDown size={28} className="mb-3 opacity-80" />
           <p className="text-rose-200 text-[11px] font-bold uppercase tracking-widest mb-1">Total Expenses</p>
-          <h3 className="text-3xl font-black">PKR {totalExpenses.toLocaleString()}</h3>
+          <h3 className="text-3xl font-black">SAR {totalExpenses.toLocaleString()}</h3>
           <p className="text-rose-200/70 text-xs mt-1">{expenses.length} recorded expenses</p>
           <p className="text-rose-200/50 text-[10px] mt-2 font-bold uppercase tracking-wider opacity-0 group-hover:opacity-100 transition-opacity">Click for expense details →</p>
         </motion.button>
@@ -260,10 +260,10 @@ const FinanceModule = () => {
         <motion.button type="button" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.16 }}
           onClick={() => openDetailModal('net')}
           className={`relative overflow-hidden bg-gradient-to-br ${net >= 0 ? 'from-emerald-500 to-teal-600 shadow-emerald-900/30' : 'from-rose-700 to-red-800 shadow-red-900/30'} rounded-[2rem] p-7 text-white shadow-xl text-left w-full cursor-pointer hover:scale-[1.02] transition-all group`}>
-          <div className="absolute -right-6 -bottom-6 w-32 h-32 bg-white/10 rounded-full blur-3xl" />
+          <div className="absolute -right-6 -bottom-6 w-32 h-32 bg-mint-50 rounded-full blur-3xl" />
           <Banknote size={28} className="mb-3 opacity-80" />
           <p className="text-white/70 text-[11px] font-bold uppercase tracking-widest mb-1">Net Balance</p>
-          <h3 className="text-3xl font-black">PKR {Math.abs(net).toLocaleString()}</h3>
+          <h3 className="text-3xl font-black">SAR {Math.abs(net).toLocaleString()}</h3>
           <p className="text-white/60 text-xs mt-1">{net < 0 ? '⚠️ Expenses exceed revenue' : '✅ Revenue - Expenses'}</p>
           <p className="text-white/40 text-[10px] mt-2 font-bold uppercase tracking-wider opacity-0 group-hover:opacity-100 transition-opacity">Click for full breakdown →</p>
         </motion.button>
@@ -277,7 +277,7 @@ const FinanceModule = () => {
           <div>
             <p className="text-rose-300 font-black text-sm">{overdueSchedules.length} Overdue Payment{overdueSchedules.length > 1 ? 's' : ''}!</p>
             <p className="text-rose-500 text-xs mt-0.5">
-              {overdueSchedules.map(s => `${s.category} (PKR ${Number(s.amount).toLocaleString()})`).join(' • ')}
+              {overdueSchedules.map(s => `${s.category} (SAR ${Number(s.amount).toLocaleString()})`).join(' • ')}
             </p>
           </div>
         </motion.div>
@@ -285,7 +285,7 @@ const FinanceModule = () => {
 
       {/* Tabs + Add Button */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div className="flex flex-wrap bg-slate-900/60 border border-white/5 rounded-2xl p-1 gap-1">
+        <div className="flex flex-wrap crm-card border rounded-2xl p-1 gap-1">
           {([
             { id: 'expenses' as const, label: 'All Expenses', icon: ShoppingCart },
             { id: 'recurring' as const, label: `Recurring ${schedules.length > 0 ? `(${schedules.length})` : ''}`, icon: Repeat },
@@ -293,7 +293,7 @@ const FinanceModule = () => {
             { id: 'trash' as const, label: 'Trash', icon: Archive },
           ]).map(tab => (
             <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-              className={`px-4 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${activeTab === tab.id ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-500/20' : 'text-slate-400 hover:text-white'}`}>
+              className={`px-4 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${activeTab === tab.id ? 'crm-tab-active shadow-sm shadow-mint-300/25' : 'text-slate-400 hover:text-slate-800'}`}>
               <tab.icon size={15} /> {tab.label}
             </button>
           ))}
@@ -301,7 +301,7 @@ const FinanceModule = () => {
         <div className="flex items-center gap-2">
           <RefreshButton onClick={refresh} loading={refreshing} />
           <button onClick={() => setShowModal(true)}
-            className="bg-indigo-500 hover:bg-indigo-600 active:scale-95 text-white px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 transition-all shadow-lg shadow-indigo-500/20">
+            className="crm-btn-primary active:scale-95 text-white px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 transition-all shadow-lg shadow-mint-300/25">
             <Plus size={16} /> Add {formData.is_recurring ? 'Schedule' : 'Expense'}
           </button>
         </div>
@@ -309,11 +309,11 @@ const FinanceModule = () => {
 
       {/* EXPENSES TAB */}
       {activeTab === 'expenses' && (
-        <div className="bg-slate-900/60 border border-white/5 rounded-[2.5rem] overflow-hidden shadow-2xl">
+        <div className="crm-card border rounded-[2.5rem] overflow-hidden shadow-2xl">
           <div className="overflow-x-auto">
             <table className="w-full text-left">
               <thead>
-                <tr className="text-[10px] font-black text-slate-500 uppercase tracking-widest border-b border-white/5 bg-white/[0.02]">
+                <tr className="text-[10px] font-black text-slate-500 uppercase tracking-widest border-b border-slate-200/60 bg-slate-50/80">
                   <th className="px-6 py-4">Date</th>
                   <th className="px-6 py-4">Category</th>
                   <th className="px-6 py-4">Description</th>
@@ -321,9 +321,9 @@ const FinanceModule = () => {
                   <th className="px-6 py-4 text-right">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/5">
+              <tbody className="divide-y divide-slate-200/60">
                 {expenses.map(item => (
-                  <tr key={item.id} className="hover:bg-white/[0.02] transition-colors group">
+                  <tr key={item.id} className="hover:bg-slate-50/80 transition-colors group">
                     <td className="px-6 py-4 text-sm text-slate-400 font-medium whitespace-nowrap">
                       {new Date(item.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
                     </td>
@@ -334,7 +334,7 @@ const FinanceModule = () => {
                     </td>
                     <td className="px-6 py-4 text-sm text-slate-400 max-w-[200px] truncate">{item.description || '—'}</td>
                     <td className="px-6 py-4 text-right">
-                      <span className="text-sm font-black text-rose-400">− PKR {Number(item.amount).toLocaleString()}</span>
+                      <span className="text-sm font-black text-rose-400">− SAR {Number(item.amount).toLocaleString()}</span>
                     </td>
                     <td className="px-6 py-4 text-right">
                       <button onClick={() => handleDelete(item.id)}
@@ -377,13 +377,13 @@ const FinanceModule = () => {
                       </div>
                     </div>
                     <div className="flex items-center gap-3 ml-auto">
-                      <span className="text-lg font-black text-rose-400">PKR {Number(s.amount).toLocaleString()}</span>
+                      <span className="text-lg font-black text-rose-400">SAR {Number(s.amount).toLocaleString()}</span>
                       <button onClick={() => handlePayNow(s)} disabled={payingId === s.id}
                         className="bg-rose-500 hover:bg-rose-600 text-white text-xs font-black px-4 py-2.5 rounded-xl transition-all flex items-center gap-2 shadow-lg shadow-rose-500/20 disabled:opacity-60">
                         {payingId === s.id ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
                         Pay Now
                       </button>
-                      <button onClick={() => handleDelete(s.id)} className="p-2.5 bg-white/5 hover:bg-red-500/20 text-slate-500 hover:text-red-400 rounded-xl border border-white/5 transition-all">
+                      <button onClick={() => handleDelete(s.id)} className="p-2.5 bg-slate-50 hover:bg-red-500/20 text-slate-500 hover:text-red-400 rounded-xl border border-slate-200/60 transition-all">
                         <Trash2 size={15} />
                       </button>
                     </div>
@@ -401,29 +401,29 @@ const FinanceModule = () => {
                   const days = getDaysUntilDue(s.next_due);
                   return (
                     <motion.div key={s.id} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }}
-                      className={`bg-slate-900/60 border rounded-2xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 transition-all ${days <= 3 ? 'border-amber-500/30' : 'border-white/5'}`}>
+                      className={`crm-card border rounded-2xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 transition-all ${days <= 3 ? 'border-amber-500/30' : 'border-slate-200/60'}`}>
                       <div className="flex items-center gap-4">
-                        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ${days <= 3 ? 'bg-amber-500/10' : 'bg-indigo-500/10'}`}>
-                          <Repeat className={days <= 3 ? 'text-amber-400' : 'text-indigo-400'} size={22} />
+                        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ${days <= 3 ? 'bg-amber-500/10' : 'bg-mint-100'}`}>
+                          <Repeat className={days <= 3 ? 'text-amber-600' : 'text-mint-600'} size={22} />
                         </div>
                         <div>
                           <p className="font-black text-white">{s.category}</p>
                           <p className="text-xs text-slate-400 mt-0.5">{s.description || 'No description'}</p>
                           <CustomDataBadges data={s.custom_data} />
-                          <p className={`text-[11px] font-bold mt-1 ${days <= 3 ? 'text-amber-400' : 'text-slate-500'}`}>
+                          <p className={`text-[11px] font-bold mt-1 ${days <= 3 ? 'text-amber-600' : 'text-slate-500'}`}>
                             Due in {days} day{days !== 1 ? 's' : ''} · {s.frequency}
                             {s.last_paid && ` · Last paid: ${new Date(s.last_paid).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}`}
                           </p>
                         </div>
                       </div>
                       <div className="flex items-center gap-3 ml-auto">
-                        <span className={`text-lg font-black ${days <= 3 ? 'text-amber-400' : 'text-indigo-400'}`}>PKR {Number(s.amount).toLocaleString()}</span>
+                        <span className={`text-lg font-black ${days <= 3 ? 'text-amber-600' : 'text-mint-600'}`}>SAR {Number(s.amount).toLocaleString()}</span>
                         <button onClick={() => handlePayNow(s)} disabled={payingId === s.id}
-                          className="bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-black px-4 py-2.5 rounded-xl transition-all flex items-center gap-2 shadow-lg shadow-indigo-500/20 disabled:opacity-60">
+                          className="crm-btn-primary text-xs font-black px-4 py-2.5 rounded-xl transition-all flex items-center gap-2 shadow-lg shadow-mint-300/25 disabled:opacity-60">
                           {payingId === s.id ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
                           Pay Now
                         </button>
-                        <button onClick={() => handleDelete(s.id)} className="p-2.5 bg-white/5 hover:bg-red-500/20 text-slate-500 hover:text-red-400 rounded-xl border border-white/5 transition-all">
+                        <button onClick={() => handleDelete(s.id)} className="p-2.5 bg-slate-50 hover:bg-red-500/20 text-slate-500 hover:text-red-400 rounded-xl border border-slate-200/60 transition-all">
                           <Trash2 size={15} />
                         </button>
                       </div>
@@ -454,14 +454,14 @@ const FinanceModule = () => {
       {/* Add Expense Modal */}
       <AnimatePresence>
         {showModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 crm-modal-overlay backdrop-blur-md">
             <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-slate-900 border border-white/10 rounded-[2rem] w-full max-w-md p-8 shadow-2xl">
+              className="crm-modal border rounded-[2rem] w-full max-w-md p-8 shadow-2xl">
               <div className="flex justify-between items-center mb-6">
-                <h3 className="text-xl font-black text-white">
+                <h3 className="text-xl font-black text-slate-800">
                   {formData.is_recurring ? '📅 Add Recurring Schedule' : '💸 Record Expense'}
                 </h3>
-                <button onClick={() => setShowModal(false)} className="text-slate-500 hover:text-white transition-colors p-1">
+                <button onClick={() => setShowModal(false)} className="text-slate-500 hover:text-slate-800 transition-colors p-1">
                   <X size={20} />
                 </button>
               </div>
@@ -469,16 +469,16 @@ const FinanceModule = () => {
               <form onSubmit={handleSubmit} className="space-y-4">
                 {/* Amount */}
                 <div className="relative">
-                  <div className="absolute left-4 top-3.5 text-slate-500 text-sm font-bold">PKR</div>
+                  <div className="absolute left-4 top-3.5 text-slate-500 text-sm font-bold">SAR</div>
                   <input required type="number" min="1" value={formData.amount}
                     onChange={e => setFormData({ ...formData, amount: e.target.value })}
-                    className="w-full bg-slate-950 text-white pl-14 pr-4 py-3 rounded-xl border border-white/10 outline-none focus:border-indigo-500 transition-colors"
+                    className="w-full crm-input text-slate-800 pl-14 pr-4 py-3 rounded-xl border border-slate-200/70 outline-none focus:border-mint-400 transition-colors"
                     placeholder="0" />
                 </div>
 
                 {/* Category */}
                 <select value={formData.category} onChange={e => setFormData({ ...formData, category: e.target.value })}
-                  className="w-full bg-slate-950 text-white px-4 py-3 rounded-xl border border-white/10 outline-none focus:border-indigo-500 transition-colors appearance-none">
+                  className="w-full crm-input text-slate-800 px-4 py-3 rounded-xl border border-slate-200/70 outline-none focus:border-mint-400 transition-colors appearance-none">
                   {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
                 </select>
 
@@ -490,7 +490,7 @@ const FinanceModule = () => {
                       const user = users.find(u => u.id === Number(e.target.value));
                       setFormData({ ...formData, recipient_id: e.target.value, recipient_name: user?.name || '' });
                     }}
-                    className="w-full bg-slate-950 text-white px-4 py-3 rounded-xl border border-white/10 outline-none focus:border-indigo-500 transition-colors appearance-none"
+                    className="w-full crm-input text-slate-800 px-4 py-3 rounded-xl border border-slate-200/70 outline-none focus:border-mint-400 transition-colors appearance-none"
                   >
                     <option value="">-- Select Staff / Employee --</option>
                     {users.map(u => (
@@ -501,20 +501,20 @@ const FinanceModule = () => {
 
                 {/* Description */}
                 <textarea value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })}
-                  className="w-full bg-slate-950 text-white px-4 py-3 rounded-xl border border-white/10 outline-none focus:border-indigo-500 transition-colors resize-none"
+                  className="w-full crm-input text-slate-800 px-4 py-3 rounded-xl border border-slate-200/70 outline-none focus:border-mint-400 transition-colors resize-none"
                   placeholder="Additional Details (optional)" rows={2} />
 
                 {/* Date (only for one-time) */}
                 {!formData.is_recurring && (
                   <input type="date" required value={formData.date}
                     onChange={e => setFormData({ ...formData, date: e.target.value })}
-                    className="w-full bg-slate-950 text-slate-300 px-4 py-3 rounded-xl border border-white/10 outline-none focus:border-indigo-500 transition-colors" />
+                    className="w-full bg-white text-slate-300 px-4 py-3 rounded-xl border border-slate-200/70 outline-none focus:border-mint-400 transition-colors" />
                 )}
 
                 {/* Recurring Toggle */}
-                <div className="flex items-center justify-between bg-slate-950/60 px-4 py-3 rounded-xl border border-white/10">
+                <div className="flex items-center justify-between bg-white/95 px-4 py-3 rounded-xl border border-slate-200/70">
                   <div>
-                    <p className="text-sm font-bold text-white">Recurring Payment</p>
+                    <p className="text-sm font-bold text-slate-800">Recurring Payment</p>
                     <p className="text-[11px] text-slate-500">Auto-schedule monthly/weekly payments</p>
                   </div>
                   <button type="button" onClick={() => setFormData({ ...formData, is_recurring: !formData.is_recurring })}
@@ -530,7 +530,7 @@ const FinanceModule = () => {
                       <div>
                         <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">Frequency</label>
                         <select value={formData.frequency} onChange={e => setFormData({ ...formData, frequency: e.target.value })}
-                          className="w-full bg-slate-950 text-white px-3 py-2.5 rounded-xl border border-white/10 outline-none focus:border-indigo-500 text-sm">
+                          className="w-full crm-input text-slate-800 px-3 py-2.5 rounded-xl border border-slate-200/70 outline-none focus:border-mint-400 text-sm">
                           <option value="Monthly">Monthly</option>
                           <option value="Weekly">Weekly</option>
                         </select>
@@ -541,13 +541,13 @@ const FinanceModule = () => {
                         </label>
                         <input type="number" min="1" max={formData.frequency === 'Weekly' ? 7 : 28} value={formData.due_day}
                           onChange={e => setFormData({ ...formData, due_day: e.target.value })}
-                          className="w-full bg-slate-950 text-white px-3 py-2.5 rounded-xl border border-white/10 outline-none focus:border-indigo-500 text-sm" />
+                          className="w-full crm-input text-slate-800 px-3 py-2.5 rounded-xl border border-slate-200/70 outline-none focus:border-mint-400 text-sm" />
                       </div>
                     </div>
                     
                     {/* Dynamic Custom Fields */}
                     {customFields.length > 0 && (
-                      <div className="pt-2 border-t border-white/10 space-y-3">
+                      <div className="pt-2 border-t border-slate-200/70 space-y-3">
                         <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Additional Fields</p>
                         {customFields.map((field: any) => (
                           <div key={field.id}>
@@ -564,11 +564,11 @@ const FinanceModule = () => {
 
                 <div className="flex gap-3 pt-2">
                   <button type="button" onClick={() => setShowModal(false)}
-                    className="flex-1 px-4 py-3 bg-white/5 hover:bg-white/10 text-white font-bold rounded-xl transition-all">
+                    className="flex-1 px-4 py-3 bg-slate-50 hover:bg-mint-50 text-slate-800 font-bold rounded-xl transition-all">
                     Cancel
                   </button>
                   <button type="submit" disabled={saving}
-                    className="flex-1 px-4 py-3 bg-indigo-500 hover:bg-indigo-600 text-white font-black rounded-xl flex justify-center items-center gap-2 transition-all shadow-lg shadow-indigo-500/20 disabled:opacity-60">
+                    className="flex-1 px-4 py-3 crm-btn-primary font-black rounded-xl flex justify-center items-center gap-2 transition-all shadow-lg shadow-mint-300/25 disabled:opacity-60">
                     {saving ? <Loader2 className="animate-spin" size={16} /> : <CheckCircle2 size={16} />}
                     {saving ? 'Saving...' : 'Save'}
                   </button>

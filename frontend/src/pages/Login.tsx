@@ -1,63 +1,75 @@
 import React, { useState } from 'react';
 import { useDispatch } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
-import { LogIn, User, Lock, Loader2, Sparkles, Eye, EyeOff } from 'lucide-react';
+import { LogIn, User, Lock, Loader2, Sparkles, Eye, EyeOff, Shield, KeyRound, ArrowLeft, Mail, CheckCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../services/api';
 import { setCredentials } from '../store/slices/authSlice';
-import { motion } from 'framer-motion';
+import { homePathForRole } from '../utils/roleRoutes';
+import { motion, AnimatePresence } from 'framer-motion';
+import ThemeToggle from '../components/ThemeToggle';
+
+type ForgotStep = 'login' | 'forgot-email' | 'forgot-otp' | 'forgot-contact';
 
 const Login = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [twoFAStep, setTwoFAStep] = useState(false);
+  const [tempToken, setTempToken] = useState('');
+  const [twoFACode, setTwoFACode] = useState('');
+
+  const [forgotStep, setForgotStep] = useState<ForgotStep>('login');
+  const [forgotIdentifier, setForgotIdentifier] = useState('');
+  const [maskedEmail, setMaskedEmail] = useState('');
+  const [otpCode, setOtpCode] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [forgotRole, setForgotRole] = useState('');
+  const [showNewPass, setShowNewPass] = useState(false);
+
   const dispatch = useDispatch();
   const navigate = useNavigate();
 
+  const finishLogin = (user: any, token: string) => {
+    dispatch(setCredentials({ user, token }));
+    toast.success('Login Successful!');
+    const path = homePathForRole(user?.role);
+    if (path === '/login') {
+      toast.error('Access denied: Unknown role');
+      return;
+    }
+    navigate(path, { replace: true });
+  };
+
+  const resetForgotFlow = () => {
+    setForgotStep('login');
+    setForgotIdentifier('');
+    setMaskedEmail('');
+    setOtpCode('');
+    setNewPassword('');
+    setConfirmPassword('');
+    setForgotRole('');
+  };
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (loading) return; // Prevent double submission
-    
+    if (loading) return;
     setLoading(true);
-    toast.dismiss(); // Clear existing toasts
-
+    toast.dismiss();
     try {
-      console.log('Attempting login for:', email);
       const response = await api.post('/auth/login', { email, password });
-      console.log('Login API Full Response:', response.data);
-      
-      const { user, token } = response.data;
-
-      if (!user || !user.role) {
-        console.error('User or Role missing in response:', { user });
-        throw new Error('Invalid response from server: Missing user role');
+      if (response.data.requires2FA) {
+        setTempToken(response.data.tempToken);
+        setTwoFAStep(true);
+        toast.success('Enter your authenticator code');
+        return;
       }
-
-      // Update Redux state and localStorage
-      dispatch(setCredentials({ user, token }));
-
-      toast.success('Login Successful!');
-
-      // Delay navigation slightly to ensure state is committed
-      setTimeout(() => {
-        const role = user.role;
-        console.log('Login successful, navigating for role:', role);
-        
-        switch (role) {
-          case 'ADMIN': navigate('/admin'); break;
-          case 'CALL_CENTER': navigate('/callcenter'); break;
-          case 'TECHNICIAN': navigate('/tech'); break;
-          case 'WORKSHOP_MANAGER': navigate('/workshop'); break;
-          default: 
-            console.error('Unexpected user role after login:', role);
-            toast.error('Access denied: Unknown role');
-            navigate('/login');
-        }
-      }, 100);
-      
+      const { user, token } = response.data;
+      if (!user || !user.role) throw new Error('Invalid response from server');
+      finishLogin(user, token);
     } catch (error: any) {
-      console.error('Login error details:', error.response?.data || error.message);
       if (!error.response) {
         toast.error('Cannot reach API server. Check api.aljaroshi.com is running.');
       } else if (error.response.status === 503) {
@@ -70,88 +82,320 @@ const Login = () => {
     }
   };
 
+  const handle2FAVerify = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!twoFACode.trim()) return;
+    setLoading(true);
+    try {
+      const response = await api.post('/auth/2fa/verify-login', {
+        tempToken,
+        code: twoFACode.trim(),
+      });
+      const { user, token } = response.data;
+      finishLogin(user, token);
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || 'Invalid verification code');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Step 1: Verify admin + proceed to authenticator code entry
+  const handleSendOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!forgotIdentifier.trim()) return;
+    setLoading(true);
+    try {
+      const res = await api.post('/auth/forgot-password/send-otp', { email: forgotIdentifier.trim() });
+
+      if (res.data.canSelfReset === false) {
+        setForgotRole(res.data.role || '');
+        setForgotStep('forgot-contact');
+        return;
+      }
+
+      setMaskedEmail(res.data.maskedEmail || '');
+      setForgotStep('forgot-otp');
+      toast.success('Enter the code from your Google Authenticator app');
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || 'Failed to start password reset');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Step 2: Verify authenticator code + reset password
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newPassword !== confirmPassword) { toast.error('Passwords do not match'); return; }
+    if (newPassword.length < 6) { toast.error('Password must be at least 6 characters'); return; }
+    if (otpCode.length !== 6) { toast.error('Enter the 6-digit authenticator code'); return; }
+
+    setLoading(true);
+    try {
+      await api.post('/auth/forgot-password/verify-otp', {
+        email: forgotIdentifier.trim(),
+        otp: otpCode.trim(),
+        newPassword,
+      });
+      toast.success('Password reset successful! Please sign in.');
+      setEmail(forgotIdentifier);
+      setPassword('');
+      resetForgotFlow();
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || 'Reset failed. Check OTP and try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const slide = {
+    initial: { opacity: 0, x: 20 },
+    animate: { opacity: 1, x: 0 },
+    exit: { opacity: 0, x: -20 },
+    transition: { duration: 0.2 },
+  };
+
+  const getTitle = () => {
+    if (twoFAStep) return 'Two-Factor Verification';
+    if (forgotStep === 'forgot-email') return 'Forgot Password';
+    if (forgotStep === 'forgot-otp') return 'Authenticator Code';
+    if (forgotStep === 'forgot-contact') return 'Contact Administrator';
+    return 'Welcome Back';
+  };
+
+  const getSubtitle = () => {
+    if (twoFAStep) return 'Enter the 6-digit code from Google Authenticator';
+    if (forgotStep === 'forgot-email') return 'Enter your admin email — code comes from Google Authenticator';
+    if (forgotStep === 'forgot-otp') return 'Open Google Authenticator and enter the 6-digit code for Al Jaroshi CRM';
+    if (forgotStep === 'forgot-contact') return 'Your administrator can reset your password';
+    return 'Sign in to your account';
+  };
+
+  const getIcon = () => {
+    if (twoFAStep) return <Shield className="text-mint-600" size={26} />;
+    if (forgotStep === 'forgot-otp') return <Shield className="text-mint-600" size={26} />;
+    if (forgotStep !== 'login') return <KeyRound className="text-mint-600" size={26} />;
+    return <LogIn className="text-mint-600" size={26} />;
+  };
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-950 p-4 font-sans selection:bg-indigo-500/30 overflow-hidden relative">
-      {/* Background Glow */}
-      <div className="absolute inset-0 pointer-events-none z-0">
-        <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full bg-indigo-600/10 blur-[120px]"></div>
-        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-blue-600/10 blur-[120px]"></div>
+    <div className="crm-shell min-h-screen flex items-center justify-center p-4 overflow-y-auto relative">
+      <div className="absolute top-4 right-4 z-20">
+        <ThemeToggle showLabel />
       </div>
 
-      <motion.div 
+      <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
         className="w-full max-w-md relative z-10"
       >
-        <div className="bg-slate-900/60 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/10 overflow-hidden">
-          <div className="p-8 text-center border-b border-white/5 bg-gradient-to-br from-indigo-500/10 to-transparent">
-            <div className="w-16 h-16 bg-gradient-to-br from-indigo-500 to-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-indigo-500/20 rotate-3">
-              <LogIn size={32} className="text-white -rotate-3" />
+        {/* Header banner */}
+        <div className="crm-header-banner rounded-[2rem] px-6 py-5 mb-4 flex items-center gap-3">
+          <div className="crm-icon-box p-2.5">
+            <Sparkles size={22} />
+          </div>
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-[#2d6a4a]/70">Al Jaroshi CRM</p>
+            <h1 className="text-xl font-black text-[#1a3d2e]">Service Management</h1>
+          </div>
+        </div>
+
+        <div className="crm-card rounded-[2rem] p-8 shadow-lg">
+          {/* Dynamic header */}
+          <div className="text-center mb-8">
+            <div className="inline-flex items-center justify-center w-14 h-14 bg-mint-100 rounded-2xl mb-4 border border-mint-200">
+              {getIcon()}
             </div>
-            <h2 className="text-3xl font-black text-white tracking-tight flex items-center justify-center gap-2">
-              ServiceOS <Sparkles size={20} className="text-indigo-400" />
-            </h2>
-            <p className="text-slate-400 mt-2 font-medium">Enterprise Field Management</p>
+            <h2 className="text-2xl font-black text-slate-800 tracking-tight">{getTitle()}</h2>
+            <p className="text-slate-500 text-sm mt-1">{getSubtitle()}</p>
           </div>
 
-          <div className="p-8">
-            <form onSubmit={handleLogin} className="space-y-6">
-              <div className="space-y-4">
-                <div className="group relative">
-                  <label className="block text-xs font-bold text-slate-500 mb-2 pl-1 uppercase tracking-wider">Email or Phone</label>
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-500 group-focus-within:text-indigo-400 transition-colors">
-                      <User size={18} />
-                    </div>
-                    <input
-                      type="text"
-                      required
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      className="w-full bg-slate-950/50 text-white pl-12 pr-4 py-3 rounded-xl border border-white/10 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all duration-300"
-                      placeholder="Enter email or phone"
-                    />
-                  </div>
+          <AnimatePresence mode="wait">
+
+            {/* ── 2FA step ── */}
+            {twoFAStep && (
+              <motion.form key="2fa" {...slide} onSubmit={handle2FAVerify} className="space-y-5">
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={6}
+                  required
+                  autoFocus
+                  value={twoFACode}
+                  onChange={(e) => setTwoFACode(e.target.value.replace(/\D/g, ''))}
+                  className="crm-input w-full rounded-2xl py-4 px-5 text-center text-2xl tracking-[0.5em] font-bold"
+                  placeholder="000000"
+                />
+                <button type="submit" disabled={loading || twoFACode.length < 6}
+                  className="w-full crm-btn-primary font-black py-4 rounded-2xl flex items-center justify-center gap-2 disabled:opacity-50">
+                  {loading ? <Loader2 className="animate-spin" size={20} /> : <><Shield size={18} /> Verify &amp; Login</>}
+                </button>
+                <button type="button" onClick={() => { setTwoFAStep(false); setTwoFACode(''); setTempToken(''); }}
+                  className="w-full text-slate-500 hover:text-slate-800 text-sm font-bold py-2">
+                  Back to login
+                </button>
+              </motion.form>
+            )}
+
+            {/* ── Forgot: enter email ── */}
+            {!twoFAStep && forgotStep === 'forgot-email' && (
+              <motion.form key="forgot-email" {...slide} onSubmit={handleSendOtp} className="space-y-5">
+                <div className="relative">
+                  <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                  <input
+                    type="email"
+                    required
+                    autoFocus
+                    value={forgotIdentifier}
+                    onChange={(e) => setForgotIdentifier(e.target.value)}
+                    className="crm-input w-full rounded-2xl py-4 pl-12 pr-5 text-sm font-medium"
+                    placeholder="Admin email address"
+                  />
+                </div>
+                <button type="submit" disabled={loading}
+                  className="w-full crm-btn-primary font-black py-4 rounded-2xl flex items-center justify-center gap-2 disabled:opacity-50">
+                  {loading ? <Loader2 className="animate-spin" size={20} /> : <><Shield size={18} /> Continue</>}
+                </button>
+                <button type="button" onClick={resetForgotFlow}
+                  className="w-full text-slate-500 hover:text-slate-800 text-sm font-bold py-2 flex items-center justify-center gap-1">
+                  <ArrowLeft size={14} /> Back to login
+                </button>
+              </motion.form>
+            )}
+
+            {/* ── Forgot: enter OTP + new password ── */}
+            {!twoFAStep && forgotStep === 'forgot-otp' && (
+              <motion.form key="forgot-otp" {...slide} onSubmit={handleVerifyOtp} className="space-y-4">
+                <div className="bg-teal-50 border border-teal-200 rounded-2xl p-4 text-xs text-teal-800 space-y-1">
+                  <p className="font-bold flex items-center gap-1"><Shield size={14} /> Google Authenticator</p>
+                  <p>Open your authenticator app and enter the current 6-digit code for <strong>Al Jaroshi CRM</strong>.</p>
+                  {maskedEmail && <p className="text-teal-600">Account: {maskedEmail}</p>}
                 </div>
 
-                <div className="group relative">
-                  <label className="block text-xs font-bold text-slate-500 mb-2 pl-1 uppercase tracking-wider">Password</label>
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-500 group-focus-within:text-indigo-400 transition-colors">
-                      <Lock size={18} />
-                    </div>
-                    <input
-                      type={showPassword ? "text" : "password"}
-                      required
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className="w-full bg-slate-950/50 text-white pl-12 pr-12 py-3 rounded-xl border border-white/10 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all duration-300"
-                      placeholder="Enter your password"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute inset-y-0 right-0 pr-4 flex items-center text-slate-500 hover:text-indigo-400 transition-colors"
-                    >
-                      {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                    </button>
-                  </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5 block">
+                    6-Digit Authenticator Code
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={6}
+                    required
+                    autoFocus
+                    value={otpCode}
+                    onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))}
+                    className="crm-input w-full rounded-2xl py-4 px-5 text-center text-2xl tracking-[0.5em] font-bold"
+                    placeholder="000000"
+                  />
                 </div>
-              </div>
 
-              <motion.button
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                type="submit"
-                disabled={loading}
-                className="w-full bg-gradient-to-r from-indigo-500 to-blue-600 hover:from-indigo-400 hover:to-blue-500 text-white font-bold py-3.5 px-4 rounded-xl shadow-[0_0_20px_rgba(99,102,241,0.3)] hover:shadow-[0_0_30px_rgba(99,102,241,0.5)] transition-all duration-300 flex items-center justify-center gap-2 disabled:opacity-50 disabled:pointer-events-none border border-indigo-400/20"
-              >
-                {loading ? <Loader2 className="animate-spin" size={20} /> : <LogIn size={20} />}
-                {loading ? 'Authenticating...' : 'Sign In'}
-              </motion.button>
-            </form>
-          </div>
+                {/* New password */}
+                <div className="relative">
+                  <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                  <input
+                    type={showNewPass ? 'text' : 'password'}
+                    required
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    className="crm-input w-full rounded-2xl py-4 pl-12 pr-12 text-sm font-medium"
+                    placeholder="New password (min 6 chars)"
+                  />
+                  <button type="button" onClick={() => setShowNewPass(!showNewPass)}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700">
+                    {showNewPass ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+
+                {/* Confirm password */}
+                <div className="relative">
+                  <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                  <input
+                    type="password"
+                    required
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    className="crm-input w-full rounded-2xl py-4 pl-12 pr-5 text-sm font-medium"
+                    placeholder="Confirm new password"
+                  />
+                </div>
+
+                <button type="submit" disabled={loading || otpCode.length < 6}
+                  className="w-full crm-btn-primary font-black py-4 rounded-2xl flex items-center justify-center gap-2 disabled:opacity-50">
+                  {loading ? <Loader2 className="animate-spin" size={20} /> : <><CheckCircle size={18} /> Reset Password</>}
+                </button>
+
+                <div className="flex items-center justify-between pt-1">
+                  <button type="button" onClick={() => setForgotStep('forgot-email')}
+                    className="text-slate-500 hover:text-slate-800 text-sm font-bold flex items-center gap-1">
+                    <ArrowLeft size={14} /> Back
+                  </button>
+                  <button type="button" onClick={resetForgotFlow}
+                    className="text-slate-400 hover:text-slate-700 text-xs font-bold">
+                    Cancel
+                  </button>
+                </div>
+              </motion.form>
+            )}
+
+            {/* ── Non-admin: contact admin ── */}
+            {!twoFAStep && forgotStep === 'forgot-contact' && (
+              <motion.div key="forgot-contact" {...slide} className="space-y-4">
+                <p className="text-sm text-slate-600 leading-relaxed">
+                  Your account (<strong>{forgotRole?.replace('_', ' ')}</strong>) password can only be reset by an administrator.
+                </p>
+                <p className="text-xs text-slate-500">
+                  Ask your admin to reset it from <strong>Admin Panel → Staff Management → Forgot Password &amp; Resend</strong>.
+                  They can share the new password via WhatsApp.
+                </p>
+                <button type="button" onClick={resetForgotFlow} className="w-full crm-btn-primary py-3 rounded-xl font-bold">
+                  Back to Login
+                </button>
+              </motion.div>
+            )}
+
+            {/* ── Normal login ── */}
+            {!twoFAStep && forgotStep === 'login' && (
+              <motion.form key="login" {...slide} onSubmit={handleLogin} className="space-y-5">
+                <div className="relative">
+                  <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                  <input
+                    type="text"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="crm-input w-full rounded-2xl py-4 pl-12 pr-5 text-sm font-medium"
+                    placeholder="Email or phone number"
+                  />
+                </div>
+                <div className="relative">
+                  <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="crm-input w-full rounded-2xl py-4 pl-12 pr-12 text-sm font-medium"
+                    placeholder="Enter your password"
+                  />
+                  <button type="button" onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700">
+                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+                <button type="submit" disabled={loading}
+                  className="w-full crm-btn-primary font-black py-4 rounded-2xl flex items-center justify-center gap-2 disabled:opacity-50">
+                  {loading ? <Loader2 className="animate-spin" size={20} /> : <><LogIn size={18} /> Sign In</>}
+                </button>
+                <button type="button"
+                  onClick={() => { setForgotStep('forgot-email'); setForgotIdentifier(email); }}
+                  className="w-full text-center text-sm text-slate-500 hover:text-mint-600 font-bold py-2">
+                  Forgot Password?
+                </button>
+              </motion.form>
+            )}
+
+          </AnimatePresence>
         </div>
       </motion.div>
     </div>

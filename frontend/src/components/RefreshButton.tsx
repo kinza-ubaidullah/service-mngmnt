@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { RefreshCw } from 'lucide-react';
 
 interface RefreshButtonProps {
@@ -19,7 +19,7 @@ const RefreshButton: React.FC<RefreshButtonProps> = ({
     onClick={onClick}
     title={title}
     disabled={loading}
-    className={`text-indigo-400 hover:text-indigo-300 p-2 hover:bg-white/5 rounded-xl border border-white/5 transition-all disabled:opacity-50 ${className}`}
+    className={`text-mint-600 hover:text-mint-600 p-2 hover:bg-mint-50/80 rounded-xl border border-slate-200/60 transition-all disabled:opacity-50 ${className}`}
   >
     <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
   </button>

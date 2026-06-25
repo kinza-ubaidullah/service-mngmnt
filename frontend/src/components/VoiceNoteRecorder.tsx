@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+﻿import React, { useEffect, useRef, useState } from 'react';
 import { Mic, Square, Play, Pause, Trash2 } from 'lucide-react';
 
 interface VoiceNoteRecorderProps {
@@ -166,7 +166,7 @@ const VoiceNoteRecorder: React.FC<VoiceNoteRecorderProps> = ({ value, onChange }
   const formatTime = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 
   return (
-    <div className="bg-slate-950 border border-white/10 rounded-2xl p-4">
+    <div className="bg-white border border-slate-200/70 rounded-2xl p-4">
       <audio ref={audioRef} className="hidden" preload="auto" />
 
       {!value && !recording && (
@@ -187,7 +187,7 @@ const VoiceNoteRecorder: React.FC<VoiceNoteRecorderProps> = ({ value, onChange }
           <div className="flex items-center gap-2 flex-1">
             <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" />
             <span className="text-sm font-bold text-red-400">{formatTime(duration)}</span>
-            <div className="flex-1 h-1 bg-white/10 rounded-full overflow-hidden">
+            <div className="flex-1 h-1 bg-mint-50 rounded-full overflow-hidden">
               <div className="h-full bg-emerald-500 animate-pulse rounded-full" style={{ width: '60%' }} />
             </div>
           </div>
@@ -207,11 +207,11 @@ const VoiceNoteRecorder: React.FC<VoiceNoteRecorderProps> = ({ value, onChange }
             <button
               type="button"
               onClick={togglePlay}
-              className="w-10 h-10 rounded-full bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0"
+              className="w-10 h-10 rounded-full bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-mint-600 shrink-0"
             >
               {playing ? <Pause size={18} /> : <Play size={18} fill="currentColor" />}
             </button>
-            <div className="flex-1 h-8 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex items-center px-3">
+            <div className="flex-1 h-8 bg-mint-100 border border-mint-300/40 rounded-xl flex items-center px-3">
               <div className="flex gap-0.5 items-end h-4">
                 {Array.from({ length: 24 }).map((_, i) => (
                   <div

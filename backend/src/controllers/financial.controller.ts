@@ -103,16 +103,19 @@ export const getFinancialChartData = async (req: Request, res: Response) => {
       }
     });
 
-    const expenses = await prisma.expense.findMany({
-      where: {
-        date: { gte: last7Days },
-        is_recurring: false
-      },
-      select: {
-        date: true,
-        amount: true
-      }
-    });
+    let expenses: Array<{ date: Date; amount: any; is_recurring?: boolean }>;
+    try {
+      expenses = await prisma.expense.findMany({
+        where: { date: { gte: last7Days } },
+        select: { date: true, amount: true, is_recurring: true }
+      });
+    } catch {
+      const basic = await prisma.expense.findMany({
+        where: { date: { gte: last7Days } },
+        select: { date: true, amount: true }
+      });
+      expenses = basic.map((e) => ({ ...e, is_recurring: false }));
+    }
 
     // Group by date
     const chartMap: any = {};
@@ -134,6 +137,7 @@ export const getFinancialChartData = async (req: Request, res: Response) => {
     });
 
     expenses.forEach(e => {
+        if (e.is_recurring) return;
         const dateStr = new Date(e.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
         if (chartMap[dateStr]) chartMap[dateStr].expenses += Number(e.amount || 0);
     });

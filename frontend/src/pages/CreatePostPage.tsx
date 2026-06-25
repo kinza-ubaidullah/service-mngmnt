@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+﻿import React, { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import type { RootState } from '../store';
@@ -108,7 +108,7 @@ const CreatePostPage = () => {
   return (
     <div className="min-h-screen bg-[#12181B] text-white flex flex-col max-w-lg mx-auto relative">
       {/* Header */}
-      <header className="flex items-center justify-between px-4 py-3 border-b border-white/5 shrink-0">
+      <header className="flex items-center justify-between px-4 py-3 border-b border-slate-200/60 shrink-0">
         <button type="button" onClick={() => navigate(-1)} className="p-2 text-slate-300 hover:text-white">
           <X size={22} />
         </button>
@@ -116,7 +116,7 @@ const CreatePostPage = () => {
           type="button"
           onClick={handlePost}
           disabled={posting}
-          className="bg-[#00A884] hover:bg-[#00c49a] disabled:opacity-50 text-white font-bold px-6 py-2 rounded-full text-sm transition-all"
+          className="bg-[#00A884] hover:bg-[#00c49a] disabled:opacity-50 text-slate-800 font-bold px-6 py-2 rounded-full text-sm transition-all"
         >
           {posting ? 'Posting...' : 'Post'}
         </button>
@@ -133,24 +133,24 @@ const CreatePostPage = () => {
             )}
           </div>
           <div>
-            <p className="font-bold text-white">{user?.name || 'You'}</p>
+            <p className="font-bold text-slate-800">{user?.name || 'You'}</p>
             <button
               type="button"
               onClick={() => setShowVisibilityMenu(!showVisibilityMenu)}
-              className="mt-1 flex items-center gap-1.5 bg-[#1e2a30] border border-white/10 rounded-full px-3 py-1 text-xs text-slate-300"
+              className="mt-1 flex items-center gap-1.5 bg-[#1e2a30] border border-slate-200/70 rounded-full px-3 py-1 text-xs text-slate-300"
             >
               <Globe size={12} className="text-[#00A884]" />
               {visibility}
               <ChevronDown size={12} />
             </button>
             {showVisibilityMenu && (
-              <div className="mt-2 bg-[#1e2a30] border border-white/10 rounded-xl overflow-hidden z-10 relative">
+              <div className="mt-2 bg-[#1e2a30] border border-slate-200/70 rounded-xl overflow-hidden z-10 relative">
                 {VISIBILITY_OPTIONS.map(opt => (
                   <button
                     key={opt.id}
                     type="button"
                     onClick={() => { setVisibility(opt.id); setShowVisibilityMenu(false); }}
-                    className={`w-full text-left px-4 py-3 text-sm hover:bg-white/5 ${visibility === opt.id ? 'text-[#00A884]' : 'text-slate-300'}`}
+                    className={`w-full text-left px-4 py-3 text-sm hover:bg-mint-50/80 ${visibility === opt.id ? 'text-[#00A884]' : 'text-slate-300'}`}
                   >
                     <p className="font-bold">{opt.label}</p>
                     <p className="text-[10px] text-slate-500">{opt.sub}</p>
@@ -236,7 +236,7 @@ const CreatePostPage = () => {
               type="button"
               onClick={() => setActiveMeta(activeMeta === p.id ? null : p.id)}
               className={`flex items-center gap-2 px-4 py-2.5 rounded-full border text-sm font-medium transition-all ${
-                p.value ? 'bg-[#00A884]/10 border-[#00A884]/30 text-[#00A884]' : 'bg-[#1e2a30] border-white/10 text-slate-300 hover:border-[#00A884]/30'
+                p.value ? 'bg-[#00A884]/10 border-[#00A884]/30 text-[#00A884]' : 'bg-[#1e2a30] border-slate-200/70 text-slate-300 hover:border-[#00A884]/30'
               }`}
             >
               <p.icon size={16} className="text-[#00A884]" />
@@ -257,7 +257,7 @@ const CreatePostPage = () => {
                 else if (activeMeta === 'hashtag') setHashtag(e.target.value);
                 else setProduct(e.target.value);
               }}
-              className="w-full bg-[#1e2a30] border border-white/10 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-[#00A884]/50"
+              className="w-full bg-[#1e2a30] border border-slate-200/70 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-[#00A884]/50"
             />
           </div>
         )}
@@ -266,13 +266,13 @@ const CreatePostPage = () => {
         <button
           type="button"
           onClick={() => setShowVisibilityMenu(true)}
-          className="mx-4 mt-6 w-[calc(100%-2rem)] flex items-center gap-4 bg-[#1e2a30] border border-white/10 rounded-2xl px-4 py-4 hover:border-[#00A884]/30 transition-all"
+          className="mx-4 mt-6 w-[calc(100%-2rem)] flex items-center gap-4 bg-[#1e2a30] border border-slate-200/70 rounded-2xl px-4 py-4 hover:border-[#00A884]/30 transition-all"
         >
           <div className="w-10 h-10 rounded-full bg-[#00A884]/20 flex items-center justify-center shrink-0">
             <vis.icon size={20} className="text-[#00A884]" />
           </div>
           <div className="flex-1 text-left">
-            <p className="font-bold text-white">{vis.label}</p>
+            <p className="font-bold text-slate-800">{vis.label}</p>
             <p className="text-xs text-slate-500">{vis.sub}</p>
           </div>
           <ChevronRight size={20} className="text-slate-500" />
@@ -280,7 +280,7 @@ const CreatePostPage = () => {
       </div>
 
       {/* Bottom toolbar */}
-      <div className="fixed bottom-0 left-0 right-0 max-w-lg mx-auto bg-[#12181B] border-t border-white/10 px-6 py-4 flex justify-between items-center">
+      <div className="fixed bottom-0 left-0 right-0 max-w-lg mx-auto bg-[#12181B] border-t border-slate-200/70 px-6 py-4 flex justify-between items-center">
         <button type="button" onClick={() => imageInputRef.current?.click()} className="p-2 text-slate-400 hover:text-[#00A884] transition-colors" title="Photos">
           <ImageIcon size={24} />
         </button>

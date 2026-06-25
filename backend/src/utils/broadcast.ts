@@ -25,3 +25,12 @@ export function broadcastDataChange(module: DataModule, action = 'update') {
     io.to('operations').emit('data_changed', { module: 'all', action, at: Date.now() });
   }
 }
+
+export function emitTechLocationChanged(techId: number, lat: number, lng: number) {
+  if (!io) return;
+  io.to('operations').emit('tech_location_changed', {
+    techId: Number(techId),
+    lat: Number(lat),
+    lng: Number(lng),
+  });
+}

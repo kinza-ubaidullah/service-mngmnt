@@ -1,10 +1,18 @@
-import React, { useState } from 'react';
-import { CheckCircle2, MapPin, User, Wrench } from 'lucide-react';
-import api from '../services/api';
-import toast from 'react-hot-toast';
-import { getLeadPictures, formatPKR, getFinalAmount } from '../utils/leadHelpers';
+﻿import React, { useState } from 'react';
+import {
+  MapPin, Phone, Calendar, Wrench, Package, Truck, ClipboardCheck,
+  User, Banknote, Shield, FileText, ChevronDown, ChevronUp,
+} from 'lucide-react';
+import {
+  getLeadPictures, formatPKR, getFinalAmount, getTaskTypeLabel, formatProductTypesDisplay,
+} from '../utils/leadHelpers';
 import LeadPdfButtons from './LeadPdfButtons';
+import LeadHistoryModal from './LeadHistoryModal';
+import PendingApprovalActions from './PendingApprovalActions';
+import VoiceNotePlayer from './VoiceNotePlayer';
+import CopyText from './CopyText';
 import ImageZoomModal from './ImageZoomModal';
+import LeadImageThumb from './LeadImageThumb';
 
 interface PendingApprovalCardProps {
   lead: any;
@@ -12,92 +20,202 @@ interface PendingApprovalCardProps {
   canApprove?: boolean;
 }
 
+const taskMeta = (type: string) => {
+  if (type === 'Workshop Pickup') return { icon: Package, color: 'violet', label: 'Pickup' };
+  if (type === 'Workshop Delivery') return { icon: Truck, color: 'indigo', label: 'Delivery' };
+  if (type === 'Inspection') return { icon: ClipboardCheck, color: 'sky', label: 'Inspection' };
+  return { icon: Wrench, color: 'pink', label: 'Repair' };
+};
+
+const badgeStyles: Record<string, string> = {
+  pink: 'bg-pink-100 text-pink-700 border-pink-200',
+  violet: 'bg-violet-100 text-violet-700 border-violet-200',
+  indigo: 'bg-indigo-100 text-indigo-700 border-indigo-200',
+  sky: 'bg-sky-100 text-sky-700 border-sky-200',
+};
+
+const borderAccent: Record<string, string> = {
+  pink: 'border-l-pink-500',
+  violet: 'border-l-violet-500',
+  indigo: 'border-l-indigo-500',
+  sky: 'border-l-sky-500',
+};
+
 const PendingApprovalCard: React.FC<PendingApprovalCardProps> = ({ lead, onApproved, canApprove = false }) => {
   const [zoomImg, setZoomImg] = useState<string | null>(null);
-  const [approving, setApproving] = useState(false);
-  const pics = getLeadPictures(lead);
-
-  const handleApprove = async () => {
-    setApproving(true);
-    try {
-      await api.post(`/leads/${lead.id}/approve`);
-      toast.success('Job approved!');
-      onApproved?.();
-    } catch {
-      toast.error('Failed to approve');
-    } finally {
-      setApproving(false);
-    }
-  };
+  const [viewOpen, setViewOpen] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const pics = getLeadPictures(lead).slice(0, 4);
+  const taskType = getTaskTypeLabel(lead);
+  const meta = taskMeta(taskType);
+  const TaskIcon = meta.icon;
+  const productLabel = formatProductTypesDisplay(lead.product_type, lead);
+  const collected = formatPKR(getFinalAmount(lead));
 
   return (
-    <div className="bg-gradient-to-br from-pink-950/40 to-slate-900/80 border border-pink-500/30 rounded-3xl p-6 shadow-xl shadow-pink-500/10">
-      <div className="flex flex-wrap justify-between items-start gap-3 mb-4">
-        <div>
-          <span className="text-[10px] font-black text-pink-400 uppercase tracking-widest bg-pink-500/10 px-2 py-1 rounded border border-pink-500/20">
-            Pending Final Approval
-          </span>
-          <h3 className="text-xl font-black text-white mt-2">{lead.lead_id}</h3>
-          <p className="text-xs text-pink-300/80 mt-1">
-            Outcome: {lead.pending_outcome || 'Completed'} • Tech: {lead.technician?.name || 'N/A'}
-          </p>
-        </div>
-        <div className="text-right">
-          <p className="text-[10px] text-slate-500 uppercase font-bold">Amount Collected</p>
-          <p className="text-2xl font-black text-emerald-400">{formatPKR(getFinalAmount(lead))}</p>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-        <div className="space-y-2 text-sm">
-          <p className="flex items-center gap-2 text-white font-bold"><User size={14} className="text-pink-400" /> {lead.customer?.name}</p>
-          <p className="flex items-center gap-2 text-slate-400 text-xs"><Wrench size={14} /> {lead.product_type}</p>
-          <p className="flex items-start gap-2 text-slate-400 text-xs"><MapPin size={14} className="mt-0.5 shrink-0" /> {lead.exact_address || lead.customer?.area}</p>
-          <p className="text-xs text-amber-400/90 bg-amber-500/5 border border-amber-500/10 p-2 rounded-lg">{lead.problem_details}</p>
-        </div>
-        <div className="bg-slate-950/50 rounded-2xl p-4 border border-white/5 space-y-2 text-xs">
-          <p><span className="text-slate-500">Actual Problem:</span> <span className="text-slate-200">{lead.actual_problem || '—'}</span></p>
-          <p><span className="text-slate-500">Work Done:</span> <span className="text-slate-200">{lead.repair_details || '—'}</span></p>
-          <p><span className="text-slate-500">Warranty:</span> <span className="text-amber-400 font-bold">{lead.warranty_months || 0} month(s)</span></p>
-        </div>
-      </div>
-
-      {pics.length > 0 && (
-        <div className="mb-4">
-          <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Product Pictures</p>
-          <div className="flex gap-2 overflow-x-auto pb-1">
-            {pics.map((pic, i) => (
-              <img
-                key={i}
-                src={pic}
-                alt={`product-${i}`}
-                className="w-24 h-24 rounded-xl object-cover border-2 border-pink-500/30 cursor-pointer hover:scale-105 transition-transform shrink-0"
-                onClick={() => setZoomImg(pic)}
-              />
-            ))}
+    <>
+      <article className={`w-full max-w-full min-w-0 crm-card rounded-2xl border border-slate-200/70 border-l-4 ${borderAccent[meta.color]} shadow-sm overflow-hidden`}>
+        {/* Summary — always visible */}
+        <div className="p-4 sm:p-5 space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-start gap-3 min-w-0">
+            <div className="flex items-start gap-3 min-w-0 flex-1">
+              <div className={`p-2 rounded-xl border shrink-0 ${badgeStyles[meta.color]}`}>
+                <TaskIcon size={18} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-1.5 mb-1">
+                  <CopyText
+                    value={lead.lead_id || ''}
+                    label="Lead ID"
+                    className="text-[11px] font-mono font-black text-mint-700 bg-mint-50 px-2 py-0.5 rounded-md border border-mint-200"
+                  />
+                  <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-md border ${badgeStyles[meta.color]}`}>
+                    {meta.label}
+                  </span>
+                </div>
+                <p className="text-sm sm:text-base font-black text-slate-800 break-words">
+                  {lead.customer?.name || 'Unknown customer'}
+                </p>
+                <p className="text-xs text-slate-500 mt-0.5 break-words">
+                  {productLabel}
+                  {lead.customer?.area && <> · {lead.customer.area}</>}
+                </p>
+                <p className="text-xs text-slate-600 mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+                  {lead.customer?.phone && (
+                    <span className="inline-flex items-center gap-1">
+                      <Phone size={11} className="text-slate-400 shrink-0" />
+                      <CopyText value={lead.customer.phone} label="Phone" className="font-semibold" />
+                    </span>
+                  )}
+                  {lead.technician?.name && (
+                    <span>Tech: <strong>{lead.technician.name}</strong></span>
+                  )}
+                </p>
+              </div>
+            </div>
+            <div className="shrink-0 sm:text-right bg-mint-50 border border-mint-200/60 rounded-xl px-4 py-2 self-start">
+              <p className="text-[10px] font-bold text-slate-500 uppercase">Collected</p>
+              <p className="text-xl font-black text-mint-600">{collected}</p>
+            </div>
           </div>
-        </div>
-      )}
 
-      <div className="flex flex-wrap gap-2">
-        {canApprove && (
+          {/* Quick preview */}
+          {(lead.actual_problem || lead.repair_details) && !expanded && (
+            <div className="text-xs text-slate-600 bg-slate-50 rounded-xl px-3 py-2 border border-slate-100 line-clamp-2">
+              {lead.actual_problem && <span><strong>Problem:</strong> {lead.actual_problem}</span>}
+              {lead.actual_problem && lead.repair_details && ' · '}
+              {lead.repair_details && <span><strong>Work:</strong> {lead.repair_details}</span>}
+            </div>
+          )}
+
+          {/* Thumbnails — wrap, no horizontal scroll */}
+          {(pics.length > 0 || lead.house_image) && (
+            <div className="flex flex-wrap gap-2">
+              {lead.house_image && (
+                <LeadImageThumb src={lead.house_image} alt="Location" className="w-14 h-14" onZoom={setZoomImg} />
+              )}
+              {pics.map((pic, i) => (
+                <img
+                  key={i}
+                  src={pic}
+                  alt=""
+                  className="w-14 h-14 rounded-lg object-cover border border-slate-200 cursor-pointer"
+                  onClick={() => setZoomImg(pic)}
+                />
+              ))}
+            </div>
+          )}
+
+          {lead.voice_note && !expanded && (
+            <VoiceNotePlayer src={lead.voice_note} title="Voice note" />
+          )}
+
+          {/* Expanded details */}
+          {expanded && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 pt-1 border-t border-slate-100">
+              <div className="rounded-xl bg-slate-50 border border-slate-100 p-3 space-y-2 text-xs">
+                <p className="text-[10px] font-black text-slate-400 uppercase flex items-center gap-1"><User size={11} /> Customer</p>
+                {lead.problem_details && <p><span className="text-slate-500">Reported:</span> {lead.problem_details}</p>}
+                {lead.visit_date && (
+                  <p className="flex items-center gap-1 text-slate-600">
+                    <Calendar size={11} /> {new Date(lead.visit_date).toLocaleDateString()}
+                  </p>
+                )}
+              </div>
+              <div className="rounded-xl bg-slate-50 border border-slate-100 p-3 space-y-2 text-xs">
+                <p className="text-[10px] font-black text-slate-400 uppercase flex items-center gap-1"><FileText size={11} /> Technician submission</p>
+                <p><span className="text-slate-500">Actual problem:</span> {lead.actual_problem || '—'}</p>
+                <p><span className="text-slate-500">Work done:</span> {lead.repair_details || '—'}</p>
+                <p className="flex items-center gap-1">
+                  <Shield size={11} className="text-amber-600" />
+                  Warranty: {lead.warranty_months || 0} mo
+                </p>
+                <div className="grid grid-cols-3 gap-1.5 pt-1">
+                  <div className="text-center rounded-lg bg-white py-1.5 border border-slate-100">
+                    <p className="text-[8px] text-slate-400 uppercase font-bold">Agreed</p>
+                    <p className="text-xs font-black">{Number(lead.agreed_amount) > 0 ? formatPKR(lead.agreed_amount) : '—'}</p>
+                  </div>
+                  <div className="text-center rounded-lg bg-white py-1.5 border border-slate-100">
+                    <p className="text-[8px] text-slate-400 uppercase font-bold">Total</p>
+                    <p className="text-xs font-black">{Number(lead.total_amount) > 0 ? formatPKR(lead.total_amount) : '—'}</p>
+                  </div>
+                  <div className="text-center rounded-lg bg-mint-50 py-1.5 border border-mint-100">
+                    <p className="text-[8px] text-mint-600 uppercase font-bold flex items-center justify-center gap-0.5"><Banknote size={9} /> Paid</p>
+                    <p className="text-xs font-black text-mint-600">{Number(lead.collected_amount) > 0 ? formatPKR(lead.collected_amount) : '—'}</p>
+                  </div>
+                </div>
+              </div>
+              {lead.voice_note && <div className="lg:col-span-2"><VoiceNotePlayer src={lead.voice_note} title="Voice note" /></div>}
+            </div>
+          )}
+
           <button
-            onClick={handleApprove}
-            disabled={approving}
-            className="flex items-center gap-2 px-5 py-2.5 bg-pink-500 hover:bg-pink-600 text-white font-black rounded-xl text-sm transition-all disabled:opacity-50"
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            className="text-xs font-bold text-slate-500 hover:text-mint-600 flex items-center gap-1 transition-colors"
           >
-            <CheckCircle2 size={16} /> {approving ? 'Approving...' : 'Approve Job'}
+            {expanded ? <><ChevronUp size={14} /> Hide details</> : <><ChevronDown size={14} /> Show full details</>}
           </button>
-        )}
-        <LeadPdfButtons lead={lead} />
-        {lead.customer?.google_map_link && (
-          <a href={lead.customer.google_map_link} target="_blank" rel="noreferrer" className="flex items-center gap-2 px-4 py-2.5 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded-xl text-xs font-bold">
-            <MapPin size={14} /> Location
-          </a>
-        )}
-      </div>
+        </div>
+
+        {/* Actions */}
+        <footer className="px-4 sm:px-5 py-3 border-t border-slate-200/60 bg-slate-50/90 flex flex-wrap items-center gap-2">
+          {canApprove && (
+            <PendingApprovalActions lead={lead} onDone={onApproved} onView={() => setViewOpen(true)} />
+          )}
+          <LeadPdfButtons lead={lead} compact />
+          {lead.customer?.google_map_link && (
+            <a
+              href={lead.customer.google_map_link}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center gap-1.5 px-3 py-2 bg-amber-50 text-amber-700 border border-amber-200 rounded-lg text-[11px] font-bold"
+            >
+              <MapPin size={13} /> Map
+            </a>
+          )}
+        </footer>
+      </article>
+
       <ImageZoomModal src={zoomImg} onClose={() => setZoomImg(null)} />
-    </div>
+
+      {viewOpen && (
+        <LeadHistoryModal
+          lead={lead}
+          onClose={() => setViewOpen(false)}
+          extraActions={
+            canApprove ? (
+              <PendingApprovalActions
+                lead={lead}
+                showView={false}
+                onDone={() => { setViewOpen(false); onApproved?.(); }}
+                layout="stack"
+              />
+            ) : undefined
+          }
+        />
+      )}
+    </>
   );
 };
 

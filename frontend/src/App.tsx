@@ -1,12 +1,9 @@
-import { useEffect, useState } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { useDispatch, useSelector } from 'react-redux';
+﻿import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import React from 'react';
+import { useSelector } from 'react-redux';
 import { Toaster } from 'react-hot-toast';
-import api from './services/api';
-import { setUser, logout } from './store/slices/authSlice';
 import type { RootState } from './store';
 
-// Pages
 import Login from './pages/Login';
 import Register from './pages/Register';
 import AdminDashboard from './pages/AdminDashboard';
@@ -16,161 +13,118 @@ import WorkshopDashboard from './pages/WorkshopDashboard';
 import MapPage from './pages/MapPage';
 import CreatePostPage from './pages/CreatePostPage';
 import ProtectedRoute from './components/ProtectedRoute';
+import AuthBootstrap from './components/AuthBootstrap';
+import LocationServices from './components/LocationServices';
+import ThemeProvider from './components/ThemeProvider';
+import { homePathForRole } from './utils/roleRoutes';
 
 const RootRedirect = () => {
   const { user, isAuthenticated, token } = useSelector((state: RootState) => state.auth);
-  
-  if (!token) return <Navigate to="/login" replace />;
-  
-  if (!isAuthenticated || !user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-950">
-        <div className="flex flex-col items-center gap-4 text-white">
-          <div className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
-          <p>Verifying Access...</p>
-        </div>
-      </div>
-    );
-  }
-  
-  const role = user?.role;
-  console.log('Redirecting based on role:', role);
 
-  switch (role) {
-    case 'ADMIN': return <Navigate to="/admin" replace />;
-    case 'CALL_CENTER': return <Navigate to="/callcenter" replace />;
-    case 'TECHNICIAN': return <Navigate to="/tech" replace />;
-    case 'WORKSHOP_MANAGER': return <Navigate to="/workshop" replace />;
-    default: 
-      console.warn('Unknown role detected:', role);
-      return <Navigate to="/login" replace />;
+  if (!token || !isAuthenticated || !user) {
+    return <Navigate to="/login" replace />;
   }
+
+  return <Navigate to={homePathForRole(user.role)} replace />;
 };
 
-function App() {
-  const dispatch = useDispatch();
-  const { isAuthenticated, token } = useSelector((state: RootState) => state.auth);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let isMounted = true;
-    
-    const initAuth = async () => {
-      if (token && !isAuthenticated && isMounted) {
-        console.log('--- Auth Init Start ---');
-        try {
-          const response = await api.get('/auth/me');
-          if (response.data?.user && isMounted) {
-            dispatch(setUser(response.data.user));
-            console.log('User initialized:', response.data.user?.role);
-          }
-        } catch (error) {
-          console.error('Auth Init Error:', error);
-          if (isMounted) dispatch(logout());
-        }
-      }
-      
-      if (isMounted && loading) {
-        setLoading(false);
-      }
-    };
-
-    initAuth();
-    
-    return () => {
-      isMounted = false;
-    };
-  }, [dispatch, token, isAuthenticated]); // loading removed from deps
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-950 text-white font-bold">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
-          <p className="animate-pulse">Loading ServiceOS...</p>
-        </div>
-      </div>
-    );
+const LoginRoute = () => {
+  const { isAuthenticated, user } = useSelector((state: RootState) => state.auth);
+  if (isAuthenticated && user) {
+    return <Navigate to={homePathForRole(user.role)} replace />;
   }
+  return <Login />;
+};
 
+const CatchAllRedirect = () => {
+  const { isAuthenticated, user, token } = useSelector((state: RootState) => state.auth);
+  if (!token || !isAuthenticated || !user) {
+    return <Navigate to="/login" replace />;
+  }
+  return <Navigate to={homePathForRole(user.role)} replace />;
+};
+
+const panelRoutes = (
+  basePath: string,
+  allowedRoles: string[],
+  element: React.ReactNode
+) => [
+  <Route
+    key={basePath}
+    path={basePath}
+    element={<ProtectedRoute allowedRoles={allowedRoles}>{element}</ProtectedRoute>}
+  />,
+  <Route
+    key={`${basePath}-nested`}
+    path={`${basePath}/*`}
+    element={<ProtectedRoute allowedRoles={allowedRoles}>{element}</ProtectedRoute>}
+  />,
+];
+
+function AppRoutes() {
   return (
-    <>
-      <Toaster position="top-right" />
-      <Router>
-        <Routes>
-          {/* Public Routes */}
-          <Route path="/login" element={isAuthenticated ? <Navigate to="/" replace /> : <Login />} />
-          <Route path="/register" element={<Register />} />
+    <Routes>
+      <Route path="/login" element={<LoginRoute />} />
+      <Route path="/register" element={<Register />} />
 
-          {/* Role-based Redirection at Root */}
-          <Route path="/" element={isAuthenticated ? <RootRedirect /> : <Navigate to="/login" replace />} />
+      <Route path="/" element={<RootRedirect />} />
 
-          {/* Admin Routes */}
-          <Route 
-            path="/admin/*" 
-            element={
-              <ProtectedRoute allowedRoles={['ADMIN']}>
-                <AdminDashboard />
-              </ProtectedRoute>
-            } 
-          />
+      {panelRoutes('/admin', ['ADMIN'], <AdminDashboard />)}
+      {panelRoutes('/callcenter', ['CALL_CENTER', 'ADMIN'], <CallCenterDashboard />)}
+      {panelRoutes('/tech', ['TECHNICIAN', 'ADMIN'], <TechnicianDashboard />)}
+      {panelRoutes('/workshop', ['WORKSHOP_MANAGER', 'ADMIN'], <WorkshopDashboard />)}
 
-          {/* Call Center Routes */}
-          <Route path="/call-center/*" element={<Navigate to="/callcenter" replace />} />
-          <Route 
-            path="/callcenter/*" 
-            element={
-              <ProtectedRoute allowedRoles={['CALL_CENTER', 'ADMIN']}>
-                <CallCenterDashboard />
-              </ProtectedRoute>
-            } 
-          />
+      <Route path="/call-center" element={<Navigate to="/callcenter" replace />} />
+      <Route path="/call-center/*" element={<Navigate to="/callcenter" replace />} />
 
-          {/* Technician Routes */}
-          <Route 
-            path="/tech/*" 
-            element={
-              <ProtectedRoute allowedRoles={['TECHNICIAN', 'ADMIN']}>
-                <TechnicianDashboard />
-              </ProtectedRoute>
-            } 
-          />
+      <Route
+        path="/map"
+        element={
+          <ProtectedRoute allowedRoles={['CALL_CENTER', 'ADMIN', 'TECHNICIAN']}>
+            <MapPage />
+          </ProtectedRoute>
+        }
+      />
 
-          {/* Workshop Routes */}
-          <Route
-            path="/workshop/*"
-            element={
-              <ProtectedRoute allowedRoles={['WORKSHOP_MANAGER', 'ADMIN']}>
-                <WorkshopDashboard />
-              </ProtectedRoute>
-            }
-          />
+      <Route
+        path="/create-post"
+        element={
+          <ProtectedRoute allowedRoles={['ADMIN', 'CALL_CENTER', 'TECHNICIAN', 'WORKSHOP_MANAGER']}>
+            <CreatePostPage />
+          </ProtectedRoute>
+        }
+      />
 
-          {/* Map Page */}
-          <Route
-            path="/map"
-            element={
-              <ProtectedRoute allowedRoles={['CALL_CENTER', 'ADMIN', 'TECHNICIAN']}>
-                <MapPage />
-              </ProtectedRoute>
-            }
-          />
+      <Route path="*" element={<CatchAllRedirect />} />
+    </Routes>
+  );
+}
 
-          {/* Create Post */}
-          <Route
-            path="/create-post"
-            element={
-              <ProtectedRoute allowedRoles={['ADMIN', 'CALL_CENTER', 'TECHNICIAN', 'WORKSHOP_MANAGER']}>
-                <CreatePostPage />
-              </ProtectedRoute>
-            }
-          />
-
-          {/* Catch All */}
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </Router>
-    </>
+function App() {
+  return (
+    <ThemeProvider>
+      <Toaster
+        position="top-right"
+        toastOptions={{
+          style: {
+            background: '#ffffff',
+            color: '#1e293b',
+            border: '1px solid #e2ebe6',
+            borderRadius: '12px',
+            fontFamily: 'Inter, sans-serif',
+            boxShadow: '0 4px 16px rgba(193,240,193,0.2)',
+          },
+          success: { iconTheme: { primary: '#52c47a', secondary: '#ffffff' } },
+          error: { iconTheme: { primary: '#f08080', secondary: '#ffffff' } },
+        }}
+      />
+      <AuthBootstrap>
+        <LocationServices />
+        <Router>
+          <AppRoutes />
+        </Router>
+      </AuthBootstrap>
+    </ThemeProvider>
   );
 }
 

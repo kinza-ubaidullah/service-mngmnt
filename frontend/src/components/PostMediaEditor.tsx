@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+﻿import React, { useEffect, useState } from 'react';
 import { X, Check } from 'lucide-react';
 import { INSTAGRAM_FILTERS, getFilterCss } from '../utils/imageFilters';
 
@@ -29,9 +29,9 @@ const PostMediaEditor: React.FC<PostMediaEditorProps> = ({ media, onClose, onSav
 
   return (
     <div className="fixed inset-0 z-[60] bg-black flex flex-col">
-      <div className="flex justify-between items-center px-4 py-3 border-b border-white/10">
+      <div className="flex justify-between items-center px-4 py-3 border-b border-slate-200/70">
         <button type="button" onClick={onClose} className="p-2 text-white"><X size={24} /></button>
-        <span className="text-white font-bold">Filters</span>
+        <span className="text-slate-800 font-bold">Filters</span>
         <button type="button" onClick={handleSave} className="p-2 text-[#00A884]"><Check size={24} /></button>
       </div>
 
@@ -56,7 +56,7 @@ const PostMediaEditor: React.FC<PostMediaEditorProps> = ({ media, onClose, onSav
         )}
       </div>
 
-      <div className="shrink-0 bg-[#12181B] border-t border-white/10 pb-6 pt-4">
+      <div className="shrink-0 bg-[#12181B] border-t border-slate-200/70 pb-6 pt-4">
         <div className="flex gap-3 overflow-x-auto px-4 custom-scrollbar pb-2">
           {INSTAGRAM_FILTERS.map(f => (
             <button

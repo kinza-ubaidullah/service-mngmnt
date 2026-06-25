@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { RefreshCw, Trash2, RotateCcw, AlertTriangle } from 'lucide-react';
 import api from '../services/api';
 import toast from 'react-hot-toast';
@@ -70,7 +70,7 @@ const TrashModule: React.FC<TrashModuleProps> = ({ modelFilter, title = 'Trash B
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center bg-slate-900/60 p-6 rounded-[2rem] border border-white/5">
+      <div className="flex justify-between items-center crm-card p-6 rounded-[2rem] border border-slate-200/60">
         <div>
           <h2 className="text-2xl font-black text-white flex items-center gap-3">
             <Trash2 className="text-red-400" /> {title}
@@ -80,20 +80,20 @@ const TrashModule: React.FC<TrashModuleProps> = ({ modelFilter, title = 'Trash B
         <RefreshButton onClick={refresh} loading={refreshing} />
       </div>
 
-      <div className="bg-slate-900/60 border border-white/5 rounded-[2.5rem] overflow-hidden shadow-2xl">
+      <div className="crm-card border rounded-[2.5rem] overflow-hidden shadow-2xl">
         <div className="overflow-x-auto">
           <table className="w-full text-left">
             <thead>
-              <tr className="text-[10px] font-black text-slate-500 uppercase tracking-widest border-b border-white/5 bg-white/[0.02]">
+              <tr className="text-[10px] font-black text-slate-500 uppercase tracking-widest border-b border-slate-200/60 bg-slate-50/80">
                 <th className="px-6 py-4">Deleted At</th>
                 <th className="px-6 py-4">Module</th>
                 <th className="px-6 py-4">Data Snapshot</th>
                 <th className="px-6 py-4 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-white/5">
+            <tbody className="divide-y divide-slate-200/60">
               {trashItems.map(item => (
-                <tr key={item.id} className="hover:bg-white/[0.02] transition-colors text-sm group">
+                <tr key={item.id} className="hover:bg-slate-50/80 transition-colors text-sm group">
                   <td className="px-6 py-4 text-slate-400 whitespace-nowrap">
                     {new Date(item.deleted_at).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}
                   </td>
@@ -102,14 +102,14 @@ const TrashModule: React.FC<TrashModuleProps> = ({ modelFilter, title = 'Trash B
                   </td>
                   <td className="px-6 py-4">
                     {item.model_name === 'Lead' ? (
-                      <div className="bg-slate-950 p-3 rounded-xl border border-white/5 text-sm space-y-1">
-                        <p className="font-mono font-bold text-indigo-300">{(item.data as any)?.lead_id}</p>
+                      <div className="bg-white p-3 rounded-xl border border-slate-200/60 text-sm space-y-1">
+                        <p className="font-mono font-bold text-mint-600">{(item.data as any)?.lead_id}</p>
                         <p className="text-slate-300">{(item.data as any)?.customer_name}</p>
                         <p className="text-xs text-slate-500">{(item.data as any)?.product_type} • {(item.data as any)?.phone}</p>
-                        <p className="text-[10px] text-amber-400">Was: {(item.data as any)?.old_status}</p>
+                        <p className="text-[10px] text-amber-600">Was: {(item.data as any)?.old_status}</p>
                       </div>
                     ) : (
-                      <div className="max-w-md max-h-24 overflow-y-auto custom-scrollbar bg-slate-950 p-3 rounded-xl border border-white/5 text-[11px] text-slate-400 font-mono break-all">
+                      <div className="max-w-md max-h-24 overflow-y-auto custom-scrollbar bg-white p-3 rounded-xl border border-slate-200/60 text-[11px] text-slate-400 font-mono break-all">
                         {JSON.stringify(item.data)}
                       </div>
                     )}
@@ -119,7 +119,7 @@ const TrashModule: React.FC<TrashModuleProps> = ({ modelFilter, title = 'Trash B
                       <button 
                         onClick={() => handleRestore(item.id)}
                         disabled={processingId === item.id}
-                        className="p-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-500 rounded-xl transition-all border border-emerald-500/20 disabled:opacity-50"
+                        className="p-2 bg-mint-100 hover:bg-emerald-500/20 text-emerald-500 rounded-xl transition-all border border-mint-300/40 disabled:opacity-50"
                         title="Restore Record"
                       >
                         <RotateCcw size={16} />

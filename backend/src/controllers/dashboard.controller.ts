@@ -21,20 +21,44 @@ export const getAdminStats = async (req: Request, res: Response) => {
       })
     ]);
 
-    // Recent operations — leads with meaningful activity, newest first
+    // Recent operations — exclude items awaiting final approval
     const recentLeads = await prisma.lead.findMany({
       take: 12,
       where: {
         status: {
-          in: ['InspectionCompleted', 'PickedForWorkshop', 'Completed', 'PendingApproval', 'Assigned', 'InProgress', 'Reopened']
+          in: ['InspectionCompleted', 'PickedForWorkshop', 'Completed', 'Assigned', 'InProgress', 'Reopened', 'Complaint']
         }
       },
       orderBy: { updated_at: 'desc' },
       include: {
         customer: true,
-        technician: { select: { name: true } }
+        technician: { select: { name: true, phone: true } }
       }
     });
+
+    const pendingApprovalLeads = await prisma.lead.findMany({
+      where: { status: 'PendingApproval' },
+      orderBy: { updated_at: 'desc' },
+      include: {
+        customer: true,
+        technician: { select: { id: true, name: true, phone: true } }
+      }
+    });
+
+    let rejectedLeads: Awaited<ReturnType<typeof prisma.lead.findMany>> = [];
+    try {
+      rejectedLeads = await prisma.lead.findMany({
+        where: { rejection_note: { not: null } },
+        orderBy: { updated_at: 'desc' },
+        take: 15,
+        include: {
+          customer: true,
+          technician: { select: { name: true, phone: true } }
+        }
+      });
+    } catch (rejectedErr) {
+      console.warn('rejectedLeads query skipped (run production-cpanel-update.sql):', rejectedErr);
+    }
 
     // Fetch active technicians with locations and their current assignments
     const technicians = await prisma.user.findMany({
@@ -155,11 +179,27 @@ export const getAdminStats = async (req: Request, res: Response) => {
         revenue: totalCollected._sum.collected_amount || 0
       },
       recentLeads,
+      pendingApprovalLeads,
+      rejectedLeads,
       technicians,
       attentionNeeded
     });
   } catch (error) {
     console.error('Error fetching admin stats:', error);
-    res.status(500).json({ message: 'Failed to fetch dashboard stats' });
+    res.json({
+      stats: {
+        totalLeads: 0,
+        newLeads: 0,
+        assignedJobs: 0,
+        workshopJobs: 0,
+        revenue: 0,
+      },
+      recentLeads: [],
+      pendingApprovalLeads: [],
+      rejectedLeads: [],
+      technicians: [],
+      attentionNeeded: [],
+      degraded: true,
+    });
   }
 };
