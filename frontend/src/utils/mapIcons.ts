@@ -98,7 +98,7 @@ export const getLeadMapIcon = (lead: { status: string; pending_outcome?: string 
   if (status === 'PickedForWorkshop' || (status === 'PendingApproval' && lead.pending_outcome === 'PickedForWorkshop')) {
     return workshopIcon;
   }
-  if (status === 'New') return unassignedIcon;
-  if (status === 'Complaint' || status === 'Reopened') return complaintIcon;
+  if (status === 'New' || status === 'Complaint') return unassignedIcon;
+  if (status === 'Reopened') return complaintIcon;
   return assignedIcon;
 };

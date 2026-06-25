@@ -262,71 +262,75 @@ const JobMap: React.FC<JobMapProps> = ({
                   </div>
                 </Tooltip>
                 <Popup className="custom-popup" closeButton>
-                  <div className="p-4 w-[300px] map-lead-card rounded-2xl space-y-3">
+                  <div className="p-3 w-[250px] map-lead-card rounded-2xl space-y-2.5">
                     <div className="flex justify-between items-center gap-2">
-                      <span className={`text-[9px] font-black uppercase tracking-widest px-2.5 py-0.5 rounded-full border ${statusBadgeClass(lead.status, isNew)}`}>
+                      <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border ${statusBadgeClass(lead.status, isNew)}`}>
                         {isNew ? '● Unassigned' : `● ${getMapStatusLabel(lead)}`}
                       </span>
                       <CopyText
                         value={lead.lead_id}
                         label="Lead ID"
-                        className="font-mono text-[11px] font-bold text-amber-200"
+                        className="font-mono text-[10px] font-bold text-amber-200"
                       />
                     </div>
 
-                    {thumbSrc && (
-                      <div
-                        className="relative w-full h-44 overflow-hidden rounded-xl bg-teal-950 border border-teal-600/40 cursor-zoom-in group"
-                        onClick={() => setZoomedImage(thumbSrc)}
-                      >
-                        <img src={thumbSrc} alt="appliance" className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" />
-                        {pics.length > 1 && (
-                          <div className="absolute top-2 right-2 bg-teal-900/90 text-amber-200 text-[8px] font-bold px-1.5 py-0.5 rounded border border-teal-600/50">
-                            +{pics.length - 1} more
-                          </div>
-                        )}
-                      </div>
-                    )}
+                    <div className="flex gap-2">
+                      {thumbSrc && (
+                        <div
+                          className="relative flex-1 h-28 overflow-hidden rounded-xl bg-teal-950 border border-teal-600/40 cursor-zoom-in group"
+                          onClick={() => setZoomedImage(thumbSrc)}
+                        >
+                          <img src={thumbSrc} alt="appliance" className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" />
+                          {pics.length > 1 && (
+                            <div className="absolute top-1 right-1 bg-teal-900/90 text-amber-200 text-[8px] font-bold px-1.5 py-0.5 rounded border border-teal-600/50">
+                              +{pics.length - 1}
+                            </div>
+                          )}
+                        </div>
+                      )}
 
-                    {lead.house_image && !thumbSrc?.startsWith('data:') && lead.house_image !== thumbSrc && (
-                      <div
-                        className="relative w-full h-24 overflow-hidden rounded-xl bg-teal-950 border border-teal-600/40 cursor-zoom-in group"
-                        onClick={() => setZoomedImage(lead.house_image)}
-                      >
-                        <img src={lead.house_image} alt="house" className="w-full h-full object-cover" />
-                        <div className="absolute top-1 left-1 bg-teal-900/90 text-teal-200 text-[8px] font-bold px-1.5 py-0.5 rounded">House</div>
-                      </div>
-                    )}
+                      {lead.house_image && !thumbSrc?.startsWith('data:') && lead.house_image !== thumbSrc && (
+                        <div
+                          className="relative w-1/3 h-28 overflow-hidden rounded-xl bg-teal-950 border border-teal-600/40 cursor-zoom-in group"
+                          onClick={() => setZoomedImage(lead.house_image)}
+                        >
+                          <img src={lead.house_image} alt="house" className="w-full h-full object-cover" />
+                          <div className="absolute top-1 left-1 bg-teal-900/90 text-teal-200 text-[8px] font-bold px-1 py-0.5 rounded">House</div>
+                        </div>
+                      )}
+                    </div>
 
                     <div className="space-y-1.5">
-                      <h4 className="map-lead-name font-bold text-sm flex items-center gap-2">
-                        <User size={13} className="text-emerald-200 shrink-0" /> {lead.customer.name}
+                      <h4 className="map-lead-name font-bold text-[13px] leading-tight flex items-start gap-1.5">
+                        <User size={12} className="text-emerald-200 shrink-0 mt-0.5" /> 
+                        <span className="line-clamp-1">{lead.customer.name}</span>
                       </h4>
                       {lead.customer?.phone && (
                         <CopyText
                           value={lead.customer.phone}
                           label="Phone"
-                          className="map-lead-phone text-xs font-mono flex items-center gap-1"
+                          className="map-lead-phone text-[11px] font-mono flex items-center gap-1"
                         />
                       )}
-                      <p className="map-lead-meta text-xs font-bold flex items-center gap-2">
-                        <Wrench size={13} className="text-amber-200 shrink-0" /> {lead.product_type}
+                      <p className="map-lead-meta text-[11px] font-bold flex items-start gap-1.5">
+                        <Wrench size={12} className="text-amber-200 shrink-0 mt-0.5" /> 
+                        <span className="line-clamp-1">{lead.product_type}</span>
                       </p>
-                      <p className="map-lead-area text-xs flex items-start gap-2">
-                        <MapPin size={13} className="text-rose-200 shrink-0 mt-0.5" />
-                        <span>{lead.customer.area}{lead.exact_address ? ` — ${lead.exact_address}` : ''}</span>
+                      <p className="map-lead-area text-[11px] flex items-start gap-1.5">
+                        <MapPin size={12} className="text-rose-200 shrink-0 mt-0.5" />
+                        <span className="line-clamp-2 leading-tight opacity-90">{lead.customer.area}{lead.exact_address ? ` — ${lead.exact_address}` : ''}</span>
                       </p>
                       {lead.problem_details && (
-                        <div className="map-lead-quote text-[11px] bg-teal-950/60 border border-teal-700/50 p-2 rounded-lg italic">
+                        <div className="map-lead-quote text-[10px] bg-teal-950/60 border border-teal-700/50 p-1.5 rounded-lg italic line-clamp-2">
                           &ldquo;{lead.problem_details}&rdquo;
                         </div>
                       )}
                       {lead.technician && isAssignedTaskStatus(lead.status) && (
-                        <div className="flex items-center gap-2 bg-sky-500/20 border border-sky-400/40 rounded-lg px-2.5 py-2">
-                          <User size={12} className="text-sky-200 shrink-0" />
+                        <div className="flex items-center gap-2 bg-sky-500/20 border border-sky-400/40 rounded-lg px-2 py-1.5 mt-1">
+                          <User size={11} className="text-sky-200 shrink-0" />
                           <div>
-                            <p className="text-[9px] font-black uppercase text-sky-200/80 tracking-wider">Assigned to</p>
-                            <p className="text-xs font-black text-white">{lead.technician.name}</p>
+                            <p className="text-[8px] font-black uppercase text-sky-200/80 tracking-wider leading-none mb-0.5">Assigned to</p>
+                            <p className="text-[11px] font-black text-white leading-none">{lead.technician.name}</p>
                           </div>
                         </div>
                       )}
@@ -334,15 +338,15 @@ const JobMap: React.FC<JobMapProps> = ({
 
                     {(canAssign || canReassign || canUnassign || canCancel) && (
                       <PopupActions>
-                        <div className="flex flex-wrap gap-2 pt-1">
+                        <div className="grid grid-cols-2 gap-1.5 pt-1">
                           {canAssign && (
                             <button
                               type="button"
                               onMouseDown={stopMapEvent}
                               onClick={(e) => { stopMapEvent(e); onAssign!(lead); }}
-                              className="flex-1 min-w-[45%] bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-teal-950 text-[10px] font-black py-2.5 rounded-xl transition-all shadow-lg flex items-center justify-center gap-1.5"
+                              className="bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-teal-950 text-[9px] font-black py-2 rounded-lg transition-all shadow-md flex items-center justify-center gap-1"
                             >
-                              <ClipboardList size={12} /> Assign
+                              <ClipboardList size={10} /> Assign
                             </button>
                           )}
                           {canReassign && (
@@ -350,9 +354,9 @@ const JobMap: React.FC<JobMapProps> = ({
                               type="button"
                               onMouseDown={stopMapEvent}
                               onClick={(e) => { stopMapEvent(e); onAssign!(lead); }}
-                              className="flex-1 min-w-[45%] bg-gradient-to-r from-sky-500 to-indigo-500 hover:from-sky-400 hover:to-indigo-400 text-white text-[10px] font-black py-2.5 rounded-xl transition-all shadow-lg flex items-center justify-center gap-1.5"
+                              className="bg-gradient-to-r from-sky-500 to-indigo-500 hover:from-sky-400 hover:to-indigo-400 text-white text-[9px] font-black py-2 rounded-lg transition-all shadow-md flex items-center justify-center gap-1"
                             >
-                              <RefreshCw size={12} /> Reassign
+                              <RefreshCw size={10} /> Reassign
                             </button>
                           )}
                           {canUnassign && (
@@ -360,9 +364,9 @@ const JobMap: React.FC<JobMapProps> = ({
                               type="button"
                               onMouseDown={stopMapEvent}
                               onClick={(e) => { stopMapEvent(e); onUnassign!(lead); }}
-                              className="flex-1 min-w-[45%] bg-slate-700 hover:bg-slate-600 text-white text-[10px] font-black py-2.5 rounded-xl transition-all border border-slate-500/50 flex items-center justify-center gap-1.5"
+                              className="bg-slate-700 hover:bg-slate-600 text-white text-[9px] font-black py-2 rounded-lg transition-all border border-slate-500/50 flex items-center justify-center gap-1"
                             >
-                              <UserMinus size={12} /> Unassign
+                              <UserMinus size={10} /> Unassign
                             </button>
                           )}
                           {canCancel && (
@@ -370,9 +374,9 @@ const JobMap: React.FC<JobMapProps> = ({
                               type="button"
                               onMouseDown={stopMapEvent}
                               onClick={(e) => { stopMapEvent(e); onCancel!(lead); }}
-                              className="flex-1 min-w-[45%] bg-rose-600/90 hover:bg-rose-500 text-white text-[10px] font-black py-2.5 rounded-xl transition-all border border-rose-400/30 flex items-center justify-center gap-1.5"
+                              className="bg-rose-600/90 hover:bg-rose-500 text-white text-[9px] font-black py-2 rounded-lg transition-all border border-rose-400/30 flex items-center justify-center gap-1"
                             >
-                              <XCircle size={12} /> Cancel
+                              <XCircle size={10} /> Cancel
                             </button>
                           )}
                         </div>
