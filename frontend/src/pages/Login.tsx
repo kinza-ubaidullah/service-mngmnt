@@ -71,7 +71,7 @@ const Login = () => {
       finishLogin(user, token);
     } catch (error: any) {
       if (!error.response) {
-        toast.error('Cannot reach API server. Check api.aljaroshi.com is running.');
+        toast.error('Cannot reach API server. Check api.aljaroshi.tech is running.');
       } else if (error.response.status === 503) {
         toast.error('API server is down (503). Restart Node.js app in cPanel.');
       } else {
