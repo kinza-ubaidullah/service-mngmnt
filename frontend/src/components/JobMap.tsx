@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Tooltip, Polyline, useMap } from 'react-leaflet';
 import { useNavigate } from 'react-router-dom';
 import L from 'leaflet';
@@ -152,7 +152,6 @@ const JobMap: React.FC<JobMapProps> = ({
   };
 
   const visibleLeads = leads.filter(l => {
-    if (!isMapVisibleLead(l)) return false;
     if (showOnlyUnassigned) return isUnassignedLead(l);
     return true;
   });

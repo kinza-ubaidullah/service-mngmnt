@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Radio, Users, MapPin, Navigation } from 'lucide-react';
 import api from '../services/api';
@@ -130,7 +130,7 @@ const TechnicianTrackingMap: React.FC<TechnicianTrackingMapProps> = ({
           </div>
         ) : null}
         <JobMap
-          leads={displayLeads}
+          leads={controlled ? displayLeads : displayLeads.filter((l) => !['Completed', 'Cancelled', 'Deleted', 'InspectionCompleted', 'PendingApproval', 'PickedForWorkshop'].includes(l.status))}
           technicians={displayTechs}
           onAssign={onAssign}
           onUnassign={onUnassign}

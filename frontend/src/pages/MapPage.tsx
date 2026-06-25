@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import type { RootState } from '../store';
@@ -64,12 +64,18 @@ const MapPage = () => {
 
   const visibleLeads = useMemo(() => {
     let list = filteredByStatus;
-    if (technicianFilter !== 'all') {
+    // Don't filter by technician if viewing Unassigned (they have no tech)
+    if (technicianFilter !== 'all' && filter !== 'new') {
       list = list.filter((l) => l.technician?.id === technicianFilter);
     }
     if (!mapSearch.trim()) return list;
     return list.filter((l) => matchesLeadSearch(l, mapSearch));
-  }, [filteredByStatus, mapSearch, technicianFilter]);
+  }, [filteredByStatus, mapSearch, technicianFilter, filter]);
+
+  const visibleTechs = useMemo(() => {
+    if (technicianFilter === 'all') return mergedTechnicians;
+    return mergedTechnicians.filter(t => t.id === technicianFilter);
+  }, [mergedTechnicians, technicianFilter]);
 
   const counts = {
     new: leads.filter((l) => l.status === 'New' || l.status === 'Complaint').length,
@@ -211,7 +217,7 @@ const MapPage = () => {
         ) : (
           <JobMap
             leads={visibleLeads}
-            technicians={mergedTechnicians}
+            technicians={visibleTechs}
             onAssign={canAssign ? openAssignModal : undefined}
             onUnassign={canAssign ? handleUnassign : undefined}
             onCancel={canAssign ? handleCancel : undefined}
