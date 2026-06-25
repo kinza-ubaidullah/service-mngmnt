@@ -26,10 +26,19 @@ export const subscribeLiveTechnicians = (listener: Listener) => {
 };
 
 export const setLiveTechnicians = (list: LiveTechnician[]) => {
-  technicians = list.map((t) => ({
-    ...t,
-    lastLiveAt: t.lastLiveAt ?? (t.lat != null && t.lng != null ? Date.now() : null),
-  }));
+  const existingMap = new Map(technicians.map(t => [t.id, t]));
+  technicians = list.map((t) => {
+    const existing = existingMap.get(t.id);
+    const isDifferent = existing && (existing.lat !== t.lat || existing.lng !== t.lng);
+    const lastLiveAt = isDifferent 
+      ? Date.now() 
+      : (existing?.lastLiveAt ?? (t.lat != null && t.lng != null ? Date.now() : null));
+
+    return {
+      ...t,
+      lastLiveAt,
+    };
+  });
   notify();
 };
 

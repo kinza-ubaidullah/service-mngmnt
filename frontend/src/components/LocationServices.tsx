@@ -25,12 +25,7 @@ const LocationServices = () => {
       try {
         const res = await api.get('/users/technicians');
         const list = res.data.technicians || [];
-        setLiveTechnicians(
-          list.map((t: any) => ({
-            ...t,
-            lastLiveAt: t.lat != null && t.lng != null ? Date.now() : null,
-          }))
-        );
+        setLiveTechnicians(list);
       } catch {
         /* keep last known */
       }

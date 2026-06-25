@@ -54,15 +54,38 @@ export const login = async (req: Request, res: Response) => {
       return;
     }
 
-    if (user.totp_enabled && user.totp_secret && MFA_ROLES.includes(user.role)) {
-      const tempToken = signToken({ id: user.id, purpose: '2fa' }, '5m');
-      res.json({
-        message: '2FA required',
-        requires2FA: true,
-        tempToken,
-        user: { id: user.id, name: user.name, role: user.role },
-      });
-      return;
+    if (MFA_ROLES.includes(user.role)) {
+      if (user.totp_enabled && user.totp_secret) {
+        const tempToken = signToken({ id: user.id, purpose: '2fa' }, '5m');
+        res.json({
+          message: '2FA required',
+          requires2FA: true,
+          tempToken,
+          user: { id: user.id, name: user.name, role: user.role },
+        });
+        return;
+      } else {
+        // Force 2FA setup if not enabled
+        const secret = generateTotpSecret();
+        const label = user.email || user.phone || user.name;
+        const otpauthUrl = getTotpAuthUrl(label, secret);
+
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { totp_secret: secret, totp_enabled: false },
+        });
+
+        const tempToken = signToken({ id: user.id, purpose: '2fa_setup' }, '15m');
+        res.json({
+          message: '2FA Setup Required',
+          requires2FASetup: true,
+          tempToken,
+          secret,
+          otpauthUrl,
+          user: { id: user.id, name: user.name, role: user.role },
+        });
+        return;
+      }
     }
 
     const token = signToken({ id: user.id, role: user.role });
@@ -73,6 +96,48 @@ export const login = async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('Login error:', error);
+    res.status(500).json({ message: 'Internal server error', error: String(error) });
+  }
+};
+
+export const verify2FASetupLogin = async (req: Request, res: Response) => {
+  try {
+    const { tempToken, code } = req.body;
+    if (!tempToken || !code) {
+      res.status(400).json({ message: 'Verification code is required' });
+      return;
+    }
+
+    const decoded = verifyToken(tempToken) as { id?: number; purpose?: string };
+    if (!decoded?.id || decoded.purpose !== '2fa_setup') {
+      res.status(401).json({ message: 'Session expired. Please login again.' });
+      return;
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: decoded.id } });
+    if (!user || !user.is_active || !user.totp_secret) {
+      res.status(401).json({ message: 'Invalid 2FA setup session' });
+      return;
+    }
+
+    if (!verifyTotpCode(user.totp_secret, code)) {
+      res.status(400).json({ message: 'Invalid verification code' });
+      return;
+    }
+
+    const updatedUser = await prisma.user.update({
+      where: { id: user.id },
+      data: { totp_enabled: true },
+    });
+
+    const token = signToken({ id: user.id, role: user.role });
+    res.json({
+      message: '2FA setup and login successful',
+      token,
+      user: userResponse(updatedUser),
+    });
+  } catch (error) {
+    console.error('2FA setup verification error:', error);
     res.status(500).json({ message: 'Internal server error', error: String(error) });
   }
 };

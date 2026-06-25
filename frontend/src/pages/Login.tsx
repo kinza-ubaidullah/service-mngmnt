@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useDispatch } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
-import { LogIn, User, Lock, Loader2, Sparkles, Eye, EyeOff, Shield, KeyRound, ArrowLeft, Mail, CheckCircle } from 'lucide-react';
+import { LogIn, User, Lock, Loader2, Sparkles, Eye, EyeOff, Shield, KeyRound, ArrowLeft, Mail, CheckCircle, Smartphone } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../services/api';
 import { setCredentials } from '../store/slices/authSlice';
@@ -17,6 +17,9 @@ const Login = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [twoFAStep, setTwoFAStep] = useState(false);
+  const [twoFASetupStep, setTwoFASetupStep] = useState(false);
+  const [setupSecret, setSetupSecret] = useState('');
+  const [setupOtpauthUrl, setSetupOtpauthUrl] = useState('');
   const [tempToken, setTempToken] = useState('');
   const [twoFACode, setTwoFACode] = useState('');
 
@@ -66,6 +69,14 @@ const Login = () => {
         toast.success('Enter your authenticator code');
         return;
       }
+      if (response.data.requires2FASetup) {
+        setTempToken(response.data.tempToken);
+        setSetupSecret(response.data.secret);
+        setSetupOtpauthUrl(response.data.otpauthUrl);
+        setTwoFASetupStep(true);
+        toast.success('Please set up Google Authenticator to continue');
+        return;
+      }
       const { user, token } = response.data;
       if (!user || !user.role) throw new Error('Invalid response from server');
       finishLogin(user, token);
@@ -93,6 +104,25 @@ const Login = () => {
       });
       const { user, token } = response.data;
       finishLogin(user, token);
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || 'Invalid verification code');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handle2FASetupVerify = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!twoFACode.trim()) return;
+    setLoading(true);
+    try {
+      const response = await api.post('/auth/2fa/setup-login', {
+        tempToken,
+        code: twoFACode.trim(),
+      });
+      const { user, token } = response.data;
+      finishLogin(user, token);
+      toast.success('2FA Setup Complete!');
     } catch (error: any) {
       toast.error(error.response?.data?.message || 'Invalid verification code');
     } finally {
@@ -157,6 +187,7 @@ const Login = () => {
   };
 
   const getTitle = () => {
+    if (twoFASetupStep) return 'Set Up Authenticator';
     if (twoFAStep) return 'Two-Factor Verification';
     if (forgotStep === 'forgot-email') return 'Forgot Password';
     if (forgotStep === 'forgot-otp') return 'Authenticator Code';
@@ -165,6 +196,7 @@ const Login = () => {
   };
 
   const getSubtitle = () => {
+    if (twoFASetupStep) return 'Scan the QR code to secure your account';
     if (twoFAStep) return 'Enter the 6-digit code from Google Authenticator';
     if (forgotStep === 'forgot-email') return 'Enter your admin email — code comes from Google Authenticator';
     if (forgotStep === 'forgot-otp') return 'Open Google Authenticator and enter the 6-digit code for Al Jaroshi CRM';
@@ -173,6 +205,7 @@ const Login = () => {
   };
 
   const getIcon = () => {
+    if (twoFASetupStep) return <Smartphone className="text-mint-600" size={26} />;
     if (twoFAStep) return <Shield className="text-mint-600" size={26} />;
     if (forgotStep === 'forgot-otp') return <Shield className="text-mint-600" size={26} />;
     if (forgotStep !== 'login') return <KeyRound className="text-mint-600" size={26} />;
@@ -213,8 +246,42 @@ const Login = () => {
 
           <AnimatePresence mode="wait">
 
+            {/* ── Forced 2FA Setup step ── */}
+            {twoFASetupStep && (
+              <motion.form key="2fa-setup" {...slide} onSubmit={handle2FASetupVerify} className="space-y-5">
+                <div className="bg-white rounded-2xl border border-slate-200/60 p-4 text-center space-y-3">
+                  <p className="text-sm font-bold text-slate-700">Setup Required</p>
+                  <img
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(setupOtpauthUrl)}`}
+                    alt="2FA QR Code"
+                    className="mx-auto rounded-xl border border-slate-200/70 p-2"
+                  />
+                  <p className="text-[10px] text-slate-500 font-mono break-all bg-slate-50 p-2 rounded-lg border border-slate-100">{setupSecret}</p>
+                </div>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={6}
+                  required
+                  autoFocus
+                  value={twoFACode}
+                  onChange={(e) => setTwoFACode(e.target.value.replace(/\D/g, ''))}
+                  className="crm-input w-full rounded-2xl py-4 px-5 text-center text-2xl tracking-[0.5em] font-bold"
+                  placeholder="000000"
+                />
+                <button type="submit" disabled={loading || twoFACode.length < 6}
+                  className="w-full crm-btn-primary font-black py-4 rounded-2xl flex items-center justify-center gap-2 disabled:opacity-50">
+                  {loading ? <Loader2 className="animate-spin" size={20} /> : <><Shield size={18} /> Confirm &amp; Login</>}
+                </button>
+                <button type="button" onClick={() => { setTwoFASetupStep(false); setTwoFACode(''); setTempToken(''); setSetupSecret(''); }}
+                  className="w-full text-slate-500 hover:text-slate-800 text-sm font-bold py-2">
+                  Back to login
+                </button>
+              </motion.form>
+            )}
+
             {/* ── 2FA step ── */}
-            {twoFAStep && (
+            {!twoFASetupStep && twoFAStep && (
               <motion.form key="2fa" {...slide} onSubmit={handle2FAVerify} className="space-y-5">
                 <input
                   type="text"
@@ -239,7 +306,7 @@ const Login = () => {
             )}
 
             {/* ── Forgot: enter email ── */}
-            {!twoFAStep && forgotStep === 'forgot-email' && (
+            {!twoFASetupStep && !twoFAStep && forgotStep === 'forgot-email' && (
               <motion.form key="forgot-email" {...slide} onSubmit={handleSendOtp} className="space-y-5">
                 <div className="relative">
                   <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
@@ -265,7 +332,7 @@ const Login = () => {
             )}
 
             {/* ── Forgot: enter OTP + new password ── */}
-            {!twoFAStep && forgotStep === 'forgot-otp' && (
+            {!twoFASetupStep && !twoFAStep && forgotStep === 'forgot-otp' && (
               <motion.form key="forgot-otp" {...slide} onSubmit={handleVerifyOtp} className="space-y-4">
                 <div className="bg-teal-50 border border-teal-200 rounded-2xl p-4 text-xs text-teal-800 space-y-1">
                   <p className="font-bold flex items-center gap-1"><Shield size={14} /> Google Authenticator</p>
@@ -339,7 +406,7 @@ const Login = () => {
             )}
 
             {/* ── Non-admin: contact admin ── */}
-            {!twoFAStep && forgotStep === 'forgot-contact' && (
+            {!twoFASetupStep && !twoFAStep && forgotStep === 'forgot-contact' && (
               <motion.div key="forgot-contact" {...slide} className="space-y-4">
                 <p className="text-sm text-slate-600 leading-relaxed">
                   Your account (<strong>{forgotRole?.replace('_', ' ')}</strong>) password can only be reset by an administrator.
@@ -355,7 +422,7 @@ const Login = () => {
             )}
 
             {/* ── Normal login ── */}
-            {!twoFAStep && forgotStep === 'login' && (
+            {!twoFASetupStep && !twoFAStep && forgotStep === 'login' && (
               <motion.form key="login" {...slide} onSubmit={handleLogin} className="space-y-5">
                 <div className="relative">
                   <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />

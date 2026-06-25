@@ -1,6 +1,4 @@
-import { resolveAreaCoords } from './areaCoords';
-
-export function parseGoogleMapsCoords(url?: string | null): [number, number] | null {
+function parseGoogleMapsCoords(url) {
   if (!url) return null;
 
   const candidates = [url, decodeURIComponent(url)];
@@ -29,7 +27,7 @@ export function parseGoogleMapsCoords(url?: string | null): [number, number] | n
   return null;
 }
 
-export async function expandAndParseGoogleMapsUrl(url?: string | null): Promise<[number, number] | null> {
+async function expandAndParseGoogleMapsUrl(url) {
   if (!url) return null;
 
   const direct = parseGoogleMapsCoords(url);
@@ -40,44 +38,56 @@ export async function expandAndParseGoogleMapsUrl(url?: string | null): Promise<
   try {
     const res = await fetch(url, {
       method: 'GET',
-      redirect: 'manual', // Don't follow automatically to check for 3xx
-      headers: {
+      redirect: 'manual', // Don't follow automatically, inspect headers
+      headers: { 
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.9'
       },
     });
 
+    console.log("Status:", res.status);
+    
+    // Check Location header for 3xx
     if (res.status >= 300 && res.status < 400) {
       const loc = res.headers.get('location');
+      console.log("Location:", loc);
       if (loc) {
         const fromLoc = parseGoogleMapsCoords(loc);
         if (fromLoc) return fromLoc;
-        url = loc; // Follow manually
+        // If it redirected to another short URL or consent page, we might need to follow
+        url = loc;
       }
     }
 
+    // Try following normally if manual didn't yield coords
     const res2 = await fetch(url, {
       method: 'GET',
       redirect: 'follow',
-      headers: {
+      headers: { 
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
       },
     });
 
+    console.log("Final URL:", res2.url);
     const fromFinalUrl = parseGoogleMapsCoords(res2.url);
     if (fromFinalUrl) return fromFinalUrl;
 
     const html = await res2.text();
+    // Search for meta property og:url
     const ogMatch = html.match(/<meta property="og:url" content="([^"]+)"/);
     if (ogMatch && ogMatch[1]) {
+      console.log("Found og:url:", ogMatch[1]);
       const fromOg = parseGoogleMapsCoords(ogMatch[1]);
       if (fromOg) return fromOg;
     }
 
+    // Search for window.location.replace
     const jsMatch = html.match(/window\.location\.replace\('([^']+)'\)/);
     if (jsMatch && jsMatch[1]) {
-        const unescapedUrl = jsMatch[1].replace(/\\x22/g, '"').replace(/\\x27/g, "'").replace(/\\x26/g, "&");
+        // usually the js replacement URL contains escaped characters like \x26 instead of &
+        let unescapedUrl = jsMatch[1].replace(/\\x22/g, '"').replace(/\\x27/g, "'").replace(/\\x26/g, "&");
+        console.log("Found js replace:", unescapedUrl);
         const fromJs = parseGoogleMapsCoords(unescapedUrl);
         if (fromJs) return fromJs;
     }
@@ -85,42 +95,11 @@ export async function expandAndParseGoogleMapsUrl(url?: string | null): Promise<
     const fromHtml = parseGoogleMapsCoords(html);
     if (fromHtml) return fromHtml;
 
-    const embedMatch = html.match(/https:\/\/www\.google\.com\/maps\/embed[^"']+/);
-    if (embedMatch) {
-      const fromEmbed = parseGoogleMapsCoords(embedMatch[0]);
-      if (fromEmbed) return fromEmbed;
-    }
-  } catch {
-    return null;
+  } catch (err) {
+    console.error(err);
   }
   return null;
 }
 
-export function resolveLeadCoords(params: {
-  lat?: number | null;
-  lng?: number | null;
-  area?: string | null;
-  google_map_link?: string | null;
-  exact_address?: string | null;
-  areaLat?: number | null;
-  areaLng?: number | null;
-}): { lat: number; lng: number } | null {
-  if (
-    params.lat != null && params.lng != null &&
-    !isNaN(Number(params.lat)) && !isNaN(Number(params.lng))
-  ) {
-    return { lat: Number(params.lat), lng: Number(params.lng) };
-  }
-
-  const fromLink = parseGoogleMapsCoords(params.google_map_link);
-  if (fromLink) return { lat: fromLink[0], lng: fromLink[1] };
-
-  if (params.areaLat != null && params.areaLng != null) {
-    return { lat: params.areaLat, lng: params.areaLng };
-  }
-
-  const fromArea = resolveAreaCoords(params.area);
-  if (fromArea) return { lat: fromArea[0], lng: fromArea[1] };
-
-  return null;
-}
+// Example URL (you can replace with a valid one if you have it)
+expandAndParseGoogleMapsUrl('https://maps.app.goo.gl/vJb92LBN4bK2Vp7R8').then(console.log);

@@ -4,6 +4,7 @@ import {
   getMe,
   changePassword,
   verify2FALogin,
+  verify2FASetupLogin,
   get2FAStatus,
   setup2FA,
   enable2FA,
@@ -19,6 +20,7 @@ const router = Router();
 
 router.post('/login', login);
 router.post('/2fa/verify-login', verify2FALogin);
+router.post('/2fa/setup-login', verify2FASetupLogin);
 
 // Email OTP based password reset (new flow)
 router.post('/forgot-password/send-otp', sendPasswordResetOtp);
