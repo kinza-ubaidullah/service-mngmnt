@@ -27,7 +27,7 @@ const userResponse = (user: any) => ({
 export const login = async (req: Request, res: Response) => {
   try {
     const { email, phone, password } = req.body;
-    const identifier = email || phone;
+    const identifier = String(email || phone || '').trim();
 
     const user = await prisma.user.findFirst({
       where: {
