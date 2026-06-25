@@ -1,12 +1,13 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
+import { useNavigate } from 'react-router-dom';
 import type { RootState } from '../store';
 import { logout, setUser } from '../store/slices/authSlice';
 import { 
   LogOut, Wrench, MapPin, Clock, ClipboardCheck, 
   ChevronRight, ChevronDown, CheckCircle2, Package, Wallet, Plus,
   Loader2, Sparkles, X, CreditCard, Info, User, TrendingDown, History, Download,
-  AlertCircle, Search, Filter, Activity, Truck, RefreshCw, Settings, Camera, PhoneOff, Phone, Eye
+  AlertCircle, Search, Filter, Activity, Truck, RefreshCw, Settings, Camera, PhoneOff, Phone, Eye, ArrowUpRight
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../services/api';
@@ -105,6 +106,7 @@ interface Expense {
 const TechnicianDashboard = () => {
   console.log('--- TechnicianDashboard Rendering ---');
   const dispatch = useDispatch();
+  const navigate = useNavigate();
   const user = useSelector((state: RootState) => state.auth.user);
   const isAuthenticated = useSelector((state: RootState) => state.auth.isAuthenticated);
 
@@ -482,6 +484,13 @@ const TechnicianDashboard = () => {
             <p className="text-xs text-slate-400 font-medium">Technician</p>
             <p className="text-sm font-bold text-slate-800">{user?.name}</p>
           </div>
+
+          {user?.role === 'ADMIN' && (
+            <button onClick={() => navigate('/admin')} className="hidden sm:flex items-center gap-1.5 bg-slate-800 text-white hover:bg-slate-700 px-3 py-2 rounded-xl transition-all shadow-sm">
+               <ArrowUpRight size={15} /> <span className="text-xs font-semibold">Admin Panel</span>
+            </button>
+          )}
+
           <ThemeToggle />
           <button 
             onClick={() => dispatch(logout())}

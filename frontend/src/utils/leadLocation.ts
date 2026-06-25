@@ -135,10 +135,12 @@ export function buildMapLeadPositions(
       continue;
     }
 
+    const isExact = group.some(hasExactLeadLocation);
+
     group.forEach((lead, index) => {
       const id = lead.id ?? lead.lead_id ?? index;
       const angle = (index * (360 / group.length)) * (Math.PI / 180);
-      const radius = 0.0025 + index * 0.00035;
+      const radius = isExact ? 0.00005 + index * 0.00002 : 0.0025 + index * 0.00035;
       positions.set(id, [
         base[0] + radius * Math.cos(angle),
         base[1] + radius * Math.sin(angle),

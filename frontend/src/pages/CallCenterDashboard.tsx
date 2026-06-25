@@ -1,8 +1,9 @@
-﻿import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
+import { useNavigate } from 'react-router-dom';
 import type { RootState } from '../store';
 import { logout } from '../store/slices/authSlice';
-import { LogOut, PhoneCall, Plus, ClipboardList, MapPin, User, Settings, Loader2, Sparkles, Activity, X, Calendar, Wrench, Trash2, Info, Eye, UserMinus, RotateCcw, Volume2 } from 'lucide-react';
+import { LogOut, PhoneCall, Plus, ClipboardList, MapPin, User, Settings, Loader2, Sparkles, Activity, X, Calendar, Wrench, Trash2, Info, Eye, UserMinus, RotateCcw, Volume2, ArrowUpRight } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../services/api';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -75,6 +76,7 @@ const TECH_FILTER_TABS = ['assigned', 'inprogress', 'delay', 'pending', 'all'] a
 
 const CallCenterDashboard = () => {
   const dispatch = useDispatch();
+  const navigate = useNavigate();
   const user = useSelector((state: RootState) => state.auth.user);
 
   // Data States
@@ -628,6 +630,12 @@ const CallCenterDashboard = () => {
             </div>
             <span className="font-medium text-slate-700 text-sm truncate">{user?.name}</span>
           </div>
+
+          {user?.role === 'ADMIN' && (
+            <button onClick={() => navigate('/admin')} className="hidden sm:flex items-center gap-1.5 bg-slate-800 text-white hover:bg-slate-700 px-3 py-2 rounded-xl transition-all shadow-sm">
+               <ArrowUpRight size={15} /> <span className="text-xs font-semibold">Admin Panel</span>
+            </button>
+          )}
 
           <ThemeToggle />
           <button onClick={() => dispatch(logout())} className="flex items-center gap-1.5 crm-btn-ghost px-3 py-2 rounded-xl transition-all border border-slate-200/70 hover:border-mint-300/50">

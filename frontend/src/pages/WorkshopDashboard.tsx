@@ -1,8 +1,9 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
+import { useNavigate } from 'react-router-dom';
 import type { RootState } from '../store';
 import { logout } from '../store/slices/authSlice';
-import { LogOut, Wrench, Sparkles, Settings, Loader2 } from 'lucide-react';
+import { LogOut, Wrench, Sparkles, Settings, Loader2, ArrowUpRight } from 'lucide-react';
 import { motion } from 'framer-motion';
 import WorkshopModule from '../components/WorkshopModule';
 import SettingsModule from '../components/SettingsModule';
@@ -10,6 +11,7 @@ import ThemeToggle from '../components/ThemeToggle';
 
 const WorkshopDashboard = () => {
   const dispatch = useDispatch();
+  const navigate = useNavigate();
   const user = useSelector((state: RootState) => state.auth.user);
   const isAuthenticated = useSelector((state: RootState) => state.auth.isAuthenticated);
 
@@ -59,6 +61,13 @@ const WorkshopDashboard = () => {
             <p className="text-xs text-slate-400 font-medium">Workshop Manager</p>
             <p className="text-sm font-bold text-slate-800">{user.name}</p>
           </div>
+
+          {user?.role === 'ADMIN' && (
+            <button onClick={() => navigate('/admin')} className="hidden sm:flex items-center gap-1.5 bg-slate-800 text-white hover:bg-slate-700 px-3 py-2 rounded-xl transition-all shadow-sm">
+               <ArrowUpRight size={15} /> <span className="text-xs font-semibold">Admin Panel</span>
+            </button>
+          )}
+
           <ThemeToggle />
           <button
             onClick={() => dispatch(logout())}

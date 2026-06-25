@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import type { RootState } from '../store';
@@ -6,7 +6,7 @@ import { logout } from '../store/slices/authSlice';
 import { 
   LogOut, LayoutDashboard, Users, ClipboardList, 
   Wrench, DollarSign, AlertCircle,
-  Activity, ArrowUpRight, Clock, Settings, Loader2, Download, RotateCcw, Trash2, Menu, X, Search, FileText, Image, Map, Eye, Phone
+  Activity, ArrowUpRight, Clock, Settings, Loader2, Download, RotateCcw, Trash2, Menu, X, Search, FileText, Image, Map, Eye, Phone, ExternalLink
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../services/api';
@@ -202,6 +202,9 @@ const AdminDashboard = () => {
     { icon: Users, label: 'Staff Management' },
     { icon: DollarSign, label: 'Finance' },
     { icon: Activity, label: 'System Logs' },
+    { icon: ExternalLink, label: 'Tech Panel', path: '/tech' },
+    { icon: ExternalLink, label: 'Call Center', path: '/callcenter' },
+    { icon: ExternalLink, label: 'Workshop Panel', path: '/workshop' },
     { icon: Trash2, label: 'Trash Bin' },
     { icon: Settings, label: 'Settings' },
   ];
