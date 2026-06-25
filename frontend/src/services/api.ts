@@ -1,8 +1,21 @@
 import axios from 'axios';
-import { resolveApiUrl } from '../utils/apiConfig';
+
+// Determine API base URL — always use the new VPS for any production domain
+function getApiBaseUrl(): string {
+  if (typeof window !== 'undefined') {
+    const host = window.location.hostname.toLowerCase();
+    if (host !== 'localhost' && host !== '127.0.0.1') {
+      return 'https://api.aljaroshi.tech';
+    }
+  }
+  return import.meta.env.VITE_API_URL || 'http://localhost:5000';
+}
+
+const API_BASE = getApiBaseUrl();
+console.log('[API] Using base URL:', API_BASE);
 
 const api = axios.create({
-  baseURL: resolveApiUrl(),
+  baseURL: API_BASE,
   timeout: 15000,
   headers: {
     'Content-Type': 'application/json',
