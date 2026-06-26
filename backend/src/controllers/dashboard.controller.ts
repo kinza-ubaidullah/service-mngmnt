@@ -92,6 +92,7 @@ export const getAdminStats = async (req: Request, res: Response) => {
         status: { notIn: ['Completed', 'Cancelled', 'Deleted', 'PickedForWorkshop'] },
         visit_date: { lt: now }
       },
+      take: 50,
       include: { customer: true, technician: true }
     });
 
@@ -179,9 +180,9 @@ export const getAdminStats = async (req: Request, res: Response) => {
         workshopJobs,
         revenue: totalCollected._sum.collected_amount || 0
       },
-      recentLeads,
-      pendingApprovalLeads,
-      rejectedLeads,
+      recentLeads: recentLeads.map((l) => liteLeadForList(l as Record<string, unknown>)),
+      pendingApprovalLeads: pendingApprovalLeads.map((l) => liteLeadForList(l as Record<string, unknown>)),
+      rejectedLeads: rejectedLeads.map((l) => liteLeadForList(l as Record<string, unknown>)),
       technicians,
       attentionNeeded
     });

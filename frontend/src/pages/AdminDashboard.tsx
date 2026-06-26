@@ -92,13 +92,17 @@ const AdminDashboard = () => {
     try {
       if (!opts?.silent) setLoading(true);
 
-      const statsRes = await Promise.allSettled([api.get('/dashboard/admin/stats')]);
-      const stats = statsRes[0].status === 'fulfilled' ? statsRes[0].value.data : null;
+      const statsRes = await Promise.allSettled([
+        api.get('/dashboard/admin/stats', { timeout: 60000 }),
+      ]);
+      const statsPayload = statsRes[0].status === 'fulfilled' ? statsRes[0].value.data : null;
+      const stats = statsPayload && !statsPayload.degraded ? statsPayload : null;
 
       if (!stats) {
         const reason = statsRes[0].status === 'rejected' ? statsRes[0].reason : null;
         const status = reason?.response?.status;
-        console.error('Dashboard stats failed:', reason || 'empty');
+        const degraded = statsPayload?.degraded;
+        console.error('Dashboard stats failed:', reason || (degraded ? 'degraded empty response' : 'empty'));
         if (status === 401) {
           dispatch(logout());
           navigate('/login');
@@ -106,6 +110,14 @@ const AdminDashboard = () => {
         }
         if (opts?.silent) {
           setDashboardStale(true);
+          return;
+        }
+        if (statsPayload?.degraded && statsPayload.stats) {
+          setData(statsPayload);
+          setHasLoadedOnce(true);
+          setDashboardStale(true);
+          toast.error('Dashboard loaded partial data — server DB may need attention');
+          if (!opts?.silent) setLoading(false);
           return;
         }
         setEarningsReport((prev) => prev.length ? prev : []);

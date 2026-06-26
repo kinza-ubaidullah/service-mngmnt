@@ -16,7 +16,9 @@ console.log('[API] Using base URL:', API_BASE);
 
 const api = axios.create({
   baseURL: API_BASE,
-  timeout: 15000,
+  timeout: typeof window !== 'undefined' && !['localhost', '127.0.0.1'].includes(window.location.hostname)
+    ? 45000
+    : 15000,
   headers: {
     'Content-Type': 'application/json',
   },
