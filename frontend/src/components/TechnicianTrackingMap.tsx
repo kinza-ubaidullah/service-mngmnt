@@ -130,7 +130,7 @@ const TechnicianTrackingMap: React.FC<TechnicianTrackingMapProps> = ({
           </div>
         ) : null}
         <JobMap
-          leads={controlled ? displayLeads : displayLeads.filter((l) => !['Completed', 'Cancelled', 'Deleted', 'InspectionCompleted', 'PendingApproval', 'PickedForWorkshop'].includes(l.status))}
+          leads={displayLeads}
           technicians={displayTechs}
           onAssign={onAssign}
           onUnassign={onUnassign}

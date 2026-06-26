@@ -11,7 +11,7 @@ import TechnicianTrackingMap from '../components/TechnicianTrackingMap';
 import { useMergedTechnicians } from '../hooks/useLiveTechnicians';
 import TechnicianWorkloadFilter from '../components/TechnicianWorkloadFilter';
 import PendingApprovalCard from '../components/PendingApprovalCard';
-import { matchesLeadSearch, buildLeadsLocationKey, filterLeadsByTechnician, filterLeadsByTeam, countActiveJobsForTechnician, isAssignedTaskStatus, filterLeadsForAssignedTab, countLeadsForFilter, filterLeadsByStatusTab, isMapVisibleLead, isCancellableLead, isCompletedLead, countActiveOperationalLeads, formatSAR, APPLIANCE_OPTIONS, parseProductTypes, formatProductTypesDisplay, getLeadProducts, hasVoiceNote, type LeadFeedFilter } from '../utils/leadHelpers';
+import { matchesLeadSearch, buildLeadsLocationKey, filterLeadsByTechnician, filterLeadsByTeam, countActiveJobsForTechnician, isAssignedTaskStatus, filterLeadsForAssignedTab, countLeadsForFilter, filterLeadsByStatusTab, isCancellableLead, isCompletedLead, countActiveOperationalLeads, formatSAR, APPLIANCE_OPTIONS, parseProductTypes, formatProductTypesDisplay, getLeadProducts, hasVoiceNote, type LeadFeedFilter } from '../utils/leadHelpers';
 import VoiceNotePlayer from '../components/VoiceNotePlayer';
 import GlobalLeadSearch from '../components/GlobalLeadSearch';
 import LeadPdfButtons from '../components/LeadPdfButtons';
@@ -86,7 +86,7 @@ const CallCenterDashboard = () => {
   const [fetchingLeads, setFetchingLeads] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState<'operations' | 'workshop' | 'settings'>(() => (sessionStorage.getItem('callCenterActiveTab') as 'operations' | 'workshop' | 'settings') || 'operations');
-  const [statusFilter, setStatusFilter] = useState<LeadFeedFilter>('new');
+  const [statusFilter, setStatusFilter] = useState<LeadFeedFilter>('all');
   const [technicianFilter, setTechnicianFilter] = useState<number | 'all'>('all');
   const [teamFilter, setTeamFilter] = useState<number | 'all'>('all');
 
@@ -154,8 +154,8 @@ const CallCenterDashboard = () => {
   const fetchLeads = async (opts?: { silent?: boolean }) => {
     try {
       if (!opts?.silent) setFetchingLeads(true);
-      const res = await api.get('/leads');
-      setLeads(res.data.leads);
+      const res = await api.get('/leads', { timeout: 45000 });
+      setLeads(res.data.leads || []);
     } catch (error) {
       toast.error('Failed to load leads');
     } finally {
@@ -383,16 +383,11 @@ const CallCenterDashboard = () => {
   }, [statusFilteredLeads, isGlobalSearch, statusFilter, showTechFilter, technicianFilter, teamFilter]);
 
   const mapLeads = useMemo(() => {
-    const operational = leads.filter(isMapVisibleLead);
-    if (statusFilter === 'new') return operational.filter((l) => l.status === 'New' || l.status === 'Complaint');
-    if (showTechFilter && (technicianFilter !== 'all' || teamFilter !== 'all')) {
-      let result = operational;
-      if (technicianFilter !== 'all') result = filterLeadsByTechnician(result, technicianFilter);
-      if (teamFilter !== 'all') result = filterLeadsByTeam(result, teamFilter);
-      return result;
+    if (isGlobalSearch) {
+      return leads.filter((lead) => matchesLeadSearch(lead, searchTerm));
     }
-    return operational;
-  }, [leads, statusFilter, showTechFilter, technicianFilter, teamFilter]);
+    return filteredLeads;
+  }, [filteredLeads, isGlobalSearch, leads, searchTerm]);
 
   const feedTabCounts = useMemo(() => ({
     new: countLeadsForFilter(leads, 'new'),
@@ -646,7 +641,7 @@ const CallCenterDashboard = () => {
       
       <main className="flex-1 p-3 lg:p-6 max-w-[1800px] w-full mx-auto relative z-10">
         {activeTab === 'workshop' ? (
-          <WorkshopModule />
+          <WorkshopModule showGateInApproval />
         ) : activeTab === 'settings' ? (
           <SettingsModule />
         ) : (

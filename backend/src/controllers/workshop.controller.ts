@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express';
 import { prisma } from '../utils/prisma';
 import { broadcastDataChange } from '../utils/broadcast';
+import { liteLeadForList } from '../utils/leadListLite';
 import { WorkshopStatus } from '@prisma/client';
 
 const WORKSHOP_MANAGER_ROLES = ['ADMIN', 'WORKSHOP_MANAGER', 'CALL_CENTER'];
@@ -43,9 +44,15 @@ export const getWorkshopJobs = async (req: Request, res: Response) => {
       },
       orderBy: { received_date: 'desc' }
     });
-    res.json({ jobs });
+    res.json({
+      jobs: jobs.map((job) => ({
+        ...job,
+        lead: job.lead ? liteLeadForList(job.lead as Record<string, unknown>) : job.lead,
+      })),
+    });
   } catch (error) {
-    res.status(500).json({ message: 'Error fetching workshop jobs' });
+    console.error('Error fetching workshop jobs:', error);
+    res.status(500).json({ message: 'Error fetching workshop jobs', jobs: [] });
   }
 };
 

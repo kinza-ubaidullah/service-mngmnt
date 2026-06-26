@@ -126,14 +126,24 @@ const WorkshopModule: React.FC<WorkshopModuleProps> = ({ showGateInApproval = tr
       const statusParam = statusFilter === 'all' || statusFilter === 'delivery' ? '' : `status=${statusFilter}`;
       const scopeParam = scope ? `scope=${scope}` : '';
       const qs = [statusParam, scopeParam].filter(Boolean).join('&');
-      const [res, techRes] = await Promise.all([
-        api.get(`/workshop/jobs${qs ? `?${qs}` : ''}`),
-        isTechnicianMode ? Promise.resolve({ data: { technicians: [] } }) : api.get('/users/technicians').catch(() => ({ data: { technicians: [] } })),
+      const [jobsRes, techRes] = await Promise.allSettled([
+        api.get(`/workshop/jobs${qs ? `?${qs}` : ''}`, { timeout: 45000 }),
+        isTechnicianMode ? Promise.resolve({ data: { technicians: [] } }) : api.get('/users/technicians'),
       ]);
-      setJobs(res.data.jobs);
-      setTechnicians(techRes.data.technicians || []);
-    } catch {
-      toast.error('Failed to load workshop jobs');
+      if (jobsRes.status === 'fulfilled') {
+        setJobs(jobsRes.value.data.jobs || []);
+      } else if (!opts?.silent) {
+        console.error('Workshop jobs failed:', jobsRes.reason);
+        toast.error(jobsRes.reason?.response?.data?.message || 'Failed to load workshop jobs');
+        setJobs([]);
+      }
+      if (techRes.status === 'fulfilled') {
+        setTechnicians(techRes.value.data.technicians || []);
+      }
+    } catch (err) {
+      console.error('Workshop load error:', err);
+      if (!opts?.silent) toast.error('Failed to load workshop jobs');
+      setJobs([]);
     } finally {
       if (!opts?.silent) setLoading(false);
     }
