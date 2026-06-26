@@ -152,6 +152,7 @@ const JobMap: React.FC<JobMapProps> = ({
   };
 
   const visibleLeads = leads.filter(l => {
+    if (l.status === 'Cancelled' || l.status === 'Deleted' || l.status === 'Completed' || l.status === 'InspectionCompleted') return false;
     if (showOnlyUnassigned) return isUnassignedLead(l);
     return true;
   });
@@ -262,7 +263,7 @@ const JobMap: React.FC<JobMapProps> = ({
                   </div>
                 </Tooltip>
                 <Popup className="custom-popup" closeButton>
-                  <div className="p-3 w-[250px] map-lead-card rounded-2xl space-y-2.5">
+                  <div className="p-3 w-[260px] min-h-[280px] flex flex-col map-lead-card rounded-2xl space-y-2.5">
                     <div className="flex justify-between items-center gap-2">
                       <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border ${statusBadgeClass(lead.status, isNew)}`}>
                         {isNew ? '● Unassigned' : `● ${getMapStatusLabel(lead)}`}
@@ -300,7 +301,7 @@ const JobMap: React.FC<JobMapProps> = ({
                       )}
                     </div>
 
-                    <div className="space-y-1.5">
+                    <div className="space-y-1.5 flex-1">
                       <h4 className="map-lead-name font-bold text-[13px] leading-tight flex items-start gap-1.5">
                         <User size={12} className="text-emerald-200 shrink-0 mt-0.5" /> 
                         <span className="line-clamp-1">{lead.customer.name}</span>
@@ -338,15 +339,15 @@ const JobMap: React.FC<JobMapProps> = ({
 
                     {(canAssign || canReassign || canUnassign || canCancel) && (
                       <PopupActions>
-                        <div className="grid grid-cols-2 gap-1.5 pt-1">
+                        <div className="flex w-full gap-1.5 pt-2 mt-auto">
                           {canAssign && (
                             <button
                               type="button"
                               onMouseDown={stopMapEvent}
                               onClick={(e) => { stopMapEvent(e); onAssign!(lead); }}
-                              className="bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-teal-950 text-[9px] font-black py-2 rounded-lg transition-all shadow-md flex items-center justify-center gap-1"
+                              className="flex-1 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-teal-950 text-[9px] font-black py-2 rounded-lg transition-all shadow-md flex flex-col items-center justify-center gap-1 min-h-[44px]"
                             >
-                              <ClipboardList size={10} /> Assign
+                              <ClipboardList size={14} /> Assign
                             </button>
                           )}
                           {canReassign && (
@@ -354,9 +355,9 @@ const JobMap: React.FC<JobMapProps> = ({
                               type="button"
                               onMouseDown={stopMapEvent}
                               onClick={(e) => { stopMapEvent(e); onAssign!(lead); }}
-                              className="bg-gradient-to-r from-sky-500 to-indigo-500 hover:from-sky-400 hover:to-indigo-400 text-white text-[9px] font-black py-2 rounded-lg transition-all shadow-md flex items-center justify-center gap-1"
+                              className="flex-1 bg-gradient-to-r from-sky-500 to-indigo-500 hover:from-sky-400 hover:to-indigo-400 text-white text-[9px] font-black py-2 rounded-lg transition-all shadow-md flex flex-col items-center justify-center gap-1 min-h-[44px]"
                             >
-                              <RefreshCw size={10} /> Reassign
+                              <RefreshCw size={14} /> Reassign
                             </button>
                           )}
                           {canUnassign && (
@@ -364,9 +365,9 @@ const JobMap: React.FC<JobMapProps> = ({
                               type="button"
                               onMouseDown={stopMapEvent}
                               onClick={(e) => { stopMapEvent(e); onUnassign!(lead); }}
-                              className="bg-slate-700 hover:bg-slate-600 text-white text-[9px] font-black py-2 rounded-lg transition-all border border-slate-500/50 flex items-center justify-center gap-1"
+                              className="flex-1 bg-slate-700 hover:bg-slate-600 text-white text-[9px] font-black py-2 rounded-lg transition-all border border-slate-500/50 flex flex-col items-center justify-center gap-1 min-h-[44px]"
                             >
-                              <UserMinus size={10} /> Unassign
+                              <UserMinus size={14} /> Unassign
                             </button>
                           )}
                           {canCancel && (
@@ -374,9 +375,9 @@ const JobMap: React.FC<JobMapProps> = ({
                               type="button"
                               onMouseDown={stopMapEvent}
                               onClick={(e) => { stopMapEvent(e); onCancel!(lead); }}
-                              className="bg-rose-600/90 hover:bg-rose-500 text-white text-[9px] font-black py-2 rounded-lg transition-all border border-rose-400/30 flex items-center justify-center gap-1"
+                              className="flex-1 bg-rose-600/90 hover:bg-rose-500 text-white text-[9px] font-black py-2 rounded-lg transition-all border border-rose-400/30 flex flex-col items-center justify-center gap-1 min-h-[44px]"
                             >
-                              <XCircle size={10} /> Cancel
+                              <XCircle size={14} /> Cancel
                             </button>
                           )}
                         </div>

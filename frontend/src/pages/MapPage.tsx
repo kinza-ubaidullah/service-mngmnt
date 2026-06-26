@@ -65,6 +65,7 @@ const MapPage = () => {
     if (filter === 'workshop') return isMapVisibleForFilter(l, 'workshop');
     if (filter === 'new') return l.status === 'New' || l.status === 'Complaint';
     if (filter === 'assigned') return ['Assigned', 'InProgress', 'Reopened'].includes(l.status);
+    if (filter === 'all') return !['Completed', 'Cancelled', 'Deleted', 'InspectionCompleted'].includes(l.status);
     return isMapVisibleForFilter(l, mapMode);
   }), [leads, filter, mapMode]);
 
