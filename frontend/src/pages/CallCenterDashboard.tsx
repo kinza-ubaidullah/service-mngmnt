@@ -102,16 +102,16 @@ const CallCenterDashboard = () => {
     customer_area: '',
     exact_address: '',
     google_map_link: '',
-    products: ['Washing Machine'] as string[],
+    products: [{ type: 'Washing Machine', problem: '' }] as { type: string; problem: string }[],
     payment_confirmed: false,
     agreed_amount: '',
-    problem_details: '',
     house_image: '',
     item_pictures: [] as string[],
     lat: null as number | null,
     lng: null as number | null,
   });
   const [locationPreview, setLocationPreview] = useState<string | null>(null);
+  const [locationPreviewCoords, setLocationPreviewCoords] = useState<[number, number] | null>(null);
   const [resolvingLocation, setResolvingLocation] = useState(false);
 
   // Assign Modal States
@@ -213,27 +213,33 @@ const CallCenterDashboard = () => {
   const applyMapLinkToForm = async <T extends { lat: number | null; lng: number | null }>(
     link: string,
     setter: React.Dispatch<React.SetStateAction<T>>,
-    previewSetter: React.Dispatch<React.SetStateAction<string | null>>
+    previewSetter: React.Dispatch<React.SetStateAction<string | null>>,
+    coordsSetter?: React.Dispatch<React.SetStateAction<[number, number] | null>>
   ) => {
     if (!link.trim()) {
       previewSetter(null);
+      coordsSetter?.(null);
       setter((prev) => ({ ...prev, lat: null, lng: null }));
       return;
     }
     const direct = parseGoogleMapsCoords(link);
     if (direct) {
       setter((prev) => ({ ...prev, lat: direct[0], lng: direct[1] }));
-      previewSetter(`📍 Exact location: ${direct[0].toFixed(5)}, ${direct[1].toFixed(5)}`);
+      previewSetter(`📍 Pinned: ${direct[0].toFixed(5)}, ${direct[1].toFixed(5)}`);
+      coordsSetter?.(direct);
       return;
     }
     setResolvingLocation(true);
     const resolved = await resolveLocationFromLink(link);
     setResolvingLocation(false);
     if (resolved) {
+      const coords: [number, number] = [resolved.lat, resolved.lng];
       setter((prev) => ({ ...prev, lat: resolved.lat, lng: resolved.lng }));
-      previewSetter(`📍 Exact location: ${resolved.lat.toFixed(5)}, ${resolved.lng.toFixed(5)}`);
+      previewSetter(`📍 Pinned: ${resolved.lat.toFixed(5)}, ${resolved.lng.toFixed(5)}`);
+      coordsSetter?.(coords);
     } else {
       previewSetter('⚠ Paste full Google Maps link for exact pin location');
+      coordsSetter?.(null);
       setter((prev) => ({ ...prev, lat: null, lng: null }));
     }
   };
@@ -247,7 +253,7 @@ const CallCenterDashboard = () => {
       handleCustomerLookup(value);
     }
     if (name === 'google_map_link') {
-      applyMapLinkToForm(value, setFormData, setLocationPreview);
+      applyMapLinkToForm(value, setFormData, setLocationPreview, setLocationPreviewCoords);
     }
   };
 
@@ -288,10 +294,16 @@ const CallCenterDashboard = () => {
     setLoading(true);
     try {
       const { products, ...rest } = formData;
+      // Build combined problem_details from all products
+      const combinedProblem = products
+        .filter((p) => p.problem.trim())
+        .map((p) => `[${p.type}]: ${p.problem.trim()}`)
+        .join(' | ');
       const payload = {
         ...rest,
-        products: products.map((p) => ({ product_type: p })),
-        product_type: products.join(', '),
+        products: products.map((p) => ({ product_type: p.type, problem_details: p.problem })),
+        product_type: products.map((p) => p.type).join(', '),
+        problem_details: combinedProblem,
         customer_name: formData.customer_name.trim(),
         customer_phone: formData.customer_phone.trim(),
         customer_area: formData.customer_area.trim(),
@@ -303,11 +315,14 @@ const CallCenterDashboard = () => {
       await api.post('/leads', payload);
       toast.success('Lead created successfully!');
       setFormData({
-        customer_name: '', customer_phone: '', customer_area: '', exact_address: '', google_map_link: '', products: ['Washing Machine'], problem_details: '', house_image: '', item_pictures: [], payment_confirmed: false, agreed_amount: '', lat: null, lng: null,
+        customer_name: '', customer_phone: '', customer_area: '', exact_address: '', google_map_link: '',
+        products: [{ type: 'Washing Machine', problem: '' }],
+        house_image: '', item_pictures: [], payment_confirmed: false, agreed_amount: '', lat: null, lng: null,
       });
       setProductPicker('');
       setCustomerInsight(null);
       setLocationPreview(null);
+      setLocationPreviewCoords(null);
       setAreaSearch('');
       if (houseFileRef.current) houseFileRef.current.value = '';
       if (itemFileRef.current) itemFileRef.current.value = '';
@@ -383,11 +398,19 @@ const CallCenterDashboard = () => {
   }, [statusFilteredLeads, isGlobalSearch, statusFilter, showTechFilter, technicianFilter, teamFilter]);
 
   const mapLeads = useMemo(() => {
+    // Map always shows all active leads (not cancelled/deleted/completed)
+    // If there's a global search, filter to matches only
+    const base = leads.filter((l) =>
+      !['Cancelled', 'Deleted', 'Completed', 'InspectionCompleted'].includes(l.status)
+    );
     if (isGlobalSearch) {
-      return leads.filter((lead) => matchesLeadSearch(lead, searchTerm));
+      return base.filter((lead) => matchesLeadSearch(lead, searchTerm));
     }
-    return filteredLeads;
-  }, [filteredLeads, isGlobalSearch, leads, searchTerm]);
+    if (technicianFilter !== 'all') {
+      return base.filter((l) => l.technician?.id === technicianFilter);
+    }
+    return base;
+  }, [leads, isGlobalSearch, searchTerm, technicianFilter]);
 
   const feedTabCounts = useMemo(() => ({
     new: countLeadsForFilter(leads, 'new'),
@@ -512,6 +535,9 @@ const CallCenterDashboard = () => {
 
   const startRepeatService = (lead: Lead) => {
     setActiveTab('operations');
+    const parsedTypes = parseProductTypes(lead.product_type).length
+      ? parseProductTypes(lead.product_type)
+      : [lead.product_type || 'Washing Machine'];
     setFormData((prev) => ({
       ...prev,
       customer_name: lead.customer.name,
@@ -519,8 +545,7 @@ const CallCenterDashboard = () => {
       customer_area: lead.customer.area || '',
       exact_address: lead.exact_address || '',
       google_map_link: lead.customer.google_map_link || '',
-      products: parseProductTypes(lead.product_type).length ? parseProductTypes(lead.product_type) : [lead.product_type || 'Washing Machine'],
-      problem_details: '',
+      products: parsedTypes.map((t) => ({ type: t, problem: '' })),
       house_image: '',
       item_pictures: [],
       payment_confirmed: false,
@@ -738,7 +763,25 @@ const CallCenterDashboard = () => {
                         <label className="block text-xs font-bold text-slate-500 mb-2 pl-1 uppercase tracking-wider">Home Location Link (Google Maps)</label>
                         <input type="url" name="google_map_link" value={formData.google_map_link} onChange={handleChange} className="w-full crm-input text-slate-800 px-4 py-3 rounded-xl border border-slate-200/70 focus:border-mint-400 focus:ring-2 focus:ring-mint-200 outline-none transition-all duration-300" placeholder="Paste Google Maps link for exact location" />
                         {resolvingLocation && <p className="text-[10px] text-amber-600 font-bold pl-1 mt-1">Resolving location from link...</p>}
-                        {locationPreview && !resolvingLocation && <p className="text-[10px] text-mint-600 font-bold pl-1 mt-1">{locationPreview}</p>}
+                        {locationPreview && !resolvingLocation && (
+                          <div className="mt-2">
+                            <p className="text-[10px] text-mint-600 font-bold pl-1 mb-1.5 flex items-center gap-1">
+                              <MapPin size={10} className="text-mint-600" /> {locationPreview}
+                            </p>
+                            {locationPreviewCoords && (
+                              <div className="rounded-xl overflow-hidden border border-mint-300/50 shadow-sm">
+                                <iframe
+                                  title="location-preview"
+                                  width="100%"
+                                  height="160"
+                                  style={{ border: 0 }}
+                                  loading="lazy"
+                                  src={`https://maps.google.com/maps?q=${locationPreviewCoords[0]},${locationPreviewCoords[1]}&z=16&output=embed&markers=${locationPreviewCoords[0]},${locationPreviewCoords[1]}`}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                       <div className="group relative">
                         <label className="block text-xs font-bold text-slate-500 mb-2 pl-1">House Picture</label>
@@ -793,32 +836,52 @@ const CallCenterDashboard = () => {
                       </div>
                       <div className="group relative">
                         <label className="block text-xs font-bold text-slate-500 mb-2 pl-1 uppercase tracking-wider">Appliances / Products</label>
-                        <div className="flex flex-wrap gap-2 mb-2">
-                          {formData.products.map((p) => (
-                            <span key={p} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-100 text-indigo-800 text-xs font-bold border border-indigo-200">
-                              {p}
-                              <button type="button" onClick={() => setFormData((prev) => ({ ...prev, products: prev.products.filter((x) => x !== p) }))} className="text-indigo-500 hover:text-rose-600"><X size={12} /></button>
-                            </span>
+                        {/* Per-product entries with individual problem fields */}
+                        <div className="space-y-3 mb-3">
+                          {formData.products.map((prod, idx) => (
+                            <div key={idx} className="bg-indigo-50/80 border border-indigo-200/70 rounded-2xl p-3 space-y-2">
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-2">
+                                  <span className="w-5 h-5 bg-indigo-600 text-white rounded-full text-[9px] font-black flex items-center justify-center shrink-0">{idx + 1}</span>
+                                  <span className="text-sm font-bold text-indigo-900">{prod.type}</span>
+                                </div>
+                                {formData.products.length > 1 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setFormData((prev) => ({ ...prev, products: prev.products.filter((_, i) => i !== idx) }))}
+                                    className="text-rose-500 hover:text-rose-700 p-1 rounded-lg hover:bg-rose-50 transition-all"
+                                  >
+                                    <X size={14} />
+                                  </button>
+                                )}
+                              </div>
+                              <textarea
+                                value={prod.problem}
+                                onChange={(e) => setFormData((prev) => ({
+                                  ...prev,
+                                  products: prev.products.map((p, i) => i === idx ? { ...p, problem: e.target.value } : p)
+                                }))}
+                                rows={2}
+                                placeholder={`Describe issue with ${prod.type}...`}
+                                className="w-full bg-white text-slate-800 px-3 py-2 rounded-xl border border-indigo-200/70 focus:border-indigo-400 outline-none text-sm resize-none placeholder-slate-400"
+                              />
+                            </div>
                           ))}
                         </div>
                         <div className="flex gap-2">
                           <select value={productPicker} onChange={(e) => setProductPicker(e.target.value)} className="flex-1 crm-input text-slate-800 px-3 py-2.5 rounded-xl border border-slate-200/70 text-sm">
-                            <option value="">Add appliance...</option>
-                            {APPLIANCE_OPTIONS.filter((o) => !formData.products.includes(o)).map((o) => (
+                            <option value="">Add another appliance...</option>
+                            {APPLIANCE_OPTIONS.filter((o) => !formData.products.find(p => p.type === o)).map((o) => (
                               <option key={o} value={o}>{o}</option>
                             ))}
                           </select>
                           <button type="button" onClick={() => {
-                            if (!productPicker || formData.products.includes(productPicker)) return;
-                            setFormData((prev) => ({ ...prev, products: [...prev.products, productPicker] }));
+                            if (!productPicker || formData.products.find(p => p.type === productPicker)) return;
+                            setFormData((prev) => ({ ...prev, products: [...prev.products, { type: productPicker, problem: '' }] }));
                             setProductPicker('');
-                          }} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl">Add</button>
+                          }} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition-all">Add</button>
                         </div>
-                        <p className="text-[10px] text-slate-500 mt-1">Select multiple products if customer has more than one appliance.</p>
-                      </div>
-                      <div className="group relative">
-                        <label className="block text-xs font-bold text-slate-500 mb-2 pl-1 uppercase tracking-wider">Problem Description</label>
-                        <textarea name="problem_details" value={formData.problem_details} onChange={handleChange} rows={3} className="w-full crm-input text-slate-800 px-4 py-3 rounded-xl border border-slate-200/70 focus:border-mint-400 focus:ring-2 focus:ring-mint-200 outline-none transition-all duration-300 resize-none" placeholder="Enter issue details..."></textarea>
+                        <p className="text-[10px] text-slate-500 mt-1.5">Each appliance gets its own problem description.</p>
                       </div>
                     </div>
                   </div>
@@ -841,7 +904,7 @@ const CallCenterDashboard = () => {
                   onAssign={openAssignModal}
                   onUnassign={handleUnassign}
                   onCancel={handleCancelLead}
-                  showOnlyUnassigned={statusFilter === 'new' && technicianFilter === 'all'}
+                  showOnlyUnassigned={false}
                   locationKey={mapLocationKey}
                   onRefresh={refresh}
                   refreshing={refreshing || fetchingLeads}
