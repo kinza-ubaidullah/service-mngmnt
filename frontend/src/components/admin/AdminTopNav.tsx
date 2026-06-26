@@ -141,25 +141,24 @@ const AdminTopNav: React.FC<AdminTopNavProps> = ({
 
               <button
                 type="button"
+                onClick={() => handleNav({ label: 'Trash Bin', icon: Trash2, tab: 'Trash Bin' })}
+                title="Trash Bin"
+                className={`p-2 rounded-lg transition-colors
+                  ${activeTab === 'Trash Bin'
+                    ? 'bg-mint-50 text-mint-600 ring-1 ring-mint-200'
+                    : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'
+                  }`}
+              >
+                <Trash2 size={17} />
+              </button>
+
+              <button
+                type="button"
                 title="Live Stats"
                 className="hidden xl:flex p-2 rounded-lg border border-mint-200 bg-mint-50 text-mint-600 hover:bg-mint-100 transition-colors"
               >
                 <Activity size={16} className="animate-pulse" />
               </button>
-
-              {extraNav.map((item) => (
-                <button
-                  key={item.label}
-                  type="button"
-                  onClick={() => handleNav(item)}
-                  title={item.label}
-                  className={`hidden 2xl:flex p-2 rounded-lg transition-colors
-                    ${isActive(item) ? 'bg-mint-50 text-mint-600 ring-1 ring-mint-200' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'}
-                  `}
-                >
-                  <item.icon size={17} />
-                </button>
-              ))}
 
               <button
                 type="button"
