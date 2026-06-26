@@ -102,7 +102,7 @@ const CallCenterDashboard = () => {
     customer_area: '',
     exact_address: '',
     google_map_link: '',
-    products: [{ type: 'Washing Machine', problem: '' }] as { type: string; problem: string }[],
+    products: [{ type: 'Washing Machine', problem: '', images: [] as string[] }] as { type: string; problem: string; images: string[] }[],
     payment_confirmed: false,
     agreed_amount: '',
     house_image: '',
@@ -113,6 +113,7 @@ const CallCenterDashboard = () => {
   const [locationPreview, setLocationPreview] = useState<string | null>(null);
   const [locationPreviewCoords, setLocationPreviewCoords] = useState<[number, number] | null>(null);
   const [resolvingLocation, setResolvingLocation] = useState(false);
+  const [productImageKeys, setProductImageKeys] = useState<number[]>([0]);
 
   // Assign Modal States
   const [assignModal, setAssignModal] = useState<{ isOpen: boolean; lead: Lead | null }>({ isOpen: false, lead: null });
@@ -294,6 +295,9 @@ const CallCenterDashboard = () => {
     setLoading(true);
     try {
       const { products, ...rest } = formData;
+      // Merge per-product images into item_pictures pool
+      const allProductImages = products.flatMap((p) => p.images);
+      const allItemPictures = [...(formData.item_pictures || []), ...allProductImages];
       // Build combined problem_details from all products
       const combinedProblem = products
         .filter((p) => p.problem.trim())
@@ -309,17 +313,25 @@ const CallCenterDashboard = () => {
         customer_area: formData.customer_area.trim(),
         google_map_link: formData.google_map_link?.trim() || '',
         house_image: formData.house_image || '',
-        item_pictures: formData.item_pictures || [],
+        item_pictures: allItemPictures,
         agreed_amount: formData.payment_confirmed ? formData.agreed_amount : '',
       };
-      await api.post('/leads', payload);
+      const res = await api.post('/leads', payload);
       toast.success('Lead created successfully!');
+      // ── Optimistic instant add to list & map ──────────────────────────────
+      const newLead = res.data?.lead;
+      if (newLead) {
+        setLeads((prev) => [newLead, ...prev]);
+      }
+      // Reset form
+      const resetProducts = [{ type: 'Washing Machine', problem: '', images: [] }];
       setFormData({
         customer_name: '', customer_phone: '', customer_area: '', exact_address: '', google_map_link: '',
-        products: [{ type: 'Washing Machine', problem: '' }],
+        products: resetProducts,
         house_image: '', item_pictures: [], payment_confirmed: false, agreed_amount: '', lat: null, lng: null,
       });
       setProductPicker('');
+      setProductImageKeys(resetProducts.map(() => Date.now()));
       setCustomerInsight(null);
       setLocationPreview(null);
       setLocationPreviewCoords(null);
@@ -327,7 +339,8 @@ const CallCenterDashboard = () => {
       if (houseFileRef.current) houseFileRef.current.value = '';
       if (itemFileRef.current) itemFileRef.current.value = '';
       setFormKey((k) => k + 1);
-      fetchLeads();
+      // Background silent refresh to ensure consistency
+      fetchLeads({ silent: true });
     } catch (error: any) {
       if (error.response?.status === 409) {
         const existing = error.response?.data?.existingLead;
@@ -836,10 +849,11 @@ const CallCenterDashboard = () => {
                       </div>
                       <div className="group relative">
                         <label className="block text-xs font-bold text-slate-500 mb-2 pl-1 uppercase tracking-wider">Appliances / Products</label>
-                        {/* Per-product entries with individual problem fields */}
+                        {/* Per-product entries with individual problem + image fields */}
                         <div className="space-y-3 mb-3">
                           {formData.products.map((prod, idx) => (
-                            <div key={idx} className="bg-indigo-50/80 border border-indigo-200/70 rounded-2xl p-3 space-y-2">
+                            <div key={idx} className="bg-indigo-50/80 border border-indigo-200/70 rounded-2xl p-3 space-y-2.5">
+                              {/* Header row */}
                               <div className="flex items-center justify-between gap-2">
                                 <div className="flex items-center gap-2">
                                   <span className="w-5 h-5 bg-indigo-600 text-white rounded-full text-[9px] font-black flex items-center justify-center shrink-0">{idx + 1}</span>
@@ -848,13 +862,17 @@ const CallCenterDashboard = () => {
                                 {formData.products.length > 1 && (
                                   <button
                                     type="button"
-                                    onClick={() => setFormData((prev) => ({ ...prev, products: prev.products.filter((_, i) => i !== idx) }))}
+                                    onClick={() => {
+                                      setFormData((prev) => ({ ...prev, products: prev.products.filter((_, i) => i !== idx) }));
+                                      setProductImageKeys((prev) => prev.filter((_, i) => i !== idx));
+                                    }}
                                     className="text-rose-500 hover:text-rose-700 p-1 rounded-lg hover:bg-rose-50 transition-all"
                                   >
                                     <X size={14} />
                                   </button>
                                 )}
                               </div>
+                              {/* Problem description */}
                               <textarea
                                 value={prod.problem}
                                 onChange={(e) => setFormData((prev) => ({
@@ -865,6 +883,50 @@ const CallCenterDashboard = () => {
                                 placeholder={`Describe issue with ${prod.type}...`}
                                 className="w-full bg-white text-slate-800 px-3 py-2 rounded-xl border border-indigo-200/70 focus:border-indigo-400 outline-none text-sm resize-none placeholder-slate-400"
                               />
+                              {/* Per-product image upload */}
+                              <div>
+                                <label className="block text-[10px] font-bold text-indigo-700 mb-1 uppercase tracking-wider">📷 {prod.type} Photos</label>
+                                <input
+                                  type="file"
+                                  multiple
+                                  accept="image/*"
+                                  key={`prod-img-${idx}-${productImageKeys[idx] ?? idx}`}
+                                  className="w-full bg-white text-slate-400 text-[10px] px-3 py-2 rounded-xl border border-indigo-200/70 outline-none file:mr-3 file:py-1 file:px-2 file:rounded-lg file:border-0 file:text-[9px] file:font-bold file:bg-indigo-500/20 file:text-indigo-700 hover:file:bg-indigo-500/30 transition-all cursor-pointer"
+                                  onChange={async (e) => {
+                                    const files = Array.from(e.target.files || []);
+                                    if (!files.length) return;
+                                    try {
+                                      const results = await Promise.all(files.map(f => compressImageFile(f)));
+                                      setFormData((prev) => ({
+                                        ...prev,
+                                        products: prev.products.map((p, i) =>
+                                          i === idx ? { ...p, images: [...p.images, ...results] } : p
+                                        ),
+                                      }));
+                                    } catch { toast.error('Failed to process images'); }
+                                  }}
+                                />
+                                {prod.images.length > 0 && (
+                                  <div className="flex flex-wrap gap-1.5 mt-2">
+                                    {prod.images.map((img, imgIdx) => (
+                                      <div key={imgIdx} className="relative group w-14 h-14 rounded-lg overflow-hidden border border-indigo-200/70">
+                                        <img src={img} alt={`${prod.type}-${imgIdx}`} className="w-full h-full object-cover" />
+                                        <button
+                                          type="button"
+                                          onClick={() => setFormData((prev) => ({
+                                            ...prev,
+                                            products: prev.products.map((p, i) =>
+                                              i === idx ? { ...p, images: p.images.filter((_, ii) => ii !== imgIdx) } : p
+                                            ),
+                                          }))}
+                                          className="absolute top-0.5 right-0.5 bg-rose-500 text-white rounded-full w-4 h-4 flex items-center justify-center text-[8px] font-black opacity-0 group-hover:opacity-100 transition-all"
+                                        >✕</button>
+                                      </div>
+                                    ))}
+                                    <span className="text-[9px] text-indigo-600 font-bold self-center">{prod.images.length} photo{prod.images.length > 1 ? 's' : ''}</span>
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           ))}
                         </div>
@@ -877,11 +939,12 @@ const CallCenterDashboard = () => {
                           </select>
                           <button type="button" onClick={() => {
                             if (!productPicker || formData.products.find(p => p.type === productPicker)) return;
-                            setFormData((prev) => ({ ...prev, products: [...prev.products, { type: productPicker, problem: '' }] }));
+                            setFormData((prev) => ({ ...prev, products: [...prev.products, { type: productPicker, problem: '', images: [] }] }));
+                            setProductImageKeys((prev) => [...prev, Date.now()]);
                             setProductPicker('');
                           }} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition-all">Add</button>
                         </div>
-                        <p className="text-[10px] text-slate-500 mt-1.5">Each appliance gets its own problem description.</p>
+                        <p className="text-[10px] text-slate-500 mt-1.5">Each appliance has its own problem description and photos.</p>
                       </div>
                     </div>
                   </div>

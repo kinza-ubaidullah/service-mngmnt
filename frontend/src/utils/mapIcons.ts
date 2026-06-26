@@ -92,12 +92,31 @@ export const getTechIcon = (name: string) => {
 /** @deprecated use getTechIcon(name) */
 export const techIcon = getTechIcon('Tech');
 
+export const pendingApprovalIcon = L.divIcon({
+  className: 'custom-div-icon pending-pin',
+  html: `
+    <div style="position:relative;width:48px;height:58px;display:flex;align-items:flex-end;justify-content:center;">
+      <div style="position:absolute;bottom:4px;width:44px;height:44px;background:rgba(139,92,246,0.45);border-radius:50%;animation:pin-ping 1.2s cubic-bezier(0,0,0.2,1) infinite;"></div>
+      <div style="position:absolute;bottom:8px;width:30px;height:30px;background:rgba(139,92,246,0.25);border-radius:50%;"></div>
+      <svg width="44" height="58" viewBox="0 0 44 58" style="position:relative;z-index:2;filter:drop-shadow(0 4px 10px rgba(139,92,246,0.85));">
+        <path d="M22 0C11.06 0 2 9.06 2 20c0 14.5 20 38 20 38s20-23.5 20-38C42 9.06 32.94 0 22 0z" fill="#7c3aed" stroke="#fff" stroke-width="2.5"/>
+        <circle cx="22" cy="20" r="11" fill="#fff"/>
+        <text x="22" y="25" text-anchor="middle" fill="#7c3aed" font-size="12" font-weight="900" font-family="Arial,sans-serif">P</text>
+      </svg>
+    </div>`,
+  iconSize: [48, 58],
+  iconAnchor: [24, 58],
+  popupAnchor: [0, -54],
+});
+
 export const getLeadMapIcon = (lead: { status: string; pending_outcome?: string | null }) => {
   const status = lead.status;
   if (status === 'Completed' || status === 'InspectionCompleted') return completedIcon;
   if (status === 'PickedForWorkshop' || (status === 'PendingApproval' && lead.pending_outcome === 'PickedForWorkshop')) {
     return workshopIcon;
   }
+  // On-site repair awaiting approval — distinct violet pulsing pin
+  if (status === 'PendingApproval') return pendingApprovalIcon;
   if (status === 'New' || status === 'Complaint') return unassignedIcon;
   if (status === 'Reopened') return complaintIcon;
   return assignedIcon;

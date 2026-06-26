@@ -161,6 +161,7 @@ const JobMap: React.FC<JobMapProps> = ({
 
   const statusBadgeClass = (status: string, isNew: boolean) => {
     if (isNew) return 'bg-amber-400/20 text-amber-200 border-amber-400/40';
+    if (status === 'PendingApproval') return 'bg-violet-400/20 text-violet-100 border-violet-400/40';
     if (status === 'Assigned' || status === 'InProgress') return 'bg-sky-400/20 text-sky-100 border-sky-400/40';
     if (status === 'Completed') return 'bg-emerald-400/20 text-emerald-100 border-emerald-400/40';
     if (status === 'Cancelled') return 'bg-rose-400/20 text-rose-100 border-rose-400/40';
@@ -257,7 +258,11 @@ const JobMap: React.FC<JobMapProps> = ({
                       <div className="text-[10px] font-mono font-bold text-sky-700">{lead.customer.phone}</div>
                     )}
                     <div className="text-[10px] text-slate-600">{lead.product_type} · {lead.customer?.area}</div>
-                    <div className={`text-[9px] font-black uppercase ${isNew ? 'text-amber-600' : 'text-blue-600'}`}>
+                    <div className={`text-[9px] font-black uppercase ${
+                      isNew ? 'text-amber-600'
+                      : lead.status === 'PendingApproval' ? 'text-violet-600'
+                      : 'text-blue-600'
+                    }`}>
                       {isNew ? 'Unassigned' : getMapStatusLabel(lead)}
                     </div>
                   </div>
@@ -462,6 +467,10 @@ const JobMap: React.FC<JobMapProps> = ({
           <div className="flex items-center gap-2.5">
             <div className="w-3.5 h-3.5 bg-gradient-to-br from-indigo-400 to-blue-600 rounded-full border border-white shadow-[0_0_8px_rgba(59,130,246,0.5)]" />
             <span className="text-[9px] font-bold text-sky-200 tracking-wider">ASSIGNED</span>
+          </div>
+          <div className="flex items-center gap-2.5">
+            <div className="w-3.5 h-3.5 bg-gradient-to-br from-violet-400 to-purple-600 rounded-full border border-white shadow-[0_0_8px_rgba(139,92,246,0.5)]" />
+            <span className="text-[9px] font-bold text-violet-200 tracking-wider">PENDING APPROVAL</span>
           </div>
           <div className="flex items-center gap-2.5">
             <div className="relative w-3.5 h-3.5 flex items-center justify-center">
