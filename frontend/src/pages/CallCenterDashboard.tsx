@@ -558,7 +558,7 @@ const CallCenterDashboard = () => {
       customer_area: lead.customer.area || '',
       exact_address: lead.exact_address || '',
       google_map_link: lead.customer.google_map_link || '',
-      products: parsedTypes.map((t) => ({ type: t, problem: '' })),
+      products: parsedTypes.map((t) => ({ type: t, problem: '', images: [] })),
       house_image: '',
       item_pictures: [],
       payment_confirmed: false,
