@@ -5,7 +5,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { User, MapPin, Wrench, ClipboardList, Maximize2, RefreshCw, XCircle, UserMinus } from 'lucide-react';
 import { DEFAULT_MAP_CENTER, getLeadMapPosition, buildMapLeadPositions } from '../utils/leadLocation';
-import { isUnassignedLead, isMapVisibleLead, isAssignedTaskStatus, getMapStatusLabel } from '../utils/leadHelpers';
+import { isUnassignedLead, isMapVisibleLead, isAssignedTaskStatus, getMapStatusLabel, isGlobalMapVisibleLead } from '../utils/leadHelpers';
 import { isTechnicianLive } from '../services/liveTechnicianStore';
 import { techIcon, getTechIcon, getLeadMapIcon } from '../utils/mapIcons';
 import CopyText from './CopyText';
@@ -152,7 +152,7 @@ const JobMap: React.FC<JobMapProps> = ({
   };
 
   const visibleLeads = leads.filter(l => {
-    if (l.status === 'Cancelled' || l.status === 'Deleted' || l.status === 'Completed' || l.status === 'InspectionCompleted') return false;
+    if (!isGlobalMapVisibleLead(l)) return false;
     if (showOnlyUnassigned) return isUnassignedLead(l);
     return true;
   });

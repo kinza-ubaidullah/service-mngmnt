@@ -15,7 +15,7 @@ const C = {
   text: BRAND.colors.text,
 };
 
-export type PremiumDocType = 'invoice' | 'inspection' | 'workshop';
+export type PremiumDocType = 'invoice' | 'inspection' | 'workshop' | 'complete_repair';
 
 export interface PremiumDocConfig {
   type: PremiumDocType;
@@ -57,6 +57,16 @@ export const PREMIUM_DOC_CONFIGS: Record<PremiumDocType, PremiumDocConfig> = {
     footerNote:
       'Workshop pickup receipt. Balance due on delivery. Contact: ' + BRAND.phone,
     showWarranty: false,
+  },
+  complete_repair: {
+    type: 'complete_repair',
+    titleLine1: 'COMPLETE',
+    titleLine2: 'REPAIR INVOICE',
+    refLabel: 'INVOICE NUMBER',
+    page2DocLabel: 'Complete Repair Invoice',
+    footerNote:
+      'Computer-generated invoice. Retain for warranty records. Contact: ' + BRAND.phone,
+    showWarranty: true,
   },
 };
 

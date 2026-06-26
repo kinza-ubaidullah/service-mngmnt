@@ -1,5 +1,5 @@
 import React from 'react';
-import { MapPin, Phone, User, Home, Package, ChevronRight, ChevronDown, Navigation, Wrench } from 'lucide-react';
+import { MapPin, Phone, User, Home, Package, ChevronRight, ChevronDown, Navigation, Wrench, MessageCircle } from 'lucide-react';
 import LeadImageThumb from './LeadImageThumb';
 import CopyText from './CopyText';
 import { getProductPictures } from '../utils/leadHelpers';
@@ -17,6 +17,7 @@ type JobBrief = {
     phone?: string;
     area?: string;
     exact_address?: string | null;
+    google_map_link?: string | null;
   };
 };
 
@@ -31,36 +32,11 @@ interface TechnicianJobBriefProps {
 }
 
 const toneStyles = {
-  returned: {
-    accent: 'from-rose-500 to-red-600',
-    border: 'border-rose-300',
-    badge: 'bg-rose-600 text-white',
-    headerText: 'text-white',
-  },
-  delivery: {
-    accent: 'from-violet-500 to-purple-600',
-    border: 'border-violet-300',
-    badge: 'bg-violet-600 text-white',
-    headerText: 'text-white',
-  },
-  assigned: {
-    accent: 'from-sky-500 to-blue-600',
-    border: 'border-sky-200',
-    badge: 'bg-blue-600 text-white',
-    headerText: 'text-white',
-  },
-  completed: {
-    accent: 'from-emerald-500 to-teal-600',
-    border: 'border-emerald-200',
-    badge: 'bg-emerald-600 text-white',
-    headerText: 'text-white',
-  },
-  default: {
-    accent: 'from-slate-600 to-slate-700',
-    border: 'border-slate-200',
-    badge: 'bg-slate-600 text-white',
-    headerText: 'text-white',
-  },
+  returned: { badge: 'bg-rose-600 text-white' },
+  delivery: { badge: 'bg-violet-600 text-white' },
+  assigned: { badge: 'bg-blue-600 text-white' },
+  completed: { badge: 'bg-emerald-600 text-white' },
+  default: { badge: 'bg-slate-600 text-white' },
 };
 
 const TechnicianJobBrief: React.FC<TechnicianJobBriefProps> = ({
@@ -77,123 +53,114 @@ const TechnicianJobBrief: React.FC<TechnicianJobBriefProps> = ({
   const area = job.customer?.area || job.exact_address || job.customer?.exact_address || '—';
 
   return (
-    <div className={`rounded-2xl border-2 ${tone.border} bg-white overflow-hidden shadow-md`}>
-      {/* Header — lead ID + product + distance */}
-      <div className={`bg-gradient-to-r ${tone.accent} px-4 py-3`}>
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex flex-wrap items-center gap-2 min-w-0">
-            {job.lead_id && (
-              <CopyText
-                value={job.lead_id}
-                label="Lead ID"
-                className="text-sm font-mono font-black text-white bg-black/20 px-3 py-1 rounded-lg border border-white/30"
-              />
-            )}
-            {job.product_type && (
-              <span className="text-sm font-bold text-white/95 flex items-center gap-1.5">
-                <Wrench size={14} className="opacity-90" />
-                {job.product_type}
-              </span>
-            )}
-          </div>
-          {distanceLabel && (
-            <span className="text-xs font-black text-white bg-black/25 px-3 py-1 rounded-full flex items-center gap-1.5 shrink-0">
-              <Navigation size={13} /> {distanceLabel}
-            </span>
+    <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-sm">
+      {/* Top Bar - Blue */}
+      <div className="bg-[#1a73e8] px-4 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          {job.lead_id && (
+            <div className="bg-black/20 text-white text-xs font-bold px-3 py-1 rounded-md border border-white/10">
+              {job.lead_id}
+            </div>
+          )}
+          {job.product_type && (
+            <div className="text-white text-sm font-bold flex items-center gap-1.5">
+              <Wrench size={14} className="opacity-80" />
+              {job.product_type}
+            </div>
           )}
         </div>
+        {distanceLabel && (
+          <span className="text-xs font-black text-white bg-black/20 px-3 py-1 rounded-full flex items-center gap-1.5">
+            <Navigation size={13} /> {distanceLabel}
+          </span>
+        )}
       </div>
 
-      <div className="p-4 space-y-4">
-        {/* Photos — larger, easy to tap */}
-        <div className="flex gap-3">
-          {job.house_image && (
-            <div className="shrink-0">
-              <LeadImageThumb src={job.house_image} alt="Location" className="w-[88px] h-[88px] rounded-xl" onZoom={onZoom} />
-              <p className="text-[10px] font-black uppercase text-slate-500 text-center mt-1 flex items-center justify-center gap-1">
-                <Home size={10} /> Location
-              </p>
+      <div className="p-4">
+        {/* Product Image row */}
+        <div className="mb-4">
+          {productPics[0] ? (
+            <LeadImageThumb src={productPics[0]} alt="Product" className="w-[88px] h-[88px] rounded-2xl border border-slate-200" onZoom={onZoom} />
+          ) : (
+            <div className="w-[88px] h-[88px] rounded-2xl border-2 border-dashed border-slate-200 flex items-center justify-center bg-slate-50">
+              <Package size={24} className="text-slate-300" />
             </div>
           )}
-          {productPics[0] ? (
-            <div className="shrink-0">
-              <LeadImageThumb src={productPics[0]} alt="Product" className="w-[88px] h-[88px] rounded-xl" onZoom={onZoom} />
-              <p className="text-[10px] font-black uppercase text-slate-500 text-center mt-1 flex items-center justify-center gap-1">
-                <Package size={10} /> Product
-              </p>
-            </div>
-          ) : !job.house_image ? (
-            <LeadImageThumb src={null} alt="No image" className="w-[88px] h-[88px] rounded-xl" />
-          ) : null}
         </div>
 
-        {/* Customer name + status */}
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Customer</p>
-            <p className="text-xl font-black text-slate-900 leading-tight flex items-center gap-2">
-              <User size={20} className="text-blue-500 shrink-0" />
-              <span className="truncate">{job.customer?.name || 'Unknown'}</span>
-            </p>
+        {/* Customer Section */}
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1">Customer</p>
+            <div className="flex items-center gap-2">
+              <User size={18} className="text-[#1a73e8]" />
+              <p className="text-xl font-bold text-slate-800">{job.customer?.name || 'Unknown'}</p>
+            </div>
           </div>
-          <span className={`shrink-0 text-xs font-black uppercase tracking-wide px-3 py-1.5 rounded-lg shadow-sm ${tone.badge}`}>
+          <span className={`text-[10px] font-black uppercase px-4 py-1.5 rounded-lg shadow-sm ${tone.badge}`}>
             {statusLabel}
           </span>
         </div>
 
-        {/* Phone — prominent, easy to read & copy */}
-        {job.customer?.phone && (
-          <div className="rounded-xl bg-emerald-50 border-2 border-emerald-200 px-4 py-3">
-            <p className="text-[10px] font-black uppercase tracking-wider text-emerald-700 mb-1">Phone</p>
-            <CopyText
-              value={job.customer.phone}
-              label="Phone"
-              className="text-lg font-mono font-black text-emerald-900 flex items-center gap-2"
-            />
-          </div>
-        )}
+        {/* Phone Box */}
+        <div className="rounded-xl bg-[#ebfcf0] border border-[#a7f3d0] px-4 py-3 mb-3">
+          <p className="text-[10px] font-black uppercase tracking-wider text-[#059669] mb-1">Phone</p>
+          <CopyText
+            value={job.customer?.phone || ''}
+            label="Phone"
+            className="text-lg font-black text-[#047857]"
+          />
+        </div>
 
-        {/* Area */}
-        <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3">
-          <p className="text-[10px] font-black uppercase tracking-wider text-amber-700 mb-1">Area</p>
-          <p className="text-base font-bold text-amber-950 flex items-center gap-2">
-            <MapPin size={16} className="text-amber-600 shrink-0" />
+        {/* Area Box */}
+        <div className="rounded-xl bg-[#fff8e6] border border-[#fde68a] px-4 py-3 mb-4">
+          <p className="text-[10px] font-black uppercase tracking-wider text-[#b45309] mb-1">Area</p>
+          <p className="text-base font-bold text-[#92400e] flex items-center gap-2">
+            <MapPin size={16} className="text-[#d97706]" />
             {area}
           </p>
         </div>
 
-        {/* Issue — prominent when collapsed */}
-        {!isExpanded && job.problem_details && (
-          <div className="rounded-xl bg-amber-100/80 border-2 border-amber-300 px-4 py-3">
-            <p className="text-[10px] font-black uppercase tracking-wider text-amber-800 mb-1.5">Reported Issue</p>
-            <p className="text-base font-semibold text-amber-950 leading-relaxed">
-              {job.problem_details}
-            </p>
-          </div>
-        )}
+        {/* Action Buttons */}
+        <div className="flex gap-2 mb-4">
+          {job.customer?.phone ? (
+            <a href={`tel:${job.customer.phone.replace(/[^0-9+]/g, '')}`} onClick={(e) => e.stopPropagation()} className="flex-1 bg-[#1a73e8] hover:bg-[#1557b0] text-white text-sm font-bold py-3.5 rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm">
+              <Phone size={18} /> Call
+            </a>
+          ) : (
+            <div className="flex-1 bg-slate-200 text-slate-400 text-sm font-bold py-3.5 rounded-xl flex items-center justify-center gap-2">
+              <Phone size={18} /> Call
+            </div>
+          )}
+          
+          {job.customer?.phone ? (
+            <a href={`https://wa.me/${job.customer.phone.replace(/[^0-9]/g, '')}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="flex-1 bg-[#059669] hover:bg-[#047857] text-white text-sm font-bold py-3.5 rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm">
+               WhatsApp
+            </a>
+          ) : (
+            <div className="flex-1 bg-slate-200 text-slate-400 text-sm font-bold py-3.5 rounded-xl flex items-center justify-center gap-2">
+               WhatsApp
+            </div>
+          )}
 
-        {/* Expand bar — full width, clear CTA */}
+          {job.customer?.google_map_link ? (
+            <a href={job.customer.google_map_link} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="flex-1 bg-[#f59e0b] hover:bg-[#d97706] text-white text-sm font-bold py-3.5 rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm">
+              <MapPin size={18} /> Map
+            </a>
+          ) : (
+            <div className="flex-1 bg-slate-200 text-slate-400 text-sm font-bold py-3.5 rounded-xl flex items-center justify-center gap-2">
+              <MapPin size={18} /> Map
+            </div>
+          )}
+        </div>
+
+        {/* Expand Arrow */}
         <button
           type="button"
           onClick={onToggle}
-          aria-expanded={isExpanded}
-          className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm transition-all border-2
-            ${isExpanded
-              ? 'bg-slate-800 border-slate-700 text-white hover:bg-slate-700'
-              : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-800'}
-          `}
+          className="w-full flex items-center justify-center py-2 text-slate-400 hover:text-slate-600 transition-colors"
         >
-          {isExpanded ? (
-            <>
-              <ChevronDown size={20} />
-              Hide details
-            </>
-          ) : (
-            <>
-              <ChevronRight size={20} />
-              Show call, map & actions
-            </>
-          )}
+          {isExpanded ? <ChevronDown size={28} /> : <ChevronRight size={28} className="rotate-90" />}
         </button>
       </div>
     </div>
@@ -201,3 +168,4 @@ const TechnicianJobBrief: React.FC<TechnicianJobBriefProps> = ({
 };
 
 export default TechnicianJobBrief;
+

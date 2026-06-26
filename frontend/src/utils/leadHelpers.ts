@@ -125,6 +125,18 @@ export function isMapVisibleLead(lead: { status?: string }): boolean {
   return !!lead.status && !(MAP_EXCLUDED_STATUSES as readonly string[]).includes(lead.status);
 }
 
+/** Determines if a lead should be visible on the main unified dashboard map */
+export function isGlobalMapVisibleLead(lead: { status?: string; pending_outcome?: string | null }): boolean {
+  if (!lead.status) return false;
+  if (['Cancelled', 'Deleted', 'Completed', 'InspectionCompleted'].includes(lead.status)) return false;
+  // Exclude regular PendingApproval (onsite awaiting approval to admin)
+  // Keep Workshop pending approval (pending_outcome === 'PickedForWorkshop')
+  if (lead.status === 'PendingApproval' && lead.pending_outcome !== 'PickedForWorkshop') {
+    return false;
+  }
+  return true;
+}
+
 /** Map view filter modes */
 export type MapViewFilter = 'operational' | 'workshop' | 'completed';
 

@@ -62,11 +62,7 @@ const WorkshopDashboard = () => {
             <p className="text-sm font-bold text-slate-800">{user.name}</p>
           </div>
 
-          {user?.role === 'ADMIN' && (
-            <button onClick={() => navigate('/admin')} className="hidden sm:flex items-center gap-1.5 bg-slate-800 text-white hover:bg-slate-700 px-3 py-2 rounded-xl transition-all shadow-sm">
-               <ArrowUpRight size={15} /> <span className="text-xs font-semibold">Admin Panel</span>
-            </button>
-          )}
+
 
           <ThemeToggle />
           <button

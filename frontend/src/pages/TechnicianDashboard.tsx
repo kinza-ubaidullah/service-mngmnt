@@ -15,6 +15,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { generateInvoicePDF } from '../utils/invoiceGenerator';
 import { generateInspectionReportPDF } from '../utils/inspectionReportGenerator';
 import { generateWorkshopPickupPDF } from '../utils/workshopPickupGenerator';
+import { generateCompleteRepairPDF } from '../utils/completeRepairGenerator';
 import SettingsModule from '../components/SettingsModule';
 import WorkshopModule from '../components/WorkshopModule';
 import ImageZoomModal from '../components/ImageZoomModal';
@@ -144,6 +145,7 @@ const TechnicianDashboard = () => {
 
   // Wallet State
   const [walletSummary, setWalletSummary] = useState<any>(null);
+  const [requestingDepositId, setRequestingDepositId] = useState<number | null>(null);
   const [earningsSummary, setEarningsSummary] = useState<any>(null);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [expenseModalOpen, setExpenseModalOpen] = useState(false);
@@ -256,21 +258,23 @@ const TechnicianDashboard = () => {
   const buildWalletTimeline = () => {
     const entries: {
       id: string;
+      originalJob?: any;
       date: Date;
       title: string;
       subtitle: string;
       amount: number;
-      type: 'income' | 'expense' | 'pending' | 'received';
+      type: 'income' | 'expense' | 'pending' | 'requested' | 'received';
     }[] = [];
 
     (walletDetail?.jobs || walletDetail?.completedJobs || []).forEach((j: any) => {
       entries.push({
         id: `job-${j.id}`,
+        originalJob: j,
         date: new Date(j.completed_at || j.updated_at || Date.now()),
         title: j.lead_id,
-        subtitle: `${j.customer?.name || 'Customer'} • ${j.product_type || 'Job'}${j.is_settled ? ' • Paid to Admin' : ' • Pending Return'}`,
+        subtitle: `${j.customer?.name || 'Customer'} • ${j.product_type || 'Job'}${j.is_settled ? ' • Paid to Admin' : j.is_requested ? ' • Deposit Requested' : ' • Pending Return'}`,
         amount: Number(j.amount ?? j.collected_amount ?? 0),
-        type: j.is_settled ? 'received' : 'pending',
+        type: j.is_settled ? 'received' : j.is_requested ? 'requested' : 'pending',
       });
     });
 
@@ -289,6 +293,19 @@ const TechnicianDashboard = () => {
   };
 
   const walletTimeline = buildWalletTimeline();
+
+  const handleRequestDeposit = async (jobId: number) => {
+    try {
+      setRequestingDepositId(jobId);
+      const res = await api.post(`/settlements/request`, { lead_id: jobId });
+      toast.success(res.data.message || 'Deposit requested successfully');
+      fetchWalletData();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || 'Failed to request deposit');
+    } finally {
+      setRequestingDepositId(null);
+    }
+  };
 
   const isGlobalSearch = jobSearch.trim().length > 0;
   const filteredJobs = jobs.filter(job => {
@@ -485,11 +502,7 @@ const TechnicianDashboard = () => {
             <p className="text-sm font-bold text-slate-800">{user?.name}</p>
           </div>
 
-          {user?.role === 'ADMIN' && (
-            <button onClick={() => navigate('/admin')} className="hidden sm:flex items-center gap-1.5 bg-slate-800 text-white hover:bg-slate-700 px-3 py-2 rounded-xl transition-all shadow-sm">
-               <ArrowUpRight size={15} /> <span className="text-xs font-semibold">Admin Panel</span>
-            </button>
-          )}
+
 
           <ThemeToggle />
           <button 
@@ -658,16 +671,29 @@ const TechnicianDashboard = () => {
                             transition={{ duration: 0.22, ease: 'easeInOut' }}
                             className="overflow-hidden -mt-1"
                           >
-                            <div className="mx-1 rounded-b-2xl border-2 border-t-0 border-slate-200 bg-white px-4 pb-5 pt-4 space-y-4">
+                            <div className="mx-1 rounded-b-2xl border border-t-0 border-slate-200 bg-white px-4 pb-5 pt-4 space-y-4 shadow-sm">
+                              {/* Location Image */}
+                              {job.house_image && (
+                                <div className="mb-4">
+                                  <p className="text-xs font-black uppercase tracking-wider text-slate-500 mb-2">Location Image</p>
+                                  <img 
+                                    src={job.house_image} 
+                                    alt="Location" 
+                                    className="w-full max-h-48 object-cover rounded-xl border border-slate-200 cursor-pointer hover:ring-2 hover:ring-emerald-500" 
+                                    onClick={() => setZoomImg(job.house_image as string)}
+                                  />
+                                </div>
+                              )}
+
                               {job.problem_details && (
-                                <div className="rounded-xl bg-amber-50 border-2 border-amber-200 px-4 py-3">
+                                <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3">
                                   <p className="text-xs font-black uppercase tracking-wider text-amber-800 mb-1">Full Issue Description</p>
                                   <p className="text-base font-semibold text-amber-950 leading-relaxed">{job.problem_details}</p>
                                 </div>
                               )}
 
                               {(job.agreed_amount || getFinalAmount(job) > 0) && (
-                                <div className="rounded-xl bg-emerald-50 border-2 border-emerald-200 px-4 py-3">
+                                <div className="rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-3">
                                   <p className="text-xs font-black uppercase tracking-wider text-emerald-800 mb-1">Payment</p>
                                   <p className="text-lg font-black text-emerald-900">
                                     {job.agreed_amount ? `Agreed: ${formatPKR(job.agreed_amount)}` : `Amount: ${formatPKR(getFinalAmount(job))}`}
@@ -675,36 +701,12 @@ const TechnicianDashboard = () => {
                                 </div>
                               )}
 
-                              <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3">
-                                <p className="text-xs font-black uppercase tracking-wider text-slate-500 mb-1">Full Address</p>
-                                <p className="text-base font-semibold text-slate-800 flex items-start gap-2 leading-relaxed">
-                                  <MapPin size={18} className="text-emerald-600 shrink-0 mt-0.5" />
-                                  {job.exact_address || job.customer?.exact_address || job.customer?.area || '—'}
-                                </p>
-                              </div>
-
-                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                                <a href={`tel:${job.customer?.phone?.replace(/[^0-9+]/g, '')}`} onClick={(e) => e.stopPropagation()} className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold py-3.5 rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm">
-                                  <Phone size={18} /> Call
-                                </a>
-                                <a href={`https://wa.me/${job.customer?.phone?.replace(/[^0-9]/g, '')}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold py-3.5 rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm">
-                                  WhatsApp
-                                </a>
-                                {job.customer?.google_map_link ? (
-                                  <a href={job.customer.google_map_link} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold py-3.5 rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm">
-                                    <MapPin size={18} /> Map
-                                  </a>
-                                ) : (
-                                  <div className="hidden sm:block" />
-                                )}
-                              </div>
-
                               <div className="grid grid-cols-2 gap-3">
-                                <div className="rounded-xl bg-white border-2 border-slate-200 px-4 py-3">
+                                <div className="rounded-xl bg-white border border-slate-200 px-4 py-3">
                                   <p className="text-xs font-black uppercase tracking-wider text-slate-500 mb-1">Appliance</p>
                                   <p className="text-base font-bold text-slate-900">{job.product_type}</p>
                                 </div>
-                                <div className="rounded-xl bg-white border-2 border-slate-200 px-4 py-3">
+                                <div className="rounded-xl bg-white border border-slate-200 px-4 py-3">
                                   <p className="text-xs font-black uppercase tracking-wider text-slate-500 mb-1">Visit Date</p>
                                   <p className="text-base font-bold text-slate-900">
                                     {job.visit_date ? new Date(job.visit_date).toLocaleDateString() : 'Today'}
@@ -712,22 +714,33 @@ const TechnicianDashboard = () => {
                                 </div>
                               </div>
 
-                              {(job.status === 'Completed' || job.status === 'InspectionCompleted' || job.status === 'PickedForWorkshop') && (
-                                <div className="flex flex-wrap gap-2">
-                                  {job.status === 'Completed' && (
-                                    <button type="button" onClick={() => generateInvoicePDF(job)} className="text-sm font-bold px-4 py-2 rounded-xl bg-mint-100 text-mint-800 border-2 border-mint-300 flex items-center gap-2">
-                                      <Download size={16} /> Download Invoice
+                              {/* PDF Buttons - Available if job has outcome submitted */}
+                              {(['Completed', 'InspectionCompleted', 'PickedForWorkshop', 'PendingApproval'].includes(job.status)) && (
+                                <div className="flex flex-wrap gap-2 pt-2">
+                                  {/* Determine which PDF to show based on outcome */}
+                                  {(job.status === 'Completed' || (job.status === 'PendingApproval' && job.pending_outcome === 'Completed')) && (
+                                    <button type="button" onClick={() => generateInvoicePDF(job)} className="text-sm font-bold px-4 py-2 rounded-xl bg-blue-50 text-[#1a73e8] border border-blue-200 flex items-center gap-2 w-full sm:w-auto justify-center">
+                                      <Download size={16} /> On-Site Repair PDF
                                     </button>
                                   )}
-                                  {job.status === 'InspectionCompleted' && (
-                                    <button type="button" onClick={() => generateInspectionReportPDF(job)} className="text-sm font-bold px-4 py-2 rounded-xl bg-amber-100 text-amber-800 border-2 border-amber-300 flex items-center gap-2">
+                                  
+                                  {/* If it was a workshop delivery (Complete Repair) */}
+                                  {job.workshop_job?.status === 'Delivered' && (
+                                    <button type="button" onClick={() => generateCompleteRepairPDF(job)} className="text-sm font-bold px-4 py-2 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-2 w-full sm:w-auto justify-center">
+                                      <Download size={16} /> Complete Repair PDF
+                                    </button>
+                                  )}
+
+                                  {(job.status === 'InspectionCompleted' || (job.status === 'PendingApproval' && job.pending_outcome === 'InspectionCompleted')) && (
+                                    <button type="button" onClick={() => generateInspectionReportPDF(job)} className="text-sm font-bold px-4 py-2 rounded-xl bg-amber-50 text-amber-700 border border-amber-200 flex items-center gap-2 w-full sm:w-auto justify-center">
                                       <Download size={16} /> Inspection PDF
                                     </button>
                                   )}
-                                  {job.status === 'PickedForWorkshop' && (
+
+                                  {(job.status === 'PickedForWorkshop' || (job.status === 'PendingApproval' && job.pending_outcome === 'PickedForWorkshop')) && (
                                     <button type="button" onClick={async () => {
                                       try { await generateWorkshopPickupPDF(job); } catch { toast.error('Failed to generate Pickup PDF'); }
-                                    }} className="text-sm font-bold px-4 py-2 rounded-xl bg-blue-100 text-blue-800 border-2 border-blue-300 flex items-center gap-2">
+                                    }} className="text-sm font-bold px-4 py-2 rounded-xl bg-purple-50 text-purple-700 border border-purple-200 flex items-center gap-2 w-full sm:w-auto justify-center">
                                       <Download size={16} /> Pickup PDF
                                     </button>
                                   )}
@@ -743,7 +756,7 @@ const TechnicianDashboard = () => {
                                         key={pIdx}
                                         src={pic}
                                         alt="Product"
-                                        className="w-20 h-20 rounded-xl object-cover border-2 border-slate-200 shrink-0 cursor-pointer hover:ring-2 hover:ring-emerald-500"
+                                        className="w-20 h-20 rounded-xl object-cover border border-slate-200 shrink-0 cursor-pointer hover:ring-2 hover:ring-emerald-500"
                                         onClick={() => setZoomImg(pic)}
                                       />
                                     ))}
@@ -751,22 +764,22 @@ const TechnicianDashboard = () => {
                                 </div>
                               )}
 
-                              <div className="flex flex-col sm:flex-row flex-wrap gap-2 pt-2 border-t-2 border-slate-100">
-                                <button type="button" onClick={() => setHistoryLead(job)} className="flex-1 min-w-[140px] bg-white hover:bg-slate-50 text-slate-800 text-sm font-bold py-3.5 rounded-xl border-2 border-slate-200 flex items-center justify-center gap-2">
+                              <div className="flex flex-col sm:flex-row flex-wrap gap-2 pt-4 border-t border-slate-100">
+                                <button type="button" onClick={() => setHistoryLead(job)} className="flex-1 min-w-[140px] bg-white hover:bg-slate-50 text-slate-800 text-sm font-bold py-3.5 rounded-xl border border-slate-200 flex items-center justify-center gap-2">
                                   <Eye size={18} /> View Details
                                 </button>
                                 {!['Completed', 'PickedForWorkshop', 'PendingApproval'].includes(job.status) && !isDelivery && (
                                   <>
-                                    <button type="button" onClick={() => handleNoAnswer(job)} className="flex-1 min-w-[140px] bg-rose-50 hover:bg-rose-100 text-rose-800 text-sm font-bold py-3.5 rounded-xl border-2 border-rose-200 flex items-center justify-center gap-2">
+                                    <button type="button" onClick={() => handleNoAnswer(job)} className="flex-1 min-w-[140px] bg-rose-50 hover:bg-rose-100 text-rose-800 text-sm font-bold py-3.5 rounded-xl border border-rose-200 flex items-center justify-center gap-2">
                                       <PhoneOff size={18} /> No Answer
                                     </button>
-                                    <button type="button" onClick={() => openOutcomeModal(job)} className="flex-1 min-w-[140px] crm-btn-primary text-sm font-bold py-3.5 rounded-xl flex items-center justify-center gap-2">
+                                    <button type="button" onClick={() => openOutcomeModal(job)} className="flex-1 min-w-[140px] bg-[#1a73e8] hover:bg-[#1557b0] text-white text-sm font-bold py-3.5 rounded-xl flex items-center justify-center gap-2 shadow-sm">
                                       <ClipboardCheck size={18} /> Update Outcome
                                     </button>
                                   </>
                                 )}
                                 {isDelivery && (
-                                  <button type="button" onClick={() => handleMarkDelivered(job)} className="flex-1 bg-gradient-to-r from-violet-600 to-purple-600 text-white text-sm font-bold py-3.5 rounded-xl flex items-center justify-center gap-2 shadow-md">
+                                  <button type="button" onClick={() => handleMarkDelivered(job)} className="flex-1 bg-[#1a73e8] hover:bg-[#1557b0] text-white text-sm font-bold py-3.5 rounded-xl flex items-center justify-center gap-2 shadow-sm">
                                     <Truck size={18} /> Mark Delivered
                                   </button>
                                 )}
@@ -836,31 +849,44 @@ const TechnicianDashboard = () => {
                           ? 'bg-rose-500/5 border-rose-500/15'
                           : entry.type === 'pending'
                           ? 'bg-amber-500/5 border-amber-500/15'
+                          : entry.type === 'requested'
+                          ? 'bg-blue-500/5 border-blue-500/20'
                           : entry.type === 'received'
                           ? 'bg-emerald-500/5 border-emerald-500/15'
                           : 'bg-slate-50/80 border-slate-200/60'
                       }`}
                     >
                       <div className="min-w-0">
-                        <p className="text-slate-700 font-bold">{entry.title}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="text-slate-700 font-bold">{entry.title}</p>
+                          {entry.type === 'requested' && (
+                            <span className="text-[9px] bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider border border-blue-200">Processing</span>
+                          )}
+                        </div>
                         <p className="text-slate-500 text-[10px] mt-0.5 truncate">{entry.subtitle}</p>
                         <p className="text-[10px] text-slate-600 mt-1">
                           {entry.date.toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                         </p>
                       </div>
-                      <div className="text-right shrink-0">
+                      <div className="text-right shrink-0 flex flex-col items-end">
                         <p className={`font-black ${
                           entry.type === 'expense' ? 'text-rose-400' :
-                          entry.type === 'pending' ? 'text-amber-600' : 'text-mint-600'
+                          entry.type === 'pending' ? 'text-amber-500' :
+                          entry.type === 'requested' ? 'text-blue-500' :
+                          'text-emerald-500'
                         }`}>
                           {entry.type === 'expense' ? '-' : '+'}{formatPKR(entry.amount)}
                         </p>
-                        <span className={`text-[9px] font-black uppercase ${
-                          entry.type === 'expense' ? 'text-rose-500' :
-                          entry.type === 'pending' ? 'text-amber-500' : 'text-emerald-500'
-                        }`}>
-                          {entry.type === 'expense' ? 'Expense' : entry.type === 'pending' ? 'Pending' : 'Received'}
-                        </span>
+                        {entry.type === 'pending' && entry.amount > 0 && entry.originalJob?.id && (
+                          <button
+                            onClick={() => handleRequestDeposit(entry.originalJob.id)}
+                            disabled={requestingDepositId === entry.originalJob.id}
+                            className="mt-2 bg-amber-500 hover:bg-amber-600 text-white px-3 py-1 rounded shadow-sm flex items-center gap-1 transition-colors disabled:opacity-50"
+                          >
+                            {requestingDepositId === entry.originalJob.id ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle2 size={12} />}
+                            Deposit to Admin
+                          </button>
+                        )}
                       </div>
                     </div>
                   ))}

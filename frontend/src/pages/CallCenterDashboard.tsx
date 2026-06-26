@@ -11,7 +11,7 @@ import TechnicianTrackingMap from '../components/TechnicianTrackingMap';
 import { useMergedTechnicians } from '../hooks/useLiveTechnicians';
 import TechnicianWorkloadFilter from '../components/TechnicianWorkloadFilter';
 import PendingApprovalCard from '../components/PendingApprovalCard';
-import { matchesLeadSearch, buildLeadsLocationKey, filterLeadsByTechnician, filterLeadsByTeam, countActiveJobsForTechnician, isAssignedTaskStatus, filterLeadsForAssignedTab, countLeadsForFilter, filterLeadsByStatusTab, isCancellableLead, isCompletedLead, countActiveOperationalLeads, formatSAR, APPLIANCE_OPTIONS, parseProductTypes, formatProductTypesDisplay, getLeadProducts, hasVoiceNote, type LeadFeedFilter } from '../utils/leadHelpers';
+import { matchesLeadSearch, buildLeadsLocationKey, filterLeadsByTechnician, filterLeadsByTeam, countActiveJobsForTechnician, isAssignedTaskStatus, filterLeadsForAssignedTab, countLeadsForFilter, filterLeadsByStatusTab, isCancellableLead, isCompletedLead, countActiveOperationalLeads, formatSAR, APPLIANCE_OPTIONS, parseProductTypes, formatProductTypesDisplay, getLeadProducts, hasVoiceNote, isGlobalMapVisibleLead, type LeadFeedFilter } from '../utils/leadHelpers';
 import VoiceNotePlayer from '../components/VoiceNotePlayer';
 import GlobalLeadSearch from '../components/GlobalLeadSearch';
 import LeadPdfButtons from '../components/LeadPdfButtons';
@@ -413,9 +413,7 @@ const CallCenterDashboard = () => {
   const mapLeads = useMemo(() => {
     // Map always shows all active leads (not cancelled/deleted/completed)
     // If there's a global search, filter to matches only
-    const base = leads.filter((l) =>
-      !['Cancelled', 'Deleted', 'Completed', 'InspectionCompleted'].includes(l.status)
-    );
+    const base = leads.filter(isGlobalMapVisibleLead);
     if (isGlobalSearch) {
       return base.filter((lead) => matchesLeadSearch(lead, searchTerm));
     }
@@ -664,11 +662,6 @@ const CallCenterDashboard = () => {
             <span className="font-medium text-slate-700 text-sm truncate">{user?.name}</span>
           </div>
 
-          {user?.role === 'ADMIN' && (
-            <button onClick={() => navigate('/admin')} className="hidden sm:flex items-center gap-1.5 bg-slate-800 text-white hover:bg-slate-700 px-3 py-2 rounded-xl transition-all shadow-sm">
-               <ArrowUpRight size={15} /> <span className="text-xs font-semibold">Admin Panel</span>
-            </button>
-          )}
 
           <ThemeToggle />
           <button onClick={() => dispatch(logout())} className="flex items-center gap-1.5 crm-btn-ghost px-3 py-2 rounded-xl transition-all border border-slate-200/70 hover:border-mint-300/50">

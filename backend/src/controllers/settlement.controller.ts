@@ -31,15 +31,21 @@ const buildTechnicianLedger = async (techId: number) => {
   const receiverMap = Object.fromEntries(receivers.map(r => [r.id, r.name]));
 
   const settledByLead = new Map<number, any>();
+  const requestedByLead = new Map<number, any>();
   for (const s of settlements) {
-    if (s.lead_id && s.is_received && !settledByLead.has(s.lead_id)) {
-      settledByLead.set(s.lead_id, s);
+    if (s.lead_id) {
+      if (s.is_received && !settledByLead.has(s.lead_id)) {
+        settledByLead.set(s.lead_id, s);
+      } else if (!s.is_received && !requestedByLead.has(s.lead_id)) {
+        requestedByLead.set(s.lead_id, s);
+      }
     }
   }
 
   const jobs = completedJobs.map(job => {
     const settlement = settledByLead.get(job.id) || null;
     const amount = Number(job.collected_amount || 0);
+    const requested = requestedByLead.get(job.id) || null;
     return {
       id: job.id,
       lead_id: job.lead_id,
@@ -48,6 +54,7 @@ const buildTechnicianLedger = async (techId: number) => {
       amount,
       completed_at: job.updated_at,
       is_settled: !!settlement,
+      is_requested: !!requested && !settlement,
       settlement: settlement
         ? {
             id: settlement.id,
@@ -55,6 +62,12 @@ const buildTechnicianLedger = async (techId: number) => {
             received_at: settlement.received_at,
             received_by_name: settlement.received_by ? receiverMap[settlement.received_by] || 'Admin' : 'Admin',
             description: settlement.description
+          }
+        : requested
+        ? {
+            id: requested.id,
+            amount: Number(requested.amount),
+            is_requested: true
           }
         : null
     };
@@ -95,6 +108,59 @@ export const getTechnicianWallet = async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Wallet error:', error);
     res.status(500).json({ message: 'Failed to fetch wallet' });
+  }
+};
+
+export const requestSettlement = async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    if (user.role !== 'TECHNICIAN') {
+      res.status(403).json({ message: 'Only technicians can request settlements' });
+      return;
+    }
+    const techId = user.id;
+    const { lead_id } = req.body;
+
+    if (!lead_id) {
+      res.status(400).json({ message: 'lead_id is required' });
+      return;
+    }
+
+    const lead = await prisma.lead.findUnique({
+      where: { id: Number(lead_id) },
+      select: { id: true, lead_id: true, assigned_to: true, status: true, collected_amount: true, product_type: true }
+    });
+
+    if (!lead) return res.status(404).json({ message: 'Task not found' });
+    if (lead.assigned_to !== techId) return res.status(400).json({ message: 'Unauthorized task' });
+
+    const amount = Number(lead.collected_amount || 0);
+    if (amount <= 0) return res.status(400).json({ message: 'No amount to settle' });
+
+    const existing = await prisma.technicianSettlement.findFirst({
+      where: { lead_id: lead.id, technician_id: techId }
+    });
+
+    if (existing) {
+      if (existing.is_received) return res.status(400).json({ message: 'Already settled' });
+      return res.json({ message: 'Request already pending' });
+    }
+
+    await prisma.technicianSettlement.create({
+      data: {
+        technician_id: techId,
+        amount,
+        description: `Deposit request for ${lead.lead_id} — ${lead.product_type}`,
+        lead_id: lead.id,
+        is_received: false,
+      }
+    });
+
+    broadcastDataChange('settlements', 'create');
+    res.json({ message: 'Deposit request sent to Admin successfully' });
+  } catch (error) {
+    console.error('Request settlement error:', error);
+    res.status(500).json({ message: 'Failed to request settlement' });
   }
 };
 
@@ -145,24 +211,37 @@ export const markSettlementReceived = async (req: Request, res: Response) => {
     }
 
     const existing = await prisma.technicianSettlement.findFirst({
-      where: { lead_id: lead.id, technician_id: techId, is_received: true }
+      where: { lead_id: lead.id, technician_id: techId }
     });
-    if (existing) {
-      res.status(400).json({ message: `Payment for task ${lead.lead_id} has already been received` });
-      return;
-    }
 
-    const settlement = await prisma.technicianSettlement.create({
-      data: {
-        technician_id: techId,
-        amount,
-        description: `Payment for ${lead.lead_id} — ${lead.product_type} (${lead.customer?.name || 'Customer'})`,
-        lead_id: lead.id,
-        is_received: true,
-        received_at: new Date(),
-        received_by: user.id
+    let settlement;
+    if (existing) {
+      if (existing.is_received) {
+        res.status(400).json({ message: `Payment for task ${lead.lead_id} has already been received` });
+        return;
       }
-    });
+      settlement = await prisma.technicianSettlement.update({
+        where: { id: existing.id },
+        data: {
+          is_received: true,
+          received_at: new Date(),
+          received_by: user.id,
+          description: `Payment for ${lead.lead_id} — ${lead.product_type} (${lead.customer?.name || 'Customer'})`
+        }
+      });
+    } else {
+      settlement = await prisma.technicianSettlement.create({
+        data: {
+          technician_id: techId,
+          amount,
+          description: `Payment for ${lead.lead_id} — ${lead.product_type} (${lead.customer?.name || 'Customer'})`,
+          lead_id: lead.id,
+          is_received: true,
+          received_at: new Date(),
+          received_by: user.id
+        }
+      });
+    }
 
     broadcastDataChange('settlements', 'create');
     res.json({ message: `Payment of PKR ${amount.toLocaleString()} received for task ${lead.lead_id}`, settlement });

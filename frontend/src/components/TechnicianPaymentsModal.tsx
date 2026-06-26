@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, Loader2, CheckCircle2, Clock, Banknote, User, Phone, MapPin, HandCoins
@@ -136,6 +136,8 @@ const TechnicianPaymentsModal: React.FC<TechnicianPaymentsModalProps> = ({ techn
                   <div key={job.id}
                     className={`border rounded-2xl p-5 transition-all ${job.is_settled
                       ? 'bg-emerald-500/[0.03] border-emerald-500/15'
+                      : job.is_requested
+                      ? 'bg-blue-50 border-blue-200 shadow-sm shadow-blue-100'
                       : 'bg-white/95 border-rose-500/20 hover:border-rose-500/40'}`}>
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                       <div className="space-y-2 flex-1 min-w-0">
@@ -149,6 +151,10 @@ const TechnicianPaymentsModal: React.FC<TechnicianPaymentsModalProps> = ({ techn
                           {job.is_settled ? (
                             <span className="flex items-center gap-1 text-[10px] font-black text-mint-600 bg-mint-100 border border-emerald-500/25 px-2 py-0.5 rounded-full uppercase">
                               <CheckCircle2 size={11} /> Paid
+                            </span>
+                          ) : job.is_requested ? (
+                            <span className="flex items-center gap-1 text-[10px] font-black text-blue-600 bg-blue-100 border border-blue-500/25 px-2 py-0.5 rounded-full uppercase shadow-sm">
+                              <Clock size={11} /> Tech Depositing
                             </span>
                           ) : (
                             <span className="flex items-center gap-1 text-[10px] font-black text-rose-400 bg-rose-500/10 border border-rose-500/25 px-2 py-0.5 rounded-full uppercase">
@@ -174,15 +180,16 @@ const TechnicianPaymentsModal: React.FC<TechnicianPaymentsModalProps> = ({ techn
                       <div className="flex items-center gap-3 shrink-0 self-end sm:self-center">
                         <div className="text-right">
                           <p className="text-[10px] font-black text-slate-500 uppercase">Amount</p>
-                          <p className={`text-lg font-black ${job.is_settled ? 'text-mint-600' : 'text-rose-400'}`}>{formatSAR(job.amount)}</p>
+                          <p className={`text-lg font-black ${job.is_settled ? 'text-mint-600' : job.is_requested ? 'text-blue-600' : 'text-rose-400'}`}>{formatSAR(job.amount)}</p>
                         </div>
                         {!job.is_settled && job.amount > 0 && (
                           <button
                             onClick={() => receivePayment(job)}
                             disabled={receivingId === job.id}
-                            className="bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white text-xs font-black py-2.5 px-4 rounded-xl transition-all shadow-lg shadow-emerald-500/10 flex items-center gap-1.5 disabled:opacity-60">
-                            {receivingId === job.id ? <Loader2 size={14} className="animate-spin" /> : <HandCoins size={14} />}
-                            Receive
+                            className={`${job.is_requested ? 'bg-blue-600 hover:bg-blue-700 shadow-blue-500/20' : 'bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 shadow-emerald-500/10'} text-white text-xs font-black py-2.5 px-4 rounded-xl transition-all shadow-lg flex items-center gap-1.5 disabled:opacity-60`}
+                          >
+                            {receivingId === job.id ? <Loader2 size={14} className="animate-spin" /> : job.is_requested ? <CheckCircle2 size={14} /> : <HandCoins size={14} />}
+                            {job.is_requested ? 'Approve Deposit' : 'Receive'}
                           </button>
                         )}
                         {job.is_settled && (
