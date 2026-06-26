@@ -1,5 +1,5 @@
-﻿import React, { useState, useEffect } from 'react';
-import { ClipboardList, Search, RotateCcw, Trash2, Clock, MapPin, Phone, User as UserIcon, X, UserPlus, UserMinus, Image, Filter, Calendar } from 'lucide-react';
+﻿import React, { useState, useEffect, useMemo } from 'react';
+import { ClipboardList, RotateCcw, Trash2, Clock, MapPin, Phone, User as UserIcon, UserPlus, UserMinus, Calendar, ChevronLeft, ChevronRight, ChevronsRight } from 'lucide-react';
 import ImageZoomModal from './ImageZoomModal';
 import api from '../services/api';
 import toast from 'react-hot-toast';
@@ -10,31 +10,91 @@ import CopyText from './CopyText';
 import LeadHistoryModal from './LeadHistoryModal';
 import PendingApprovalActions from './PendingApprovalActions';
 import RefreshButton from './RefreshButton';
-import { matchesLeadSearch, isCancellableLead, getTaskTypeLabel, isRejectedLead, isComplaintLead, getLeadProducts, leadMatchesProductFilter, isActiveOperationalLeadStatus, formatProductTypesDisplay } from '../utils/leadHelpers';
+import { matchesLeadSearch, isCancellableLead, getTaskTypeLabel, isRejectedLead, isComplaintLead, getLeadProducts, leadMatchesProductFilter, formatProductTypesDisplay } from '../utils/leadHelpers';
 import { useLiveData } from '../hooks/useLiveData';
+
+export type LeadCategoryKey = 'total' | 'new' | 'in-progress' | 'completed' | 'cancelled';
+
+export const LEAD_CATEGORY_CONFIG: Record<LeadCategoryKey, { title: string; subtitle: string }> = {
+  total: { title: 'Total Leads', subtitle: 'All time leads' },
+  new: { title: 'New Leads', subtitle: 'Needs attention' },
+  'in-progress': { title: 'In Progress', subtitle: 'Currently active' },
+  completed: { title: 'Completed', subtitle: 'Successfully done' },
+  cancelled: { title: 'Cancelled', subtitle: 'Total cancelled' },
+};
+
+const IN_PROGRESS_STATUSES = [
+  'Assigned',
+  'InProgress',
+  'Reopened',
+  'InspectionCompleted',
+  'PickedForWorkshop',
+  'PendingApproval',
+  'Complaint',
+];
+
+const matchesLeadCategory = (lead: any, category: LeadCategoryKey) => {
+  if (lead.status === 'Deleted') return false;
+  switch (category) {
+    case 'total':
+      return true;
+    case 'new':
+      return lead.status === 'New';
+    case 'in-progress':
+      return IN_PROGRESS_STATUSES.includes(lead.status);
+    case 'completed':
+      return lead.status === 'Completed';
+    case 'cancelled':
+      return lead.status === 'Cancelled';
+    default:
+      return true;
+  }
+};
+
+const getLeadStatusDisplay = (lead: any) => {
+  const status = lead.status;
+  if (status === 'New') return { label: 'NEW', badge: 'bg-emerald-100 text-emerald-700 border-emerald-200', row: 'bg-emerald-50/30' };
+  if (status === 'PickedForWorkshop') return { label: 'WORKSHOP PICKUP', badge: 'bg-rose-100 text-rose-700 border-rose-200', row: 'bg-rose-50/40' };
+  if (status === 'Complaint' || status === 'Reopened') return { label: 'COMPLAINT', badge: 'bg-sky-100 text-sky-700 border-sky-200', row: 'bg-sky-50/30' };
+  if (status === 'Assigned' || status === 'InProgress') return { label: 'ASSIGNED', badge: 'bg-violet-100 text-violet-700 border-violet-200', row: 'bg-violet-50/25' };
+  if (status === 'Cancelled') return { label: 'CANCELLED', badge: 'bg-orange-100 text-orange-700 border-orange-200', row: 'bg-orange-50/30' };
+  if (status === 'Completed') return { label: 'COMPLETED', badge: 'bg-mint-100 text-mint-700 border-mint-200', row: 'bg-white' };
+  if (status === 'PendingApproval') return { label: getTaskTypeLabel(lead).toUpperCase(), badge: 'bg-pink-100 text-pink-700 border-pink-200', row: 'bg-pink-50/25' };
+  if (status === 'InspectionCompleted') return { label: 'INSPECTION', badge: 'bg-blue-100 text-blue-700 border-blue-200', row: 'bg-blue-50/25' };
+  return { label: status.toUpperCase(), badge: 'bg-slate-100 text-slate-600 border-slate-200', row: 'bg-white' };
+};
 
 interface LeadsModuleProps {
   externalSearch?: string;
+  categoryFilter?: LeadCategoryKey;
+  hideSummary?: boolean;
+  onCategorySelect?: (category: LeadCategoryKey) => void;
 }
 
-const LeadsModule: React.FC<LeadsModuleProps> = ({ externalSearch }) => {
+const LeadsModule: React.FC<LeadsModuleProps> = ({ externalSearch, categoryFilter, hideSummary, onCategorySelect }) => {
   const [leads, setLeads] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState(externalSearch || '');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [techFilter, setTechFilter] = useState('all');
-  const [productFilter, setProductFilter] = useState('all');
-  const [areaFilter, setAreaFilter] = useState('all');
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
-  const [activeOnly, setActiveOnly] = useState(false);
-  const [warrantyOnly, setWarrantyOnly] = useState(false);
   const [areas, setAreas] = useState<{ id: number; name: string }[]>([]);
   const [selectedLead, setSelectedLead] = useState<any>(null);
   const [technicians, setTechnicians] = useState<any[]>([]);
   const [assignModal, setAssignModal] = useState<{ open: boolean; lead: any }>({ open: false, lead: null });
   const [assignForm, setAssignForm] = useState({ technician_id: '', visit_date: '' });
   const [zoomImg, setZoomImg] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(10);
+  const [draftArea, setDraftArea] = useState('all');
+  const [draftDateFrom, setDraftDateFrom] = useState('');
+  const [draftDateTo, setDraftDateTo] = useState('');
+  const [draftStatus, setDraftStatus] = useState('all');
+  const [draftTech, setDraftTech] = useState('all');
+  const [draftProduct, setDraftProduct] = useState('all');
+  const [appliedArea, setAppliedArea] = useState('all');
+  const [appliedDateFrom, setAppliedDateFrom] = useState('');
+  const [appliedDateTo, setAppliedDateTo] = useState('');
+  const [appliedStatus, setAppliedStatus] = useState('all');
+  const [appliedTech, setAppliedTech] = useState('all');
+  const [appliedProduct, setAppliedProduct] = useState('all');
 
   const getPictures = (lead: any) => {
     if (!lead?.item_pictures) return [];
@@ -45,22 +105,32 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ externalSearch }) => {
   const fetchData = async (opts?: { silent?: boolean }) => {
     try {
       if (!opts?.silent) setLoading(true);
-      const [res, techRes, areasRes] = await Promise.all([
-        api.get('/leads'),
-        api.get('/users/technicians').catch(() => ({ data: { technicians: [] } })),
-        api.get('/areas').catch(() => ({ data: { areas: [] } })),
+      const [res, techRes, areasRes] = await Promise.allSettled([
+        api.get('/leads', { timeout: 45000 }),
+        api.get('/users/technicians'),
+        api.get('/areas'),
       ]);
-      setLeads(res.data.leads || res.data);
-      setTechnicians(techRes.data.technicians || []);
-      setAreas(areasRes.data.areas || []);
-    } catch (error) {
-      toast.error('Failed to load leads');
+
+      if (res.status === 'fulfilled') {
+        setLeads(res.value.data.leads || res.value.data || []);
+      } else if (!opts?.silent) {
+        toast.error('Failed to load leads');
+      }
+
+      if (techRes.status === 'fulfilled') {
+        setTechnicians(techRes.value.data.technicians || []);
+      }
+      if (areasRes.status === 'fulfilled') {
+        setAreas(areasRes.value.data.areas || []);
+      }
+    } catch {
+      if (!opts?.silent) toast.error('Failed to load leads');
     } finally {
       if (!opts?.silent) setLoading(false);
     }
   };
 
-  const { refresh, refreshing } = useLiveData(['leads'], () => fetchData({ silent: true }));
+  const { refresh, refreshing } = useLiveData(['leads'], () => fetchData({ silent: true }), { pollIntervalMs: 45000 });
 
   useEffect(() => {
     fetchData();
@@ -70,6 +140,19 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ externalSearch }) => {
     if (externalSearch !== undefined) setSearchTerm(externalSearch);
   }, [externalSearch]);
 
+  useEffect(() => {
+    setPage(1);
+  }, [categoryFilter, appliedArea, appliedDateFrom, appliedDateTo, appliedStatus, appliedTech, appliedProduct, searchTerm]);
+
+  const applyFilters = () => {
+    setAppliedArea(draftArea);
+    setAppliedDateFrom(draftDateFrom);
+    setAppliedDateTo(draftDateTo);
+    setAppliedStatus(draftStatus);
+    setAppliedTech(draftTech);
+    setAppliedProduct(draftProduct);
+  };
+
   const isGlobalSearch = searchTerm.trim().length > 0;
 
   const productTypes = [...new Set(leads.flatMap((l) => getLeadProducts(l)))].sort();
@@ -78,44 +161,44 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ externalSearch }) => {
     ...leads.map((l) => l.customer?.area).filter(Boolean),
   ])].sort() as string[];
 
+  const categoryCounts = {
+    total: leads.filter((l) => l.status !== 'Deleted').length,
+    new: leads.filter((l) => l.status === 'New').length,
+    'in-progress': leads.filter((l) => IN_PROGRESS_STATUSES.includes(l.status)).length,
+    completed: leads.filter((l) => l.status === 'Completed').length,
+    cancelled: leads.filter((l) => l.status === 'Cancelled').length,
+  };
+
   const filteredLeads = leads.filter(lead => {
+    if (categoryFilter && !matchesLeadCategory(lead, categoryFilter)) return false;
     if (!matchesLeadSearch(lead, searchTerm)) return false;
     if (isGlobalSearch) return true;
-    if (activeOnly && !isActiveOperationalLeadStatus(lead.status)) return false;
-    if (warrantyOnly && !lead.is_warranty_claim) return false;
-    if (areaFilter !== 'all' && lead.customer?.area !== areaFilter) return false;
-    if (dateFrom) {
-      const from = new Date(dateFrom);
+    if (appliedArea !== 'all' && lead.customer?.area !== appliedArea) return false;
+    if (appliedDateFrom) {
+      const from = new Date(appliedDateFrom);
       from.setHours(0, 0, 0, 0);
       if (new Date(lead.created_at) < from) return false;
     }
-    if (dateTo) {
-      const to = new Date(dateTo);
+    if (appliedDateTo) {
+      const to = new Date(appliedDateTo);
       to.setHours(23, 59, 59, 999);
       if (new Date(lead.created_at) > to) return false;
     }
-    if (statusFilter === 'rejected') return isRejectedLead(lead);
-    if (statusFilter === 'Complaint') return isComplaintLead(lead);
-    if (statusFilter === 'all') return lead.status !== 'Deleted';
-    if (statusFilter === 'Cancelled') return lead.status === 'Cancelled';
-    if (lead.status !== statusFilter) return false;
-    if (techFilter !== 'all' && String(lead.technician?.id) !== techFilter) return false;
-    if (!leadMatchesProductFilter(lead, productFilter)) return false;
+    if (appliedStatus === 'rejected') return isRejectedLead(lead);
+    if (appliedStatus === 'Complaint') return isComplaintLead(lead);
+    if (appliedStatus === 'all') return lead.status !== 'Deleted';
+    if (appliedStatus === 'Cancelled') return lead.status === 'Cancelled';
+    if (lead.status !== appliedStatus) return false;
+    if (appliedTech !== 'all' && String(lead.technician?.id) !== appliedTech) return false;
+    if (!leadMatchesProductFilter(lead, appliedProduct)) return false;
     return true;
   });
 
-  const clearAdvancedFilters = () => {
-    setAreaFilter('all');
-    setDateFrom('');
-    setDateTo('');
-    setActiveOnly(false);
-    setWarrantyOnly(false);
-    setProductFilter('all');
-    setTechFilter('all');
-    setStatusFilter('all');
-  };
-
-  const hasAdvancedFilters = areaFilter !== 'all' || dateFrom || dateTo || activeOnly || warrantyOnly;
+  const totalPages = Math.max(1, Math.ceil(filteredLeads.length / perPage));
+  const paginatedLeads = useMemo(
+    () => filteredLeads.slice((page - 1) * perPage, page * perPage),
+    [filteredLeads, page, perPage]
+  );
 
   const handleCancel = async (lead: any, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -179,252 +262,280 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ externalSearch }) => {
 
   if (loading && leads.length === 0) return <div className="flex justify-center py-20"><div className="w-8 h-8 border-4 border-mint-400 border-t-transparent rounded-full animate-spin"></div></div>;
 
+  const showingFrom = filteredLeads.length === 0 ? 0 : (page - 1) * perPage + 1;
+  const showingTo = Math.min(page * perPage, filteredLeads.length);
+
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <h2 className="text-2xl font-black text-slate-800 tracking-tight">Service Leads</h2>
-          <p className="text-slate-500 font-medium">Manage and track all customer service requests</p>
-        </div>
-        
-        <div className="flex flex-wrap gap-3 w-full md:w-auto items-center">
-          <RefreshButton onClick={refresh} loading={refreshing} />
-          <div className="relative flex-1 md:w-64">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
-            <input 
-              type="text" 
-              placeholder="Search all leads (any section)..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full crm-card border border-slate-200/60 rounded-xl py-2 pl-10 pr-4 text-sm text-slate-800 outline-none focus:border-mint-400/50 transition-all"
-            />
-          </div>
-          <select 
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="crm-card border border-slate-200/60 rounded-xl py-2 px-4 text-sm text-slate-800 outline-none focus:border-mint-400/50 appearance-none"
-          >
-            <option value="all">All Status</option>
-            <option value="New">New</option>
-            <option value="Assigned">Assigned</option>
-            <option value="InProgress">In Progress</option>
-            <option value="PendingApproval">Pending Approval</option>
-            <option value="rejected">Rejected</option>
-            <option value="Complaint">Complaint</option>
-            <option value="Completed">Completed</option>
-            <option value="InspectionCompleted">Inspection Done</option>
-            <option value="Cancelled">Cancelled</option>
-            <option value="Reopened">Reopened</option>
-            <option value="PickedForWorkshop">Workshop Pickup</option>
-          </select>
-          <select
-            value={techFilter}
-            onChange={(e) => setTechFilter(e.target.value)}
-            className="crm-card border border-slate-200/60 rounded-xl py-2 px-4 text-sm text-slate-800 outline-none focus:border-mint-400/50 appearance-none"
-          >
-            <option value="all">All Technicians</option>
-            {technicians.map((t) => (
-              <option key={t.id} value={t.id}>{t.name}</option>
-            ))}
-          </select>
-          <select
-            value={productFilter}
-            onChange={(e) => setProductFilter(e.target.value)}
-            className="crm-card border border-slate-200/60 rounded-xl py-2 px-4 text-sm text-slate-800 outline-none focus:border-mint-400/50 appearance-none"
-          >
-            <option value="all">All Products</option>
-            {productTypes.map((p) => (
-              <option key={p} value={p}>{p}</option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      <div className="crm-card border border-slate-200/60 rounded-2xl p-4 space-y-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <Filter size={14} className="text-slate-500" />
-          <span className="text-xs font-black uppercase tracking-wider text-slate-600">Advanced Filters</span>
-          {hasAdvancedFilters && (
-            <button type="button" onClick={clearAdvancedFilters} className="text-[10px] font-bold text-rose-600 hover:underline ml-auto">
-              Clear filters
-            </button>
-          )}
-        </div>
-        <div className="flex flex-wrap gap-3 items-end">
+    <div className="space-y-5">
+      {!hideSummary && (
+        <>
           <div>
-            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Area</label>
-            <select value={areaFilter} onChange={(e) => setAreaFilter(e.target.value)}
-              className="crm-card border border-slate-200/60 rounded-xl py-2 px-3 text-sm text-slate-800 min-w-[140px]">
-              <option value="all">All Areas</option>
-              {areaNames.map((a) => <option key={a} value={a}>{a}</option>)}
+            <h2 className="text-2xl lg:text-3xl font-black text-slate-800 tracking-tight">Service Leads</h2>
+            <p className="text-slate-500 font-medium mt-1">Manage and track all customer service requests</p>
+          </div>
+
+          {/* Filter bar */}
+          <div className="flex flex-wrap items-center gap-2 lg:gap-3">
+            <div className="relative">
+              <MapPin size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              <select
+                value={draftArea}
+                onChange={(e) => setDraftArea(e.target.value)}
+                className="appearance-none bg-white border border-slate-200 rounded-xl py-2.5 pl-9 pr-8 text-sm text-slate-700 outline-none focus:border-mint-400 min-w-[130px]"
+              >
+                <option value="all">All Areas</option>
+                {areaNames.map((a) => <option key={a} value={a}>{a}</option>)}
+              </select>
+            </div>
+            <div className="relative">
+              <Calendar size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              <input
+                type="date"
+                value={draftDateFrom}
+                onChange={(e) => setDraftDateFrom(e.target.value)}
+                className="bg-white border border-slate-200 rounded-xl py-2.5 pl-9 pr-3 text-sm text-slate-700 outline-none focus:border-mint-400"
+              />
+            </div>
+            <div className="relative">
+              <Calendar size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              <input
+                type="date"
+                value={draftDateTo}
+                onChange={(e) => setDraftDateTo(e.target.value)}
+                className="bg-white border border-slate-200 rounded-xl py-2.5 pl-9 pr-3 text-sm text-slate-700 outline-none focus:border-mint-400"
+              />
+            </div>
+            <select
+              value={draftStatus}
+              onChange={(e) => setDraftStatus(e.target.value)}
+              className="bg-white border border-slate-200 rounded-xl py-2.5 px-4 text-sm text-slate-700 outline-none focus:border-mint-400"
+            >
+              <option value="all">All Status</option>
+              <option value="New">New</option>
+              <option value="Assigned">Assigned</option>
+              <option value="InProgress">In Progress</option>
+              <option value="PendingApproval">Pending Approval</option>
+              <option value="Complaint">Complaint</option>
+              <option value="Completed">Completed</option>
+              <option value="Cancelled">Cancelled</option>
+              <option value="PickedForWorkshop">Workshop Pickup</option>
             </select>
+            <select
+              value={draftTech}
+              onChange={(e) => setDraftTech(e.target.value)}
+              className="bg-white border border-slate-200 rounded-xl py-2.5 px-4 text-sm text-slate-700 outline-none focus:border-mint-400"
+            >
+              <option value="all">All Technicians</option>
+              {technicians.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+            <select
+              value={draftProduct}
+              onChange={(e) => setDraftProduct(e.target.value)}
+              className="bg-white border border-slate-200 rounded-xl py-2.5 px-4 text-sm text-slate-700 outline-none focus:border-mint-400"
+            >
+              <option value="all">All Products</option>
+              {productTypes.map((p) => <option key={p} value={p}>{p}</option>)}
+            </select>
+            <button
+              type="button"
+              onClick={applyFilters}
+              className="px-5 py-2.5 rounded-xl bg-mint-500 hover:bg-mint-600 text-white text-sm font-bold shadow-md shadow-mint-500/20 transition-colors"
+            >
+              Apply Filters
+            </button>
+            <RefreshButton onClick={refresh} loading={refreshing} />
           </div>
-          <div>
-            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 flex items-center gap-1"><Calendar size={10} /> From</label>
-            <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)}
-              className="crm-card border border-slate-200/60 rounded-xl py-2 px-3 text-sm text-slate-800" />
+
+          {/* Summary cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+            {(Object.keys(LEAD_CATEGORY_CONFIG) as LeadCategoryKey[]).map((key) => {
+              const config = LEAD_CATEGORY_CONFIG[key];
+              return (
+                <motion.button
+                  key={key}
+                  type="button"
+                  whileHover={{ y: -2 }}
+                  onClick={() => onCategorySelect?.(key)}
+                  className="bg-white border border-slate-200 rounded-2xl p-4 text-left hover:border-mint-300 hover:shadow-md transition-all"
+                >
+                  <p className="text-xs font-semibold text-slate-500">{config.title}</p>
+                  <p className="text-3xl font-black text-mint-600 mt-1">{categoryCounts[key]}</p>
+                  <p className="text-[11px] text-slate-400 mt-1">{config.subtitle}</p>
+                </motion.button>
+              );
+            })}
           </div>
-          <div>
-            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">To</label>
-            <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)}
-              className="crm-card border border-slate-200/60 rounded-xl py-2 px-3 text-sm text-slate-800" />
+        </>
+      )}
+
+      {/* Lead cards list */}
+      <div className="space-y-3">
+        {paginatedLeads.map((lead) => {
+          const statusDisplay = getLeadStatusDisplay(lead);
+          return (
+            <div
+              key={lead.id}
+              onClick={() => setSelectedLead(lead)}
+              className={`border border-slate-200/80 rounded-2xl p-4 lg:p-5 flex flex-col lg:flex-row lg:items-center gap-4 cursor-pointer hover:shadow-md transition-all ${statusDisplay.row}`}
+            >
+              <LeadImageThumb
+                src={getPictures(lead)[0]}
+                className="w-20 h-20 lg:w-24 lg:h-24 shrink-0 rounded-xl"
+                onZoom={(src) => setZoomImg(src)}
+              />
+
+              <div className="flex-1 min-w-0 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div>
+                  <CopyText value={lead.lead_id} label="Lead ID" className="font-mono text-sm font-black text-slate-800" />
+                  <p className="text-sm font-semibold text-slate-700 mt-1">{formatProductTypesDisplay(lead.product_type, lead)}</p>
+                  <div className="flex items-center gap-1.5 mt-1.5 text-xs text-slate-500">
+                    <Clock size={12} />
+                    {new Date(lead.created_at).toLocaleDateString('en-GB')}
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2 text-sm font-bold text-slate-700">
+                    <UserIcon size={14} className="text-slate-400 shrink-0" />
+                    <span className="truncate">{lead.customer?.name}</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-slate-500">
+                    <Phone size={12} className="shrink-0" />
+                    <CopyText value={lead.customer?.phone} label="Phone" />
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-slate-500">
+                    <MapPin size={12} className="text-mint-500 shrink-0" />
+                    <span className="truncate">{lead.customer?.area || 'N/A'}</span>
+                  </div>
+                </div>
+
+                <div className="flex flex-col items-start gap-2">
+                  <span className={`px-3 py-1 rounded-full text-[10px] font-black tracking-wide border ${statusDisplay.badge}`}>
+                    {statusDisplay.label}
+                  </span>
+                  {lead.is_warranty_claim && (
+                    <span className="text-[9px] font-black text-amber-600">★ Warranty</span>
+                  )}
+                </div>
+
+                <div>
+                  {lead.technician ? (
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-lg bg-mint-500 flex items-center justify-center text-white text-xs font-black">
+                        {lead.technician.name.charAt(0)}
+                      </div>
+                      <span className="text-sm font-semibold text-slate-700">{lead.technician.name}</span>
+                    </div>
+                  ) : (
+                    <span className="text-sm text-slate-400 italic">Unassigned</span>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 shrink-0 lg:ml-auto" onClick={(e) => e.stopPropagation()}>
+                {lead.status === 'New' && (
+                  <button
+                    type="button"
+                    onClick={() => setAssignModal({ open: true, lead })}
+                    className="px-4 py-2 rounded-xl bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold"
+                  >
+                    Assign
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setSelectedLead(lead)}
+                  className="px-4 py-2 rounded-xl bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold"
+                >
+                  View
+                </button>
+                {(lead.status === 'Completed' || lead.status === 'InspectionCompleted') && (
+                  <>
+                    <LeadPdfButtons lead={lead} compact />
+                    <button
+                      type="button"
+                      onClick={() => handleReopen(lead)}
+                      className="p-2 rounded-xl border border-slate-200 text-slate-500 hover:text-amber-600"
+                      title="Reopen"
+                    >
+                      <RotateCcw size={14} />
+                    </button>
+                  </>
+                )}
+                {lead.status === 'Assigned' && (
+                  <button type="button" onClick={(e) => handleUnassign(lead, e)} className="p-2 rounded-xl border border-slate-200 text-slate-500 hover:text-amber-600">
+                    <UserMinus size={14} />
+                  </button>
+                )}
+                {isCancellableLead(lead) && (
+                  <button type="button" onClick={(e) => handleCancel(lead, e)} className="p-2 rounded-xl border border-slate-200 text-slate-500 hover:text-rose-500">
+                    <Trash2 size={14} />
+                  </button>
+                )}
+                {lead.status === 'New' && (
+                  <button type="button" onClick={() => handleDelete(lead.id, lead.lead_id, lead.status)} className="p-2 rounded-xl border border-slate-200 text-slate-500 hover:text-rose-500">
+                    <Trash2 size={14} />
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+
+        {filteredLeads.length === 0 && (
+          <div className="text-center py-16 border border-dashed border-slate-300 rounded-2xl">
+            <ClipboardList size={32} className="mx-auto text-slate-300 mb-2" />
+            <p className="text-slate-500 font-medium">No leads found matching your filters.</p>
           </div>
-          <label className="flex items-center gap-2 text-sm font-semibold text-slate-700 cursor-pointer pb-2">
-            <input type="checkbox" checked={activeOnly} onChange={(e) => setActiveOnly(e.target.checked)} className="rounded border-slate-300" />
-            Active only
-          </label>
-          <label className="flex items-center gap-2 text-sm font-semibold text-slate-700 cursor-pointer pb-2">
-            <input type="checkbox" checked={warrantyOnly} onChange={(e) => setWarrantyOnly(e.target.checked)} className="rounded border-slate-300" />
-            Warranty claims
-          </label>
-        </div>
-        <p className="text-[11px] text-slate-500">{filteredLeads.length} lead{filteredLeads.length !== 1 ? 's' : ''} match current filters</p>
+        )}
       </div>
 
-      <div className="crm-card border rounded-[2.5rem] overflow-hidden shadow-2xl">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead>
-              <tr className="text-[10px] font-black text-slate-500 uppercase tracking-widest border-b border-slate-200/60 bg-slate-50/80">
-                <th className="px-8 py-5">Photo</th>
-                <th className="px-8 py-5">Lead Detail</th>
-                <th className="px-8 py-5">Customer info</th>
-                <th className="px-8 py-5">Status</th>
-                <th className="px-8 py-5">Assigned To</th>
-                <th className="px-8 py-5 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-200/60">
-              {filteredLeads.map((lead) => (
-                <tr key={lead.id} onClick={() => setSelectedLead(lead)} className="group hover:bg-slate-50/80 transition-colors cursor-pointer">
-                  <td className="px-8 py-6">
-                    <LeadImageThumb
-                      src={getPictures(lead)[0]}
-                      onZoom={(src) => setZoomImg(src)}
-                    />
-                  </td>
-                  <td className="px-8 py-6">
-                    <div className="flex flex-col">
-                      <CopyText value={lead.lead_id} label="Lead ID" className="font-mono text-sm font-black text-mint-600" />
-                      <span className="text-xs text-slate-500 mt-1 font-medium">{formatProductTypesDisplay(lead.product_type, lead)}</span>
-                      <div className="flex items-center gap-2 mt-2">
-                         <Clock size={12} className="text-slate-500" />
-                         <span className="text-[10px] text-slate-500 font-bold">{new Date(lead.created_at).toLocaleDateString()}</span>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-8 py-6">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2 text-sm font-bold text-slate-700">
-                        <UserIcon size={14} className="text-slate-500" /> {lead.customer.name}
-                      </div>
-                      <div className="flex items-center gap-2 text-[10px] text-slate-500 font-medium">
-                        <Phone size={12} />
-                        <CopyText value={lead.customer.phone} label="Phone" />
-                      </div>
-                      <div className="flex items-center gap-2 text-[10px] text-slate-400">
-                        <MapPin size={12} className="text-indigo-500/50" /> {lead.customer.area || 'N/A'}
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-8 py-6">
-                    <div className="flex flex-col gap-2">
-                       <span className={`inline-flex px-3 py-1 rounded-lg text-[10px] font-black tracking-wider border w-max
-                        ${lead.status === 'New' ? 'bg-mint-100 text-mint-600 border-mint-300/40' : 
-                          lead.status === 'Assigned' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : 
-                          lead.status === 'PendingApproval' ? 'bg-pink-500/10 text-pink-400 border-pink-500/20' : 
-                          lead.status === 'Completed' ? 'bg-mint-100 text-mint-600 border-mint-300/40' :
-                          lead.status === 'Reopened' ? 'bg-amber-500/10 text-amber-600 border-amber-500/20' :
-                          'bg-slate-100 text-slate-700 border-slate-200'}
-                      `}>
-                        {lead.status === 'PendingApproval' ? getTaskTypeLabel(lead).toUpperCase() : lead.status.toUpperCase()}
-                      </span>
-                      {lead.is_warranty_claim && (
-                        <span className="text-[9px] font-black text-amber-500 uppercase flex items-center gap-1">
-                          ★ Warranty Claim
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-8 py-6">
-                    {lead.technician ? (
-                      <div className="flex items-center gap-3">
-                         <div className="w-8 h-8 rounded-lg bg-mint-100 border border-mint-300/40 flex items-center justify-center text-mint-600 text-xs font-black">
-                            {lead.technician.name.charAt(0)}
-                         </div>
-                         <span className="text-xs font-bold text-slate-700">{lead.technician.name}</span>
-                      </div>
-                    ) : (
-                      <span className="text-xs italic text-slate-600 font-medium">Unassigned</span>
-                    )}
-                  </td>
-                  <td className="px-8 py-6 text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      {(lead.status === 'New' || lead.status === 'Assigned') && (
-                        <button onClick={(e) => { e.stopPropagation(); setAssignModal({ open: true, lead }); }}
-                          className="p-2 bg-slate-50 hover:bg-blue-500/20 text-slate-400 hover:text-blue-400 rounded-xl border border-slate-200/60" title="Assign">
-                          <UserPlus size={16} />
-                        </button>
-                      )}
-                      {lead.status === 'Assigned' && (
-                        <button onClick={(e) => handleUnassign(lead, e)}
-                          className="p-2 bg-slate-50 hover:bg-amber-500/20 text-slate-400 hover:text-amber-600 rounded-xl border border-slate-200/60" title="Unassign">
-                          <UserMinus size={16} />
-                        </button>
-                      )}
-                      {isCancellableLead(lead) && (
-                        <button onClick={(e) => handleCancel(lead, e)}
-                          className="p-2 bg-slate-50 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 rounded-xl border border-slate-200/60" title="Cancel lead">
-                          <Trash2 size={16} />
-                        </button>
-                      )}
-                      {lead.status === 'PendingApproval' && (
-                        <div onClick={(e) => e.stopPropagation()} className="flex gap-1">
-                          <button
-                            onClick={() => setSelectedLead(lead)}
-                            className="p-2 bg-slate-50 hover:bg-slate-200 text-slate-600 rounded-xl border border-slate-200/60 font-bold text-xs"
-                            title="View details"
-                          >
-                            View
-                          </button>
-                        </div>
-                      )}
-                      <div onClick={(e) => e.stopPropagation()}>
-                        <LeadPdfButtons lead={lead} compact />
-                      </div>
-                      {(lead.status === 'Completed' || lead.status === 'InspectionCompleted') && (
-                        <button 
-                          onClick={(e) => { e.stopPropagation(); handleReopen(lead); }}
-                          className="p-2 bg-slate-50 hover:bg-amber-500/20 text-slate-400 hover:text-amber-600 rounded-xl transition-all border border-slate-200/60 hover:border-amber-500/20"
-                          title="Reopen as Complaint"
-                        >
-                          <RotateCcw size={16} />
-                        </button>
-                      )}
-                      {lead.status === 'New' && (
-                        <button 
-                          onClick={(e) => { e.stopPropagation(); handleDelete(lead.id, lead.lead_id, lead.status); }}
-                          className="p-2 bg-slate-50 hover:bg-red-500/20 text-slate-400 hover:text-red-400 rounded-xl transition-all border border-slate-200/60 hover:border-red-500/20"
-                          title="Delete Lead"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {filteredLeads.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="px-8 py-20 text-center text-slate-500 font-medium italic">
-                    No leads found matching your filters.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+      {/* Pagination */}
+      {filteredLeads.length > 0 && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-2">
+          <p className="text-sm text-slate-500">
+            Showing {showingFrom} to {showingTo} of {filteredLeads.length} leads
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              className="p-2 rounded-lg border border-slate-200 disabled:opacity-40 hover:bg-slate-50"
+            >
+              <ChevronLeft size={18} />
+            </button>
+            <span className="w-9 h-9 flex items-center justify-center rounded-lg bg-mint-500 text-white text-sm font-bold">
+              {page}
+            </span>
+            <button
+              type="button"
+              disabled={page >= totalPages}
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              className="p-2 rounded-lg border border-slate-200 disabled:opacity-40 hover:bg-slate-50"
+            >
+              <ChevronRight size={18} />
+            </button>
+            <button
+              type="button"
+              disabled={page >= totalPages}
+              onClick={() => setPage(totalPages)}
+              className="p-2 rounded-lg border border-slate-200 disabled:opacity-40 hover:bg-slate-50"
+            >
+              <ChevronsRight size={18} />
+            </button>
+          </div>
+          <select
+            value={perPage}
+            onChange={(e) => { setPerPage(Number(e.target.value)); setPage(1); }}
+            className="text-sm border border-slate-200 rounded-xl px-3 py-2 bg-white text-slate-600 outline-none focus:border-mint-400"
+          >
+            <option value={10}>10 per page</option>
+            <option value={20}>20 per page</option>
+            <option value={50}>50 per page</option>
+          </select>
         </div>
-      </div>
+      )}
 
       {/* Selected Lead Modal */}
       {selectedLead && (

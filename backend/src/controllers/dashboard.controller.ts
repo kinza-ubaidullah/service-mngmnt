@@ -1,5 +1,6 @@
 import type { Request, Response } from 'express';
 import { prisma } from '../utils/prisma';
+import { liteLeadForList } from '../utils/leadListLite';
 
 export const getAdminStats = async (req: Request, res: Response) => {
   try {
@@ -201,5 +202,27 @@ export const getAdminStats = async (req: Request, res: Response) => {
       attentionNeeded: [],
       degraded: true,
     });
+  }
+};
+
+export const getRecentOperations = async (_req: Request, res: Response) => {
+  try {
+    const recentLeads = await prisma.lead.findMany({
+      where: {
+        status: {
+          in: ['InspectionCompleted', 'PickedForWorkshop', 'Completed', 'Assigned', 'InProgress', 'Reopened', 'Complaint'],
+        },
+      },
+      orderBy: { updated_at: 'desc' },
+      take: 500,
+      include: {
+        customer: true,
+        technician: { select: { id: true, name: true, phone: true } },
+      },
+    });
+    res.json({ recentLeads: recentLeads.map((l) => liteLeadForList(l as Record<string, unknown>)) });
+  } catch (error) {
+    console.error('Error fetching recent operations:', error);
+    res.status(500).json({ message: 'Failed to fetch recent operations', recentLeads: [] });
   }
 };

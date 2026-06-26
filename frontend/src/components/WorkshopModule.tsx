@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Wrench, Clock, CheckCircle2, Truck, AlertCircle, RefreshCw, Trash2, CheckCircle, Info, Package, Plus, Camera, Download, Video, Eye, ChevronDown, ChevronUp, Phone } from 'lucide-react';
 import LeadPdfButtons from './LeadPdfButtons';
 import LeadImageThumb from './LeadImageThumb';
+import CopyText from './CopyText';
 import api from '../services/api';
 import toast from 'react-hot-toast';
 import RefreshButton from './RefreshButton';
@@ -507,9 +508,11 @@ const WorkshopModule: React.FC<WorkshopModuleProps> = ({ showGateInApproval = tr
                         <div className="flex items-center gap-3 min-w-[120px]">
                           <LeadImageThumb src={thumbSrc} className="w-16 h-16 sm:w-20 sm:h-20 shrink-0 rounded-xl border-2 border-slate-200" />
                           <div className="min-w-0">
-                            <span className="text-sm font-mono font-black text-slate-800 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200 block w-fit">
-                              {job.lead.lead_id}
-                            </span>
+                            <CopyText
+                              value={job.lead.lead_id}
+                              label="Lead ID"
+                              className="text-sm font-mono font-black text-slate-800 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200 block w-fit cursor-copy"
+                            />
                             {isDeliveryJob && (
                               <span className="text-[10px] font-black text-violet-700 uppercase mt-1.5 inline-block">Delivery Assigned</span>
                             )}
@@ -519,7 +522,7 @@ const WorkshopModule: React.FC<WorkshopModuleProps> = ({ showGateInApproval = tr
                       <td className="py-4 align-middle">
                         <p className="font-bold text-slate-900 text-base">{job.lead.product_type}</p>
                         <p className="text-sm font-semibold text-slate-700 mt-0.5">{job.lead.customer.name}</p>
-                        <p className="text-sm text-slate-600 font-mono mt-0.5">{job.lead.customer.phone}</p>
+                        <CopyText value={job.lead.customer.phone} label="Phone" className="text-sm text-slate-700 font-mono mt-0.5 block cursor-copy" />
                         <p className="text-xs text-mint-700 mt-1.5 flex items-center gap-1 font-medium"><Info size={12} /> Tap row or Details for full info</p>
                       </td>
                       <td className="py-4 text-center hidden sm:table-cell align-middle">
@@ -543,46 +546,48 @@ const WorkshopModule: React.FC<WorkshopModuleProps> = ({ showGateInApproval = tr
                           <td colSpan={5} className="p-6 border-t border-slate-200/60">
                             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-5">
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div className="crm-card p-4 rounded-2xl border border-slate-200/60 space-y-2 text-sm">
-                                  <h4 className="text-xs font-black text-slate-400 uppercase">Customer Info</h4>
-                                  <p><span className="text-slate-500">Phone:</span> {job.lead.customer.phone}</p>
-                                  <p><span className="text-slate-500">Address:</span> {job.lead.exact_address || job.lead.customer.exact_address || job.lead.customer.area || '—'}</p>
-                                  <p><span className="text-slate-500">Technician:</span> {job.lead.technician?.name || '—'}</p>
-                                  <p><span className="text-slate-500">Issue:</span> {job.lead.problem_details || '—'}</p>
+                                <div className="bg-white p-4 rounded-2xl border border-slate-200 space-y-2 text-sm shadow-sm">
+                                  <h4 className="text-xs font-black text-slate-500 uppercase">Customer Info</h4>
+                                  <p><span className="text-slate-500">Phone:</span>{' '}
+                                    <CopyText value={job.lead.customer.phone} label="Phone" className="font-mono font-semibold text-slate-900 cursor-copy" />
+                                  </p>
+                                  <p><span className="text-slate-500">Address:</span> <span className="text-slate-800">{job.lead.exact_address || job.lead.customer.exact_address || job.lead.customer.area || '—'}</span></p>
+                                  <p><span className="text-slate-500">Technician:</span> <span className="text-slate-800 font-semibold">{job.lead.technician?.name || '—'}</span></p>
+                                  <p><span className="text-slate-500">Issue:</span> <span className="text-slate-800">{job.lead.problem_details || '—'}</span></p>
                                 </div>
-                                <div className="bg-emerald-950/20 p-4 rounded-2xl border border-emerald-500/10 space-y-2 text-sm">
-                                  <h4 className="text-xs font-black text-mint-600 uppercase">Payment Details</h4>
-                                  <p><span className="text-slate-500">Agreed Amount:</span> <span className="text-emerald-300 font-bold">{formatPKR(agreedAmt)}</span></p>
-                                  <p><span className="text-slate-500">Advance Received:</span> <span className="text-blue-300 font-bold">{formatPKR(collected)}</span></p>
-                                  <p><span className="text-slate-500">Remaining Balance:</span> <span className="text-amber-300 font-bold">{formatPKR(balance)}</span></p>
+                                <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-200 space-y-2 text-sm shadow-sm">
+                                  <h4 className="text-xs font-black text-emerald-700 uppercase">Payment Details</h4>
+                                  <p><span className="text-slate-600">Agreed Amount:</span> <span className="text-emerald-800 font-bold">{formatPKR(agreedAmt)}</span></p>
+                                  <p><span className="text-slate-600">Advance Received:</span> <span className="text-blue-800 font-bold">{formatPKR(collected)}</span></p>
+                                  <p><span className="text-slate-600">Remaining Balance:</span> <span className="text-amber-800 font-bold">{formatPKR(balance)}</span></p>
                                 </div>
                               </div>
 
                               {(job.lead.actual_problem || job.lead.repair_details) && (
-                                <div className="bg-amber-950/20 p-4 rounded-2xl border border-amber-500/10 space-y-2 text-sm">
-                                  <h4 className="text-xs font-black text-amber-600 uppercase">Inspection / Technician Notes</h4>
+                                <div className="bg-amber-50 p-4 rounded-2xl border border-amber-200 space-y-2 text-sm shadow-sm">
+                                  <h4 className="text-xs font-black text-amber-800 uppercase">Inspection / Technician Notes</h4>
                                   {job.lead.actual_problem && (
-                                    <p className="text-slate-700"><span className="text-slate-500 font-bold">Actual Problem:</span> {job.lead.actual_problem}</p>
+                                    <p className="text-slate-800"><span className="text-slate-600 font-bold">Actual Problem:</span> {job.lead.actual_problem}</p>
                                   )}
                                   {job.lead.repair_details && (
-                                    <p className="text-slate-700 whitespace-pre-wrap"><span className="text-slate-500 font-bold">Notes:</span> {job.lead.repair_details}</p>
+                                    <p className="text-slate-800 whitespace-pre-wrap"><span className="text-slate-600 font-bold">Notes:</span> {job.lead.repair_details}</p>
                                   )}
                                 </div>
                               )}
 
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div className="bg-blue-950/20 p-4 rounded-2xl border border-blue-500/10 space-y-2 text-sm">
-                                  <h4 className="text-xs font-black text-blue-400 uppercase flex items-center gap-1"><Package size={12} /> Agreed Parts (Technician)</h4>
-                                  <p className="text-slate-700 whitespace-pre-wrap">{agreed || 'No agreed parts recorded at pickup.'}</p>
+                                <div className="bg-blue-50 p-4 rounded-2xl border border-blue-200 space-y-2 text-sm shadow-sm">
+                                  <h4 className="text-xs font-black text-blue-800 uppercase flex items-center gap-1"><Package size={12} /> Agreed Parts (Technician)</h4>
+                                  <p className="text-slate-800 whitespace-pre-wrap">{agreed || 'No agreed parts recorded at pickup.'}</p>
                                 </div>
                               </div>
 
-                              <div className="bg-amber-950/20 p-4 rounded-2xl border border-amber-500/10 space-y-3">
-                                <h4 className="text-xs font-black text-amber-600 uppercase flex items-center gap-1"><Plus size={12} /> Additional Parts Used (Billing)</h4>
+                              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3 shadow-sm">
+                                <h4 className="text-xs font-black text-slate-700 uppercase flex items-center gap-1"><Plus size={12} /> Additional Parts Used (Billing)</h4>
                                 {job.additional_parts ? (
-                                  <pre className="text-xs text-slate-300 whitespace-pre-wrap font-sans bg-white p-3 rounded-xl border border-slate-200/60">{job.additional_parts}</pre>
+                                  <pre className="text-sm text-slate-800 whitespace-pre-wrap font-sans bg-white p-3 rounded-xl border border-slate-200">{job.additional_parts}</pre>
                                 ) : (
-                                  <p className="text-xs text-slate-500 italic">No extra parts added yet.</p>
+                                  <p className="text-sm text-slate-500 italic">No extra parts added yet.</p>
                                 )}
                                 {!isTechnicianMode && job.status !== 'Delivered' && (
                                   <div className="flex gap-2">

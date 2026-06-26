@@ -45,7 +45,7 @@ const PendingApprovalCard: React.FC<PendingApprovalCardProps> = ({ lead, onAppro
   const [zoomImg, setZoomImg] = useState<string | null>(null);
   const [viewOpen, setViewOpen] = useState(false);
   const [expanded, setExpanded] = useState(false);
-  const pics = getLeadPictures(lead).slice(0, 4);
+  const pics = getLeadPictures(lead).slice(0, 6);
   const taskType = getTaskTypeLabel(lead);
   const meta = taskMeta(taskType);
   const TaskIcon = meta.icon;
@@ -54,7 +54,7 @@ const PendingApprovalCard: React.FC<PendingApprovalCardProps> = ({ lead, onAppro
 
   return (
     <>
-      <article className={`w-full max-w-full min-w-0 crm-card rounded-2xl border border-slate-200/70 border-l-4 ${borderAccent[meta.color]} shadow-sm overflow-hidden`}>
+      <article className={`w-full max-w-full min-w-0 crm-card rounded-2xl border border-slate-200/70 border-l-4 ${borderAccent[meta.color]} shadow-sm overflow-visible`}>
         {/* Summary — always visible */}
         <div className="p-4 sm:p-5 space-y-3">
           <div className="flex flex-col sm:flex-row sm:items-start gap-3 min-w-0">
@@ -110,16 +110,16 @@ const PendingApprovalCard: React.FC<PendingApprovalCardProps> = ({ lead, onAppro
 
           {/* Thumbnails — wrap, no horizontal scroll */}
           {(pics.length > 0 || lead.house_image) && (
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-2.5">
               {lead.house_image && (
-                <LeadImageThumb src={lead.house_image} alt="Location" className="w-14 h-14" onZoom={setZoomImg} />
+                <LeadImageThumb src={lead.house_image} alt="Location" className="w-20 h-20 sm:w-24 sm:h-24 rounded-xl" onZoom={setZoomImg} />
               )}
               {pics.map((pic, i) => (
                 <img
                   key={i}
                   src={pic}
                   alt=""
-                  className="w-14 h-14 rounded-lg object-cover border border-slate-200 cursor-pointer"
+                  className="w-20 h-20 sm:w-24 sm:h-24 rounded-xl object-cover border border-slate-200 cursor-pointer hover:ring-2 hover:ring-mint-300/50 transition-shadow"
                   onClick={() => setZoomImg(pic)}
                 />
               ))}
@@ -172,14 +172,14 @@ const PendingApprovalCard: React.FC<PendingApprovalCardProps> = ({ lead, onAppro
           <button
             type="button"
             onClick={() => setExpanded((v) => !v)}
-            className="text-xs font-bold text-slate-500 hover:text-mint-600 flex items-center gap-1 transition-colors"
+            className="w-full sm:w-auto text-xs font-bold text-slate-500 hover:text-mint-600 flex items-center justify-center sm:justify-start gap-1 transition-colors py-2"
           >
             {expanded ? <><ChevronUp size={14} /> Hide details</> : <><ChevronDown size={14} /> Show full details</>}
           </button>
         </div>
 
-        {/* Actions */}
-        <footer className="px-4 sm:px-5 py-3 border-t border-slate-200/60 bg-slate-50/90 flex flex-wrap items-center gap-2">
+        {/* Actions — always visible */}
+        <footer className="px-4 sm:px-5 py-3 border-t border-slate-200/60 bg-slate-50/90 flex flex-wrap items-center gap-2 shrink-0">
           {canApprove && (
             <PendingApprovalActions lead={lead} onDone={onApproved} onView={() => setViewOpen(true)} />
           )}

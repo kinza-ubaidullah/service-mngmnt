@@ -34,12 +34,18 @@ const MapPage = () => {
   const fetchData = async (opts?: { silent?: boolean }) => {
     if (!opts?.silent) setLoading(true);
     try {
-      const [leadsRes, techRes] = await Promise.all([
-        api.get('/leads'),
+      const [leadsRes, techRes] = await Promise.allSettled([
+        api.get('/leads', { timeout: 45000 }),
         api.get('/users/technicians'),
       ]);
-      setLeads(leadsRes.data.leads || []);
-      setTechnicians(techRes.data.technicians || []);
+      if (leadsRes.status === 'fulfilled') {
+        setLeads(leadsRes.value.data.leads || []);
+      } else if (!opts?.silent) {
+        toast.error('Could not load map jobs');
+      }
+      if (techRes.status === 'fulfilled') {
+        setTechnicians(techRes.value.data.technicians || []);
+      }
     } catch (e) {
       console.error(e);
     } finally {
@@ -47,7 +53,7 @@ const MapPage = () => {
     }
   };
 
-  const { refresh, refreshing } = useLiveData(['leads', 'all'], () => fetchData({ silent: true }));
+  const { refresh, refreshing } = useLiveData(['leads', 'users'], () => fetchData({ silent: true }), { pollIntervalMs: 60000 });
 
   useEffect(() => {
     fetchData();
@@ -56,26 +62,30 @@ const MapPage = () => {
   const mapMode: MapViewFilter = filter === 'workshop' ? 'workshop' : 'operational';
 
   const filteredByStatus = useMemo(() => leads.filter((l) => {
-    if (!isMapVisibleForFilter(l, mapMode)) return false;
+    if (filter === 'workshop') return isMapVisibleForFilter(l, 'workshop');
     if (filter === 'new') return l.status === 'New' || l.status === 'Complaint';
     if (filter === 'assigned') return ['Assigned', 'InProgress', 'Reopened'].includes(l.status);
-    return true;
+    return isMapVisibleForFilter(l, mapMode);
   }), [leads, filter, mapMode]);
 
   const visibleLeads = useMemo(() => {
     let list = filteredByStatus;
-    // Don't filter by technician if viewing Unassigned (they have no tech)
-    if (technicianFilter !== 'all' && filter !== 'new') {
+    if (technicianFilter !== 'all') {
       list = list.filter((l) => l.technician?.id === technicianFilter);
     }
     if (!mapSearch.trim()) return list;
     return list.filter((l) => matchesLeadSearch(l, mapSearch));
-  }, [filteredByStatus, mapSearch, technicianFilter, filter]);
+  }, [filteredByStatus, mapSearch, technicianFilter]);
 
   const visibleTechs = useMemo(() => {
-    if (technicianFilter === 'all') return mergedTechnicians;
-    return mergedTechnicians.filter(t => t.id === technicianFilter);
-  }, [mergedTechnicians, technicianFilter]);
+    if (filter === 'new') return [];
+    if (technicianFilter !== 'all') {
+      return mergedTechnicians.filter((t) => t.id === technicianFilter);
+    }
+    if (filter === 'all') return mergedTechnicians;
+    const techIds = new Set(visibleLeads.map((l) => l.technician?.id).filter(Boolean));
+    return mergedTechnicians.filter((t) => techIds.has(t.id));
+  }, [mergedTechnicians, technicianFilter, filter, visibleLeads]);
 
   const counts = {
     new: leads.filter((l) => l.status === 'New' || l.status === 'Complaint').length,
@@ -174,6 +184,7 @@ const MapPage = () => {
             value={technicianFilter === 'all' ? 'all' : String(technicianFilter)}
             onChange={(e) => setTechnicianFilter(e.target.value === 'all' ? 'all' : Number(e.target.value))}
             className="bg-transparent text-teal-100 text-xs font-bold outline-none max-w-[140px]"
+            disabled={filter === 'new'}
           >
             <option value="all" className="text-slate-900">All Technicians</option>
             {technicians.map((t) => (
@@ -192,7 +203,10 @@ const MapPage = () => {
           ] as const).map(([id, label]) => (
             <button
               key={id}
-              onClick={() => setFilter(id)}
+              onClick={() => {
+                setFilter(id);
+                if (id === 'new') setTechnicianFilter('all');
+              }}
               className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-all ${filter === id ? 'bg-amber-500 text-teal-950 shadow-sm' : 'text-teal-300 hover:text-teal-50'}`}
             >
               {label}
@@ -224,6 +238,7 @@ const MapPage = () => {
             showFullMapLink={false}
             showLegend={false}
             showStatsBadge={false}
+            locationKey={`${filter}-${technicianFilter}-${visibleLeads.length}`}
           />
         )}
 

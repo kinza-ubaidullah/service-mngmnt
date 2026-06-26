@@ -103,7 +103,6 @@ const FinanceModule = () => {
   const [activeTab, setActiveTab] = useState<'expenses' | 'recurring' | 'logs' | 'trash'>('expenses');
   const [expenses, setExpenses] = useState<any[]>([]);
   const [schedules, setSchedules] = useState<any[]>([]);
-  const [stats, setStats] = useState<any>(null);
   const [users, setUsers] = useState<any[]>([]);
   const [customFields, setCustomFields] = useState<any[]>([]);
   const [customDataValues, setCustomDataValues] = useState<Record<string, any>>({});
@@ -115,6 +114,11 @@ const FinanceModule = () => {
   const [detailData, setDetailData] = useState<any>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailRefreshing, setDetailRefreshing] = useState(false);
+  const [financeSummary, setFinanceSummary] = useState<{
+    totalRevenue: number;
+    totalExpenses: number;
+    netBalance: number;
+  } | null>(null);
 
   const [formData, setFormData] = useState({
     amount: '',
@@ -125,26 +129,50 @@ const FinanceModule = () => {
     frequency: 'Monthly',
     due_day: '1',
     recipient_id: '',
-    recipient_name: ''
+    recipient_name: '',
+    lead_id: '',
   });
+  const [linkableLeads, setLinkableLeads] = useState<any[]>([]);
 
   const fetchData = async (opts?: { silent?: boolean }) => {
     try {
       if (!opts?.silent) setLoading(true);
-      const [expRes, recurRes, statsRes, usersRes, customRes] = await Promise.all([
+      const [expRes, recurRes, summaryRes, usersRes, customRes] = await Promise.allSettled([
         api.get('/finance/reinvestments'),
         api.get('/finance/recurring'),
-        api.get('/dashboard/admin/stats'),
+        api.get('/finance/summary-details'),
         api.get('/users'),
-        api.get('/finance/custom-fields?module=RecurringPayment').catch(() => ({ data: { fields: [] } }))
+        api.get('/finance/custom-fields?module=RecurringPayment'),
       ]);
-      setExpenses(expRes.data.reinvestments || []);
-      setSchedules(recurRes.data.schedules || []);
-      setStats(statsRes.data.stats || null);
-      setUsers(usersRes.data.users || []);
-      setCustomFields(customRes.data.fields || []);
+
+      if (expRes.status === 'fulfilled') {
+        setExpenses(expRes.value.data.reinvestments || []);
+      }
+      if (recurRes.status === 'fulfilled') {
+        setSchedules(recurRes.value.data.schedules || []);
+      }
+      if (usersRes.status === 'fulfilled') {
+        setUsers(usersRes.value.data.users || []);
+      }
+      if (customRes.status === 'fulfilled') {
+        setCustomFields(customRes.value.data.fields || []);
+      } else {
+        setCustomFields([]);
+      }
+      if (summaryRes.status === 'fulfilled') {
+        const s = summaryRes.value.data;
+        setFinanceSummary({
+          totalRevenue: Number(s.totalRevenue || 0),
+          totalExpenses: Number(s.totalExpenses || 0),
+          netBalance: Number(s.netBalance || 0),
+        });
+        setDetailData(s);
+        setLinkableLeads(s.revenueItems || []);
+      } else if (!opts?.silent) {
+        toast.error('Could not load finance totals');
+      }
     } catch {
-      toast.error('Failed to load financial data');
+      if (!opts?.silent) toast.error('Failed to load financial data');
     } finally {
       if (!opts?.silent) setLoading(false);
     }
@@ -162,14 +190,26 @@ const FinanceModule = () => {
     }
     setSaving(true);
     try {
-      const payload = { ...formData, custom_data: formData.is_recurring ? customDataValues : null };
+      const payload: Record<string, unknown> = {
+        amount: formData.amount,
+        category: formData.category,
+        description: formData.description,
+        date: formData.date,
+        is_recurring: formData.is_recurring,
+        frequency: formData.frequency,
+        due_day: formData.due_day,
+        custom_data: formData.is_recurring ? customDataValues : null,
+      };
+      if (formData.lead_id) payload.lead_id = Number(formData.lead_id);
       if (formData.recipient_name) {
-        payload.description = payload.description ? `${formData.recipient_name} - ${payload.description}` : `Payment to ${formData.recipient_name}`;
+        payload.description = payload.description
+          ? `${formData.recipient_name} - ${payload.description}`
+          : `Payment to ${formData.recipient_name}`;
       }
       await api.post('/finance/reinvestments', payload);
       toast.success(formData.is_recurring ? '📅 Recurring schedule created!' : '✅ Expense recorded!');
       setShowModal(false);
-      setFormData({ amount: '', category: 'Salary', description: '', date: new Date().toISOString().split('T')[0], is_recurring: false, frequency: 'Monthly', due_day: '1', recipient_id: '', recipient_name: '' });
+      setFormData({ amount: '', category: 'Salary', description: '', date: new Date().toISOString().split('T')[0], is_recurring: false, frequency: 'Monthly', due_day: '1', recipient_id: '', recipient_name: '', lead_id: '' });
       setCustomDataValues({});
       fetchData();
     } catch (err: any) {
@@ -194,17 +234,22 @@ const FinanceModule = () => {
       else setDetailLoading(true);
       const res = await api.get('/finance/summary-details');
       setDetailData(res.data);
+      setFinanceSummary({
+        totalRevenue: Number(res.data.totalRevenue || 0),
+        totalExpenses: Number(res.data.totalExpenses || 0),
+        netBalance: Number(res.data.netBalance || 0),
+      });
     } catch {
-      toast.error('Failed to load finance details');
+      if (!opts?.silent) toast.error('Failed to load finance details');
     } finally {
       if (opts?.silent) setDetailRefreshing(false);
       else setDetailLoading(false);
     }
   };
 
-  const openDetailModal = async (type: 'revenue' | 'expenses' | 'net') => {
+  const openDetailModal = (type: 'revenue' | 'expenses' | 'net') => {
     setDetailModal(type);
-    await fetchDetailData();
+    fetchDetailData({ silent: !!detailData });
   };
 
   const handlePayNow = async (schedule: any) => {
@@ -217,9 +262,10 @@ const FinanceModule = () => {
     finally { setPayingId(null); }
   };
 
-  const totalExpenses = expenses.reduce((s, e) => s + Number(e.amount), 0);
-  const revenue = stats?.revenue || 0;
-  const net = revenue - totalExpenses;
+  const listedExpenses = expenses.reduce((s, e) => s + Number(e.amount), 0);
+  const revenue = financeSummary?.totalRevenue ?? 0;
+  const totalExpenses = financeSummary?.totalExpenses ?? listedExpenses;
+  const net = financeSummary?.netBalance ?? revenue - totalExpenses;
 
   const overdueSchedules = schedules.filter(s => getDaysUntilDue(s.next_due) <= 0);
   const upcomingSchedules = schedules.filter(s => getDaysUntilDue(s.next_due) > 0);
@@ -242,7 +288,7 @@ const FinanceModule = () => {
           <TrendingUp size={28} className="mb-3 opacity-80" />
           <p className="text-indigo-200 text-[11px] font-bold uppercase tracking-widest mb-1">Total Revenue</p>
           <h3 className="text-3xl font-black">SAR {revenue.toLocaleString()}</h3>
-          <p className="text-indigo-200/70 text-xs mt-1">From all completed jobs</p>
+          <p className="text-indigo-200/70 text-xs mt-1">From completed jobs (collected)</p>
           <p className="text-indigo-200/50 text-[10px] mt-2 font-bold uppercase tracking-wider opacity-0 group-hover:opacity-100 transition-opacity">Click for task-wise details →</p>
         </motion.button>
 
@@ -253,7 +299,7 @@ const FinanceModule = () => {
           <TrendingDown size={28} className="mb-3 opacity-80" />
           <p className="text-rose-200 text-[11px] font-bold uppercase tracking-widest mb-1">Total Expenses</p>
           <h3 className="text-3xl font-black">SAR {totalExpenses.toLocaleString()}</h3>
-          <p className="text-rose-200/70 text-xs mt-1">{expenses.length} recorded expenses</p>
+          <p className="text-rose-200/70 text-xs mt-1">{totalExpenses.toLocaleString()} SAR · {expenses.length} recorded</p>
           <p className="text-rose-200/50 text-[10px] mt-2 font-bold uppercase tracking-wider opacity-0 group-hover:opacity-100 transition-opacity">Click for expense details →</p>
         </motion.button>
 
@@ -263,8 +309,10 @@ const FinanceModule = () => {
           <div className="absolute -right-6 -bottom-6 w-32 h-32 bg-mint-50 rounded-full blur-3xl" />
           <Banknote size={28} className="mb-3 opacity-80" />
           <p className="text-white/70 text-[11px] font-bold uppercase tracking-widest mb-1">Net Balance</p>
-          <h3 className="text-3xl font-black">SAR {Math.abs(net).toLocaleString()}</h3>
-          <p className="text-white/60 text-xs mt-1">{net < 0 ? '⚠️ Expenses exceed revenue' : '✅ Revenue - Expenses'}</p>
+          <h3 className="text-3xl font-black">{net < 0 ? '− ' : ''}SAR {Math.abs(net).toLocaleString()}</h3>
+          <p className="text-white/60 text-xs mt-1">
+            {net < 0 ? '⚠️ Expenses exceed revenue' : `✅ Revenue (${revenue.toLocaleString()}) − Expenses (${totalExpenses.toLocaleString()})`}
+          </p>
           <p className="text-white/40 text-[10px] mt-2 font-bold uppercase tracking-wider opacity-0 group-hover:opacity-100 transition-opacity">Click for full breakdown →</p>
         </motion.button>
       </div>
@@ -316,7 +364,9 @@ const FinanceModule = () => {
                 <tr className="text-[10px] font-black text-slate-500 uppercase tracking-widest border-b border-slate-200/60 bg-slate-50/80">
                   <th className="px-6 py-4">Date</th>
                   <th className="px-6 py-4">Category</th>
+                  <th className="px-6 py-4">Job / Technician</th>
                   <th className="px-6 py-4">Description</th>
+                  <th className="px-6 py-4">Recorded By</th>
                   <th className="px-6 py-4 text-right">Amount</th>
                   <th className="px-6 py-4 text-right">Action</th>
                 </tr>
@@ -332,7 +382,22 @@ const FinanceModule = () => {
                         {item.category}
                       </span>
                     </td>
-                    <td className="px-6 py-4 text-sm text-slate-400 max-w-[200px] truncate">{item.description || '—'}</td>
+                    <td className="px-6 py-4 text-xs text-slate-600 max-w-[180px]">
+                      {item.lead ? (
+                        <div>
+                          <p className="font-mono font-bold text-mint-600">{item.lead.lead_id}</p>
+                          <p className="text-slate-500">{item.lead.customer?.name}</p>
+                          <p className="text-slate-400">Tech: {item.lead.technician?.name || '—'}</p>
+                          {Number(item.lead.collected_amount) > 0 && (
+                            <p className="text-mint-600 font-semibold">Collected: SAR {Number(item.lead.collected_amount).toLocaleString()}</p>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-slate-400">—</span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-slate-500 max-w-[200px]">{item.description || '—'}</td>
+                    <td className="px-6 py-4 text-xs text-slate-500">{item.user?.name || '—'}</td>
                     <td className="px-6 py-4 text-right">
                       <span className="text-sm font-black text-rose-400">− SAR {Number(item.amount).toLocaleString()}</span>
                     </td>
@@ -481,6 +546,32 @@ const FinanceModule = () => {
                   className="w-full crm-input text-slate-800 px-4 py-3 rounded-xl border border-slate-200/70 outline-none focus:border-mint-400 transition-colors appearance-none">
                   {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
                 </select>
+
+                {/* Link to completed job */}
+                {!formData.is_recurring && linkableLeads.length > 0 && (
+                  <select
+                    value={formData.lead_id}
+                    onChange={(e) => {
+                      const leadId = e.target.value;
+                      const job = linkableLeads.find((j: any) => String(j.id) === leadId);
+                      setFormData({
+                        ...formData,
+                        lead_id: leadId,
+                        description: job
+                          ? `Job ${job.lead_id} · ${job.customer?.name || 'Customer'} · Tech: ${job.technician?.name || 'N/A'} · Collected SAR ${Number(job.amount || 0).toLocaleString()}`
+                          : formData.description,
+                      });
+                    }}
+                    className="w-full crm-input text-slate-800 px-4 py-3 rounded-xl border border-slate-200/70 outline-none focus:border-mint-400 transition-colors appearance-none"
+                  >
+                    <option value="">Link to completed job (optional)</option>
+                    {linkableLeads.map((job: any) => (
+                      <option key={job.id} value={job.id}>
+                        {job.lead_id} — {job.customer?.name} — Tech: {job.technician?.name || 'N/A'} — SAR {Number(job.amount || 0).toLocaleString()}
+                      </option>
+                    ))}
+                  </select>
+                )}
 
                 {/* Recipient Dropdown (Only for Salary) */}
                 {formData.category === 'Salary' && (

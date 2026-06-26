@@ -156,11 +156,33 @@ export const getReinvestments = async (req: Request, res: Response) => {
         is_recurring: false
       },
       include: {
-        user: { select: { name: true } }
+        user: { select: { name: true, role: true } },
       },
       orderBy: { date: 'desc' }
     });
-    res.json({ reinvestments: expenses });
+
+    const leadIds = expenses.map((e) => e.lead_id).filter(Boolean) as number[];
+    const linkedLeads = leadIds.length
+      ? await prisma.lead.findMany({
+          where: { id: { in: leadIds } },
+          select: {
+            id: true,
+            lead_id: true,
+            product_type: true,
+            collected_amount: true,
+            customer: { select: { name: true, phone: true, area: true } },
+            technician: { select: { id: true, name: true, phone: true } },
+          },
+        })
+      : [];
+    const leadMap = Object.fromEntries(linkedLeads.map((l) => [l.id, l]));
+
+    res.json({
+      reinvestments: expenses.map((e) => ({
+        ...e,
+        lead: e.lead_id ? leadMap[e.lead_id] || null : null,
+      })),
+    });
   } catch (error) {
     res.status(500).json({ message: 'Error fetching reinvestments' });
   }
@@ -168,7 +190,7 @@ export const getReinvestments = async (req: Request, res: Response) => {
 
 export const addReinvestment = async (req: Request, res: Response) => {
   try {
-    const { amount, category, description, date, is_recurring, frequency, due_day, custom_data } = req.body;
+    const { amount, category, description, date, is_recurring, frequency, due_day, custom_data, lead_id } = req.body;
     const user = (req as any).user;
 
     const data: any = {
@@ -180,6 +202,10 @@ export const addReinvestment = async (req: Request, res: Response) => {
       is_recurring: !!is_recurring,
       custom_data: custom_data || null
     };
+
+    if (lead_id) {
+      data.lead_id = Number(lead_id);
+    }
 
     if (is_recurring) {
       data.frequency = frequency || 'Monthly';

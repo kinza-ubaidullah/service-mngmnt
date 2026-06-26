@@ -16,6 +16,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 import AuthBootstrap from './components/AuthBootstrap';
 import LocationServices from './components/LocationServices';
 import ThemeProvider from './components/ThemeProvider';
+import GlobalCopyHandler from './components/GlobalCopyHandler';
 import { homePathForRole } from './utils/roleRoutes';
 
 const RootRedirect = () => {
@@ -119,6 +120,7 @@ function App() {
         }}
       />
       <AuthBootstrap>
+        <GlobalCopyHandler />
         <LocationServices />
         <Router>
           <AppRoutes />

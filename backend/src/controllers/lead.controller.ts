@@ -3,6 +3,7 @@ import { prisma } from '../utils/prisma';
 import { generateLeadId } from '../utils/idGenerator';
 import { resolveLeadCoords, expandAndParseGoogleMapsUrl } from '../utils/locationResolver';
 import { broadcastDataChange } from '../utils/broadcast';
+import { liteLeadForList } from '../utils/leadListLite';
 import { JobStatus } from '@prisma/client';
 
 type ProductInput = { product_type: string; problem_details?: string | null };
@@ -206,6 +207,7 @@ async function replaceLeadProducts(leadId: number, products: ProductInput[]) {
   });
 }
 
+
 // Get all leads (with filters)
 export const getLeads = async (req: Request, res: Response) => {
   try {
@@ -219,30 +221,36 @@ export const getLeads = async (req: Request, res: Response) => {
       orderBy: { created_at: 'desc' }
     });
 
-    // Backfill missing coordinates for existing leads
-    await Promise.all(leads.map(async (lead) => {
-      if (lead.lat != null && lead.lng != null) return;
-      const areaRecord = lead.customer?.area
-        ? await prisma.area.findFirst({ where: { name: lead.customer.area } })
-        : null;
-      const coords = resolveLeadCoords({
-        area: lead.customer?.area,
-        google_map_link: lead.customer?.google_map_link,
-        exact_address: lead.exact_address || lead.customer?.exact_address,
-        areaLat: areaRecord?.lat,
-        areaLng: areaRecord?.lng,
-      });
-      if (coords) {
-        await prisma.lead.update({
-          where: { id: lead.id },
-          data: { lat: coords.lat, lng: coords.lng }
-        });
-        lead.lat = coords.lat;
-        lead.lng = coords.lng;
-      }
-    }));
+    res.json({ leads: leads.map((l) => liteLeadForList(l as Record<string, unknown>)) });
 
-    res.json({ leads });
+    // Backfill coords in background — never block the list response
+    const needsCoords = leads.filter((l) => l.lat == null || l.lng == null).slice(0, 8);
+    if (needsCoords.length > 0) {
+      setImmediate(async () => {
+        for (const lead of needsCoords) {
+          try {
+            const areaRecord = lead.customer?.area
+              ? await prisma.area.findFirst({ where: { name: lead.customer.area } })
+              : null;
+            const coords = resolveLeadCoords({
+              area: lead.customer?.area,
+              google_map_link: lead.customer?.google_map_link,
+              exact_address: lead.exact_address || lead.customer?.exact_address,
+              areaLat: areaRecord?.lat,
+              areaLng: areaRecord?.lng,
+            });
+            if (coords) {
+              await prisma.lead.update({
+                where: { id: lead.id },
+                data: { lat: coords.lat, lng: coords.lng },
+              });
+            }
+          } catch (err) {
+            console.warn('[leads] coord backfill skipped for', lead.id, err);
+          }
+        }
+      });
+    }
   } catch (error) {
     console.error('Error fetching leads:', error);
     res.status(500).json({ message: 'Failed to fetch leads' });

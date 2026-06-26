@@ -1,24 +1,20 @@
 import { useState, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Routes, Route, useLocation, Navigate } from 'react-router-dom';
 import type { RootState } from '../store';
 import { logout } from '../store/slices/authSlice';
 import { 
-  LogOut, LayoutDashboard, Users, ClipboardList, 
+  ClipboardList, 
   Wrench, DollarSign, AlertCircle,
-  Activity, ArrowUpRight, Clock, Settings, Loader2, Download, RotateCcw, Trash2, Menu, X, Search, FileText, Image, Map, Eye, Phone, ExternalLink
+  Activity, ArrowUpRight, Clock, Loader2, RotateCcw, X, Search, Eye
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../services/api';
 import { motion } from 'framer-motion';
-import { generateInvoicePDF } from '../utils/invoiceGenerator';
-import { generateInspectionReportPDF } from '../utils/inspectionReportGenerator';
-import { generateWorkshopPickupPDF } from '../utils/workshopPickupGenerator';
 import WorkshopModule from '../components/WorkshopModule';
 import FinanceModule from '../components/FinanceModule';
 import StaffModule from '../components/StaffModule';
 import SettingsModule from '../components/SettingsModule';
-import LeadsModule from '../components/LeadsModule';
 import LeadHistoryModal from '../components/LeadHistoryModal';
 import PendingApprovalActions from '../components/PendingApprovalActions';
 import PendingApprovalCard from '../components/PendingApprovalCard';
@@ -28,12 +24,15 @@ import ImageZoomModal from '../components/ImageZoomModal';
 import LeadImageThumb from '../components/LeadImageThumb';
 import CopyText from '../components/CopyText';
 import RefreshButton from '../components/RefreshButton';
-import ThemeToggle from '../components/ThemeToggle';
 import TechnicianPaymentsModal from '../components/TechnicianPaymentsModal';
 import { useLiveData } from '../hooks/useLiveData';
-import { matchesLeadSearch, getTaskTypeLabel, isRejectedLead } from '../utils/leadHelpers';
-import GlobalLeadSearch from '../components/GlobalLeadSearch';
+import { matchesLeadSearch, isRejectedLead } from '../utils/leadHelpers';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import FinalApprovalListPage from '../components/admin/FinalApprovalListPage';
+import RecentOperationsListPage from '../components/admin/RecentOperationsListPage';
+import LeadsOverviewPage from '../components/admin/LeadsOverviewPage';
+import LeadsCategoryRoute from '../components/admin/LeadsCategoryRoute';
+import AdminTopNav from '../components/admin/AdminTopNav';
 
 const getLeadPictures = (lead: any): string[] => {
   if (!lead?.item_pictures) return [];
@@ -53,9 +52,15 @@ const emptyDashboard = {
 const AdminDashboard = () => {
   const dispatch = useDispatch();
   const navigate = useNavigate();
+  const location = useLocation();
   const user = useSelector((state: RootState) => state.auth.user);
+  const adminSubPath = location.pathname.replace(/^\/admin\/?/, '');
+  const isOverviewSubPage = adminSubPath === 'final-approval' || adminSubPath === 'recent-operations';
+  const isLeadsRoute = adminSubPath === 'leads' || adminSubPath.startsWith('leads/');
 
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<any>(emptyDashboard);
+  const [dashboardStale, setDashboardStale] = useState(false);
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [earningsReport, setEarningsReport] = useState<any[]>([]);
   const [chartData, setChartData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -67,31 +72,31 @@ const AdminDashboard = () => {
   const [selectedLead, setSelectedLead] = useState<any>(null);
   const [zoomImg, setZoomImg] = useState<string | null>(null);
   const [paymentsTech, setPaymentsTech] = useState<{ id: number; name: string } | null>(null);
+  const [chartPeriod, setChartPeriod] = useState('this-week');
 
   const [activeTab, setActiveTab] = useState(() => sessionStorage.getItem('adminActiveTab') || 'Overview');
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     sessionStorage.setItem('adminActiveTab', activeTab);
   }, [activeTab]);
 
+  useEffect(() => {
+    if (isLeadsRoute) {
+      setActiveTab('Service Leads');
+    } else if (isOverviewSubPage) {
+      setActiveTab('Overview');
+    }
+  }, [adminSubPath, isLeadsRoute, isOverviewSubPage]);
+
   const fetchData = async (opts?: { silent?: boolean }) => {
     try {
       if (!opts?.silent) setLoading(true);
-      const [statsRes, earningsRes, chartRes, walletsRes] = await Promise.allSettled([
-        api.get('/dashboard/admin/stats'),
-        api.get('/finance/technician-report'),
-        api.get('/finance/chart-data'),
-        api.get('/settlements/all'),
-      ]);
 
-      const stats = statsRes.status === 'fulfilled' ? statsRes.value.data : null;
-      const earnings = earningsRes.status === 'fulfilled' ? earningsRes.value.data : null;
-      const chart = chartRes.status === 'fulfilled' ? chartRes.value.data : null;
-      const wallets = walletsRes.status === 'fulfilled' ? walletsRes.value.data : { wallets: [] };
+      const statsRes = await Promise.allSettled([api.get('/dashboard/admin/stats')]);
+      const stats = statsRes[0].status === 'fulfilled' ? statsRes[0].value.data : null;
 
       if (!stats) {
-        const reason = statsRes.status === 'rejected' ? statsRes.reason : null;
+        const reason = statsRes[0].status === 'rejected' ? statsRes[0].reason : null;
         const status = reason?.response?.status;
         console.error('Dashboard stats failed:', reason || 'empty');
         if (status === 401) {
@@ -99,14 +104,31 @@ const AdminDashboard = () => {
           navigate('/login');
           return;
         }
-        setEarningsReport([]);
-        setData(emptyDashboard);
-        setChartData([]);
-        if (!opts?.silent) {
-          toast.error('Dashboard loaded with limited data — check SQL update on server');
+        if (opts?.silent) {
+          setDashboardStale(true);
+          return;
         }
+        setEarningsReport((prev) => prev.length ? prev : []);
+        if (!data || data === emptyDashboard) setData(emptyDashboard);
+        setDashboardStale(true);
+        toast.error('Could not refresh dashboard — showing last loaded data');
         return;
       }
+
+      setDashboardStale(false);
+      setHasLoadedOnce(true);
+      setData(stats || emptyDashboard);
+      if (!opts?.silent) setLoading(false);
+
+      const [earningsRes, chartRes, walletsRes] = await Promise.allSettled([
+        api.get('/finance/technician-report'),
+        api.get('/finance/chart-data'),
+        api.get('/settlements/all'),
+      ]);
+
+      const earnings = earningsRes.status === 'fulfilled' ? earningsRes.value.data : null;
+      const chart = chartRes.status === 'fulfilled' ? chartRes.value.data : null;
+      const wallets = walletsRes.status === 'fulfilled' ? walletsRes.value.data : { wallets: [] };
 
       const walletMap = Object.fromEntries((wallets.wallets || []).map((w: any) => [w.id, w]));
       const report = (earnings?.report || []).map((t: any) => ({
@@ -115,50 +137,44 @@ const AdminDashboard = () => {
         pendingCount: walletMap[t.id]?.pendingCount || 0,
       }));
       setEarningsReport(report);
-      setData(stats || { stats: { revenue: 0, newLeads: 0, assignedJobs: 0, workshopJobs: 0 }, recentLeads: [], technicians: [] });
       setChartData(chart?.chartData || []);
     } catch (error) {
       console.error('Dashboard load error:', error);
-      setEarningsReport([]);
-      setData(emptyDashboard);
-      setChartData([]);
-      if (!opts?.silent) toast.error('Dashboard loaded with limited data');
+      if (opts?.silent) {
+        setDashboardStale(true);
+        return;
+      }
+      if (!data || data === emptyDashboard) {
+        setEarningsReport([]);
+        setData(emptyDashboard);
+        setChartData([]);
+      }
+      setDashboardStale(true);
+      toast.error('Could not load dashboard — retry or check connection');
     } finally {
       setLoading(false);
     }
   };
 
-  const { refresh, refreshing } = useLiveData(['all', 'leads', 'workshop', 'finance', 'dashboard', 'users'], () => fetchData({ silent: true }));
+  const skipDashboardBlock = isOverviewSubPage || isLeadsRoute;
+
+  const { refresh, refreshing } = useLiveData(
+    ['dashboard', 'finance', 'leads'],
+    () => fetchData({ silent: true }),
+    { pollIntervalMs: 60000 }
+  );
 
   useEffect(() => {
-    fetchData();
+    fetchData({ silent: skipDashboardBlock });
   }, []);
 
-  if (loading && !data) {
-    return (
-      <div className="crm-shell flex items-center justify-center">
-        <Loader2 className="animate-spin text-mint-500" size={40} />
-      </div>
-    );
-  }
-
-  if (!data) {
-    return (
-      <div className="crm-shell flex flex-col items-center justify-center p-6 text-center">
-        <div className="w-20 h-20 bg-red-500/20 rounded-full flex items-center justify-center mb-6">
-          <AlertCircle size={40} className="text-red-400" />
-        </div>
-        <h2 className="text-3xl font-black text-slate-800 mb-2">Failed to Load Dashboard</h2>
-        <p className="text-slate-400 mb-8 font-medium">There was a problem connecting to the server. Please check your connection or try again.</p>
-        <button 
-          onClick={() => fetchData()} 
-          className="crm-btn-primary px-8 py-3 rounded-2xl font-black shadow-lg shadow-indigo-600/20 flex items-center gap-2"
-        >
-          <RotateCcw size={20} /> Retry Loading
-        </button>
-      </div>
-    );
-  }
+  const handleNavigateTab = (tab: string) => {
+    if (tab === 'Overview') navigate('/admin');
+    else if (tab === 'Service Leads') navigate('/admin/leads');
+    else if (tab === 'Settings' || tab === 'Trash Bin') navigate('/admin');
+    else navigate('/admin');
+    setActiveTab(tab);
+  };
 
   const handleGlobalSearch = async () => {
     const q = globalSearch.trim();
@@ -168,6 +184,7 @@ const AdminDashboard = () => {
       const allLeads = res.data.leads || res.data || [];
       const match = allLeads.find((l: any) => matchesLeadSearch(l, q));
       setLeadsSearch(q);
+      navigate('/admin/leads');
       setActiveTab('Service Leads');
       if (match) {
         toast.success(`Found: ${match.lead_id}`);
@@ -178,6 +195,25 @@ const AdminDashboard = () => {
       toast.error('Search failed');
     }
   };
+
+  if (loading && !hasLoadedOnce && !skipDashboardBlock) {
+    return (
+      <div className="crm-shell flex flex-col min-h-screen">
+        <AdminTopNav
+          activeTab={activeTab}
+          globalSearch={globalSearch}
+          onGlobalSearchChange={setGlobalSearch}
+          onGlobalSearchSubmit={handleGlobalSearch}
+          onNavigateTab={handleNavigateTab}
+          onNavigatePath={(path) => navigate(path)}
+          onLogout={() => dispatch(logout())}
+        />
+        <div className="flex-1 flex items-center justify-center">
+          <Loader2 className="animate-spin text-mint-500" size={40} />
+        </div>
+      </div>
+    );
+  }
 
   const buildTechWeeklyChart = (jobs: any[]) => {
     const chartMap: Record<string, { date: string; revenue: number }> = {};
@@ -194,32 +230,18 @@ const AdminDashboard = () => {
     return Object.values(chartMap);
   };
 
-  const navItems = [
-    { icon: LayoutDashboard, label: 'Overview' },
-    { icon: ClipboardList, label: 'Service Leads' },
-    { icon: Map, label: 'Live Map', path: '/map' },
-    { icon: Wrench, label: 'Workshop' },
-    { icon: Users, label: 'Staff Management' },
-    { icon: DollarSign, label: 'Finance' },
-    { icon: Activity, label: 'System Logs' },
-    { icon: ExternalLink, label: 'Tech Panel', path: '/tech' },
-    { icon: ExternalLink, label: 'Call Center', path: '/callcenter' },
-    { icon: ExternalLink, label: 'Workshop Panel', path: '/workshop' },
-    { icon: Trash2, label: 'Trash Bin' },
-    { icon: Settings, label: 'Settings' },
-  ];
-
   return (
-    <div className="crm-shell text-slate-800 flex font-sans min-h-screen">
+    <div className="crm-shell text-slate-800 flex flex-col font-sans min-h-screen">
+      <AdminTopNav
+        activeTab={activeTab}
+        globalSearch={globalSearch}
+        onGlobalSearchChange={setGlobalSearch}
+        onGlobalSearchSubmit={handleGlobalSearch}
+        onNavigateTab={handleNavigateTab}
+        onNavigatePath={(path) => navigate(path)}
+        onLogout={() => dispatch(logout())}
+      />
       
-      {/* Mobile Overlay */}
-      {mobileMenuOpen && (
-        <div 
-          className="fixed inset-0 crm-modal-overlay z-40 lg:hidden"
-          onClick={() => setMobileMenuOpen(false)}
-        />
-      )}
-
       {/* Attention Details Modal */}
       {selectedAttention && (
         <div className="fixed inset-0 crm-modal-overlay backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -264,87 +286,34 @@ const AdminDashboard = () => {
         </div>
       )}
 
-      {/* Sidebar */}
-      <aside className={`fixed lg:sticky top-0 h-screen w-64 crm-sidebar flex flex-col z-50 transition-transform duration-300 ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
-        <div className="p-8 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="crm-icon-box p-2">
-              <LayoutDashboard size={22} className="text-[#1a3d2e]" />
-            </div>
-            <h1 className="text-xl font-bold text-slate-800 tracking-tight">ServiceOS</h1>
-          </div>
-          <button className="lg:hidden text-slate-400" onClick={() => setMobileMenuOpen(false)}>
-            <X size={24} />
-          </button>
-        </div>
-
-        <nav className="flex-1 px-4 space-y-2 overflow-y-auto">
-          {navItems.map((item, idx) => (
-            <button 
-              key={idx}
-              onClick={() => {
-                if ((item as any).path) {
-                  navigate((item as any).path);
-                  setMobileMenuOpen(false);
-                  return;
-                }
-                setActiveTab(item.label);
-                setMobileMenuOpen(false);
-              }}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300
-                ${activeTab === item.label ? 'bg-mint-100 text-mint-600 border border-mint-300/40' : 'text-slate-400 hover:bg-mint-50/80 hover:text-slate-700'}
-              `}
-            >
-              <item.icon size={18} />
-              <span className="font-semibold text-sm">{item.label}</span>
-            </button>
-          ))}
-        </nav>
-
-        <div className="p-4 border-t border-slate-200/60">
-          <button 
-            onClick={() => dispatch(logout())}
-            className="w-full flex items-center gap-3 px-4 py-3 text-slate-400 hover:bg-red-500/10 hover:text-red-400 rounded-xl transition-all"
-          >
-            <LogOut size={18} />
-            <span className="font-semibold text-sm">Logout</span>
-          </button>
-        </div>
-      </aside>
-
       {/* Main Content */}
-      <main className="flex-1 flex flex-col min-w-0 overflow-hidden h-screen">
-        
-        {/* Top Header */}
-        <header className="h-auto min-h-[5rem] crm-card/30 backdrop-blur-md border-b border-slate-200/60 flex flex-wrap items-center justify-between gap-3 px-4 lg:px-8 py-3 shrink-0">
-          <div className="flex items-center gap-3 min-w-0">
-            <button className="lg:hidden text-slate-400 hover:text-slate-800 shrink-0" onClick={() => setMobileMenuOpen(true)}>
-              <Menu size={24} />
-            </button>
-            <div className="min-w-0">
-              <h2 className="text-lg font-bold text-slate-800 truncate">Dashboard Overview</h2>
-              <p className="text-xs text-slate-400 font-medium hidden sm:block truncate">Welcome back, {user?.name}</p>
+      <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden min-w-0 max-w-[1600px] w-full mx-auto p-4 lg:p-6 space-y-5 lg:space-y-6">
+          {dashboardStale && (
+            <div className="flex flex-wrap items-center justify-between gap-3 crm-card border border-amber-200 bg-amber-50 rounded-xl px-4 py-3">
+              <p className="text-sm text-amber-800 font-medium">Live refresh failed — showing last saved data.</p>
+              <button
+                type="button"
+                onClick={() => fetchData()}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white border border-amber-200 text-amber-800 text-xs font-bold hover:bg-amber-100"
+              >
+                <RotateCcw size={14} /> Retry
+              </button>
             </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full sm:w-auto sm:flex-1 sm:justify-end min-w-0">
-            <GlobalLeadSearch
-              value={globalSearch}
-              onChange={setGlobalSearch}
-              onSubmit={handleGlobalSearch}
-              placeholder="Search lead ID..."
-              className="w-full sm:flex-1 sm:max-w-xs order-last sm:order-none"
+          )}
+          <Routes>
+            <Route
+              path="final-approval"
+              element={<FinalApprovalListPage onBack={() => navigate('/admin')} />}
             />
-            <RefreshButton onClick={refresh} loading={refreshing} />
-            <ThemeToggle showLabel />
-            <div className="bg-mint-100 text-mint-600 px-3 py-1.5 rounded-full border border-mint-300/40 text-[10px] font-bold flex items-center gap-2 shrink-0">
-              <Activity size={14} className="animate-pulse" /> <span className="hidden sm:inline">Live Stats</span>
-            </div>
-          </div>
-        </header>
-
-        {/* Scrollable Content */}
-        <div className="flex-1 overflow-y-auto overflow-x-hidden min-w-0 max-w-full p-4 lg:p-6 space-y-5 lg:space-y-6">
-          
+            <Route
+              path="recent-operations"
+              element={<RecentOperationsListPage onBack={() => navigate('/admin')} />}
+            />
+            <Route path="leads" element={<LeadsOverviewPage externalSearch={leadsSearch} />} />
+            <Route path="leads/:category" element={<LeadsCategoryRoute />} />
+            <Route path="*" element={
+          <>
           {activeTab === 'Overview' ? (
             <>
               {/* Stats Grid */}
@@ -357,7 +326,15 @@ const AdminDashboard = () => {
             ].map((stat, idx) => (
               <motion.div 
                 key={idx}
-                onClick={() => setActiveTab(stat.tab)}
+                onClick={() => {
+                  if (stat.tab === 'Service Leads') {
+                    navigate('/admin/leads');
+                    setActiveTab('Service Leads');
+                  } else {
+                    navigate('/admin');
+                    setActiveTab(stat.tab);
+                  }
+                }}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: idx * 0.1 }}
@@ -380,75 +357,53 @@ const AdminDashboard = () => {
             ))}
           </div>
 
-          {/* Final Approval */}
-          <section className="min-w-0 max-w-full space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h3 className="text-lg font-black text-slate-800 flex items-center gap-2 flex-wrap">
-                <ClipboardList size={20} className="text-pink-500 shrink-0" />
-                Final Approval
-                <span className="text-xs font-black bg-pink-100 text-pink-600 px-2.5 py-0.5 rounded-full border border-pink-200">
-                  {(data?.pendingApprovalLeads || []).length}
-                </span>
-              </h3>
-              <p className="text-xs text-slate-500 w-full sm:w-auto">Tap a card to expand · Approve or reject below</p>
-            </div>
-
-            {(data?.pendingApprovalLeads || []).length === 0 ? (
-              <div className="crm-card border border-dashed border-slate-300 rounded-2xl py-10 text-center">
-                <ClipboardList size={28} className="mx-auto text-slate-300 mb-2" />
-                <p className="text-sm font-semibold text-slate-500">No tasks awaiting approval</p>
-              </div>
-            ) : (
-              <div className="flex flex-col gap-4 min-w-0">
-                {(data?.pendingApprovalLeads || []).map((lead: any) => (
-                  <PendingApprovalCard key={lead.id} lead={lead} canApprove onApproved={() => fetchData({ silent: true })} />
-                ))}
-              </div>
-            )}
-          </section>
-
-          {/* Rejected submissions */}
-          {(data?.rejectedLeads || []).length > 0 && (
-            <div className="crm-card border border-rose-200/60 rounded-[2rem] overflow-hidden shadow-xl">
-              <div className="p-5 lg:p-8 border-b border-rose-200/60 bg-rose-50/50">
-                <h3 className="text-lg font-black text-slate-800 flex items-center gap-2">
-                  <AlertCircle size={20} className="text-rose-500" />
-                  Rejected Submissions
-                  <span className="text-xs font-black bg-rose-100 text-rose-600 px-2.5 py-1 rounded-full">{(data?.rejectedLeads || []).length}</span>
+          {/* Final Approval + Recent Operations */}
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 lg:gap-6 min-w-0 max-w-full">
+            <section className="crm-card border rounded-2xl flex flex-col shadow-lg min-w-0 max-w-full self-start">
+              <div className="p-4 lg:p-5 border-b border-slate-200/60 flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
+                  <ClipboardList size={18} className="text-pink-500 shrink-0" />
+                  Final Approval
+                  <span className="text-xs font-black bg-pink-100 text-pink-600 px-2 py-0.5 rounded-full border border-pink-200">
+                    {(data?.pendingApprovalLeads || []).length}
+                  </span>
                 </h3>
+                <button
+                  type="button"
+                  onClick={() => navigate('/admin/final-approval')}
+                  className="text-xs font-bold text-slate-500 hover:text-mint-600 flex items-center gap-1 shrink-0"
+                >
+                  View All <ArrowUpRight size={14} />
+                </button>
               </div>
-              <div className="divide-y divide-slate-200/60">
-                {(data?.rejectedLeads || []).map((lead: any) => (
-                  <div key={lead.id} className="p-4 lg:px-8 lg:py-5 flex flex-wrap justify-between gap-3 hover:bg-rose-50/30 cursor-pointer" onClick={() => setSelectedLead(lead)}>
-                    <div>
-                      <p className="font-mono font-bold text-mint-600 text-sm">{lead.lead_id}</p>
-                      <p className="text-sm font-semibold text-slate-800">{lead.customer?.name} · {lead.product_type}</p>
-                      <p className="text-xs text-rose-600 mt-1 font-medium">{lead.rejection_note}</p>
-                    </div>
-                    <div className="text-right text-xs text-slate-500">
-                      <p>{lead.technician?.name || 'Unassigned'}</p>
-                      <button type="button" onClick={(e) => { e.stopPropagation(); setSelectedLead(lead); }} className="mt-2 text-mint-600 font-bold flex items-center gap-1 ml-auto">
-                        <Eye size={12} /> View
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
 
-          {/* Activity Section */}
-          <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 lg:gap-6 min-w-0 max-w-full">
-            
-            {/* Recent Leads */}
-            <div className="xl:col-span-2 crm-card border rounded-2xl overflow-hidden flex flex-col shadow-lg min-w-0 max-w-full">
-              <div className="p-4 lg:p-6 border-b border-slate-200/60 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+              <div className="p-4 lg:p-5 flex-1 min-h-0 overflow-visible">
+                {(data?.pendingApprovalLeads || []).length === 0 ? (
+                  <div className="border border-dashed border-slate-300 rounded-2xl py-10 text-center">
+                    <ClipboardList size={28} className="mx-auto text-slate-300 mb-2" />
+                    <p className="text-sm font-semibold text-slate-500">No tasks awaiting approval</p>
+                  </div>
+                ) : (
+                  <div className="min-w-0">
+                    <PendingApprovalCard
+                      lead={(data?.pendingApprovalLeads || [])[0]}
+                      canApprove
+                      onApproved={() => fetchData({ silent: true })}
+                    />
+                  </div>
+                )}
+              </div>
+            </section>
+
+            {/* Recent Operations preview */}
+            <div className="crm-card border rounded-2xl overflow-hidden flex flex-col shadow-lg min-w-0 max-w-full">
+              <div className="p-4 lg:p-5 border-b border-slate-200/60 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                 <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
                   <Clock size={18} className="text-mint-600 shrink-0" />
                   Recent Operations
                 </h3>
                 <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto min-w-0">
-                  <div className="relative flex-1 min-w-[140px] sm:w-44 group">
+                  <div className="relative flex-1 min-w-[140px] sm:w-40 group">
                     <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
                     <input 
                       type="text" 
@@ -458,8 +413,11 @@ const AdminDashboard = () => {
                       className="w-full bg-white border border-slate-200/60 rounded-xl py-2 pl-9 pr-3 text-xs outline-none focus:border-mint-400/50 text-slate-800"
                     />
                   </div>
-                  <RefreshButton onClick={refresh} loading={refreshing} />
-                  <button onClick={() => setActiveTab('Service Leads')} className="text-xs font-bold text-mint-600 hover:text-mint-700 flex items-center gap-1 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => navigate('/admin/recent-operations')}
+                    className="text-xs font-bold text-slate-500 hover:text-mint-600 flex items-center gap-1 shrink-0"
+                  >
                     View All <ArrowUpRight size={14} />
                   </button>
                 </div>
@@ -467,7 +425,7 @@ const AdminDashboard = () => {
 
               {/* Mobile cards */}
               <div className="lg:hidden divide-y divide-slate-100 max-h-[420px] overflow-y-auto">
-                {((data?.recentLeads || []).filter((lead: any) => lead.status !== 'PendingApproval' && matchesLeadSearch(lead, recentSearch))).map((lead: any, idx: number) => (
+                {((data?.recentLeads || []).filter((lead: any) => lead.status !== 'PendingApproval' && matchesLeadSearch(lead, recentSearch))).slice(0, 5).map((lead: any, idx: number) => (
                   <button
                     key={idx}
                     type="button"
@@ -498,7 +456,7 @@ const AdminDashboard = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {((data?.recentLeads || []).filter((lead: any) => lead.status !== 'PendingApproval' && matchesLeadSearch(lead, recentSearch))).map((lead: any, idx: number) => (
+                    {((data?.recentLeads || []).filter((lead: any) => lead.status !== 'PendingApproval' && matchesLeadSearch(lead, recentSearch))).slice(0, 5).map((lead: any, idx: number) => (
                       <tr key={idx} onClick={() => setSelectedLead(lead)} className="group hover:bg-slate-50/80 transition-colors cursor-pointer text-sm">
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2 min-w-0">
@@ -539,14 +497,55 @@ const AdminDashboard = () => {
                 </table>
               </div>
             </div>
+          </div>
 
-            {/* Sidebar widgets */}
-            <div className="space-y-4 min-w-0">
-              <div className="crm-card border rounded-2xl p-4 lg:p-6 shadow-lg min-w-0 overflow-hidden">
-                <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2 mb-4">
-                  <Activity size={14} className="text-mint-600" />
+          {/* Rejected submissions */}
+          {(data?.rejectedLeads || []).length > 0 && (
+            <div className="crm-card border border-rose-200/60 rounded-[2rem] overflow-hidden shadow-xl">
+              <div className="p-5 lg:p-8 border-b border-rose-200/60 bg-rose-50/50">
+                <h3 className="text-lg font-black text-slate-800 flex items-center gap-2">
+                  <AlertCircle size={20} className="text-rose-500" />
+                  Rejected Submissions
+                  <span className="text-xs font-black bg-rose-100 text-rose-600 px-2.5 py-1 rounded-full">{(data?.rejectedLeads || []).length}</span>
+                </h3>
+              </div>
+              <div className="divide-y divide-slate-200/60">
+                {(data?.rejectedLeads || []).map((lead: any) => (
+                  <div key={lead.id} className="p-4 lg:px-8 lg:py-5 flex flex-wrap justify-between gap-3 hover:bg-rose-50/30 cursor-pointer" onClick={() => setSelectedLead(lead)}>
+                    <div>
+                      <p className="font-mono font-bold text-mint-600 text-sm">{lead.lead_id}</p>
+                      <p className="text-sm font-semibold text-slate-800">{lead.customer?.name} · {lead.product_type}</p>
+                      <p className="text-xs text-rose-600 mt-1 font-medium">{lead.rejection_note}</p>
+                    </div>
+                    <div className="text-right text-xs text-slate-500">
+                      <p>{lead.technician?.name || 'Unassigned'}</p>
+                      <button type="button" onClick={(e) => { e.stopPropagation(); setSelectedLead(lead); }} className="mt-2 text-mint-600 font-bold flex items-center gap-1 ml-auto">
+                        <Eye size={12} /> View
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Weekly Performance + Attention Needed */}
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 lg:gap-6 min-w-0 max-w-full">
+            <div className="crm-card border rounded-2xl p-4 lg:p-6 shadow-lg min-w-0 overflow-hidden">
+              <div className="flex items-center justify-between gap-2 mb-4">
+                <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                  <Activity size={16} className="text-mint-600" />
                   Weekly Performance
                 </h3>
+                <select
+                  value={chartPeriod}
+                  onChange={(e) => setChartPeriod(e.target.value)}
+                  className="text-xs font-semibold text-slate-600 border border-slate-200 rounded-lg px-2 py-1.5 bg-white outline-none focus:border-mint-400"
+                >
+                  <option value="this-week">This Week</option>
+                  <option value="last-week">Last Week</option>
+                </select>
+              </div>
                 <div className="h-[220px] w-full min-w-0">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={chartData}>
@@ -565,43 +564,42 @@ const AdminDashboard = () => {
                 </div>
               </div>
 
-              <div className="crm-card border rounded-2xl p-4 lg:p-6 space-y-4 min-w-0">
-                <div className="flex justify-between items-center gap-2">
-                  <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
-                    <AlertCircle size={14} className="text-amber-600 shrink-0" />
+              <div className="crm-card border rounded-2xl p-4 lg:p-6 shadow-lg min-w-0">
+                <div className="flex justify-between items-center gap-2 mb-4">
+                  <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                    <AlertCircle size={16} className="text-amber-500 shrink-0" />
                     Attention Needed
                   </h3>
                   <RefreshButton onClick={refresh} loading={refreshing} />
                 </div>
-                <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-3">
                   {data?.attentionNeeded?.length > 0 ? (
                     data.attentionNeeded.map((alert: any, idx: number) => (
-                      <div 
-                        key={idx} 
+                      <button
+                        key={idx}
+                        type="button"
                         onClick={() => setSelectedAttention(alert)}
-                        className="flex items-center gap-4 group cursor-pointer bg-slate-50/80 p-3 rounded-xl border border-slate-200/60 hover:border-slate-200/70 transition-all hover:bg-white/[0.04]"
+                        className="flex flex-col items-start gap-2 p-4 rounded-xl border border-slate-200/80 bg-slate-50/50 hover:bg-white hover:border-slate-300 hover:shadow-sm transition-all text-left group"
                       >
-                        <div className={`w-1 h-10 ${alert.color} rounded-full`}></div>
-                        <div className="flex-1">
-                          <p className="text-xs font-bold text-slate-700 group-hover:text-slate-800 transition-colors">{alert.label}</p>
-                          <p className="text-[10px] text-slate-500 font-medium mt-0.5">{alert.sub}</p>
-                        </div>
-                        <div className="bg-slate-50 p-1.5 rounded-lg text-slate-400 group-hover:text-mint-600 group-hover:bg-mint-100 transition-all">
-                          <ArrowUpRight size={14} />
-                        </div>
-                      </div>
+                        <div className={`w-full h-1 rounded-full ${alert.color}`} />
+                        <p className="text-2xl font-black text-slate-800">
+                          {(alert.label.match(/^(\d+)/) || [])[1] || '—'}
+                        </p>
+                        <p className="text-[11px] font-bold text-slate-600 leading-tight group-hover:text-slate-800">
+                          {alert.label.replace(/^\d+\s*/, '')}
+                        </p>
+                        <ArrowUpRight size={14} className="text-slate-400 group-hover:text-mint-600 ml-auto" />
+                      </button>
                     ))
                   ) : (
-                    <div className="text-center py-6 bg-emerald-500/5 rounded-2xl border border-emerald-500/10">
+                    <div className="col-span-2 text-center py-8 bg-emerald-500/5 rounded-2xl border border-emerald-500/10">
                       <Activity className="mx-auto text-emerald-500 mb-2" size={24} />
                       <p className="text-sm font-bold text-mint-600">All Clear!</p>
-                      <p className="text-xs text-slate-500 mt-1">No items require your attention right now.</p>
+                      <p className="text-xs text-slate-500 mt-1">No items require attention.</p>
                     </div>
                   )}
                 </div>
               </div>
-            </div>
-
           </div>
 
           {/* NEW: Technician Earnings Section */}
@@ -707,8 +705,6 @@ const AdminDashboard = () => {
             )}
           </motion.div>
             </>
-          ) : activeTab === 'Service Leads' ? (
-            <LeadsModule externalSearch={leadsSearch} />
           ) : activeTab === 'Workshop' ? (
             <WorkshopModule />
           ) : activeTab === 'Finance' ? (
@@ -719,11 +715,16 @@ const AdminDashboard = () => {
             <LogsModule />
           ) : activeTab === 'Trash Bin' ? (
             <TrashModule />
-          ) : (
+          ) : activeTab === 'Settings' ? (
             <SettingsModule />
-          )
-        }
-
+          ) : activeTab === 'Service Leads' ? (
+            <Navigate to="/admin/leads" replace />
+          ) : (
+            <Navigate to="/admin" replace />
+          )}
+          </>
+            } />
+          </Routes>
         </div>
       </main>
       {/* Selected Lead Modal */}
