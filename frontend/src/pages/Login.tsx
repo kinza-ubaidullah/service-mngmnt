@@ -146,7 +146,7 @@ const Login = () => {
 
       setMaskedEmail(res.data.maskedEmail || '');
       setForgotStep('forgot-otp');
-      toast.success('Enter the code from your Google Authenticator app');
+      toast.success('OTP sent to your email');
     } catch (error: any) {
       toast.error(error.response?.data?.message || 'Failed to start password reset');
     } finally {
@@ -154,12 +154,12 @@ const Login = () => {
     }
   };
 
-  // Step 2: Verify authenticator code + reset password
+  // Step 2: Verify email OTP + reset password
   const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     if (newPassword !== confirmPassword) { toast.error('Passwords do not match'); return; }
     if (newPassword.length < 6) { toast.error('Password must be at least 6 characters'); return; }
-    if (otpCode.length !== 6) { toast.error('Enter the 6-digit authenticator code'); return; }
+    if (otpCode.length !== 6) { toast.error('Enter the 6-digit OTP code'); return; }
 
     setLoading(true);
     try {
@@ -190,7 +190,7 @@ const Login = () => {
     if (twoFASetupStep) return 'Set Up Authenticator';
     if (twoFAStep) return 'Two-Factor Verification';
     if (forgotStep === 'forgot-email') return 'Forgot Password';
-    if (forgotStep === 'forgot-otp') return 'Authenticator Code';
+    if (forgotStep === 'forgot-otp') return 'Email OTP Code';
     if (forgotStep === 'forgot-contact') return 'Contact Administrator';
     return 'Welcome Back';
   };
@@ -198,8 +198,8 @@ const Login = () => {
   const getSubtitle = () => {
     if (twoFASetupStep) return 'Scan the QR code to secure your account';
     if (twoFAStep) return 'Enter the 6-digit code from Google Authenticator';
-    if (forgotStep === 'forgot-email') return 'Enter your admin email — code comes from Google Authenticator';
-    if (forgotStep === 'forgot-otp') return 'Open Google Authenticator and enter the 6-digit code for Al Jaroshi CRM';
+    if (forgotStep === 'forgot-email') return 'Enter your admin email to receive an OTP';
+    if (forgotStep === 'forgot-otp') return 'Check your email and enter the 6-digit OTP code';
     if (forgotStep === 'forgot-contact') return 'Your administrator can reset your password';
     return 'Sign in to your account';
   };
@@ -335,14 +335,14 @@ const Login = () => {
             {!twoFASetupStep && !twoFAStep && forgotStep === 'forgot-otp' && (
               <motion.form key="forgot-otp" {...slide} onSubmit={handleVerifyOtp} className="space-y-4">
                 <div className="bg-teal-50 border border-teal-200 rounded-2xl p-4 text-xs text-teal-800 space-y-1">
-                  <p className="font-bold flex items-center gap-1"><Shield size={14} /> Google Authenticator</p>
-                  <p>Open your authenticator app and enter the current 6-digit code for <strong>Al Jaroshi CRM</strong>.</p>
-                  {maskedEmail && <p className="text-teal-600">Account: {maskedEmail}</p>}
+                  <p className="font-bold flex items-center gap-1"><Mail size={14} /> Email Verification</p>
+                  <p>Check your email inbox and enter the 6-digit OTP code sent for password reset.</p>
+                  {maskedEmail && <p className="text-teal-600">Sent to: {maskedEmail}</p>}
                 </div>
 
                 <div>
                   <label className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5 block">
-                    6-Digit Authenticator Code
+                    6-Digit OTP Code
                   </label>
                   <input
                     type="text"

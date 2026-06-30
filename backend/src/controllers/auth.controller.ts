@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import { signToken, verifyToken } from '../utils/jwt.utils';
 import { prisma } from '../utils/prisma';
 import { generateTotpSecret, getTotpAuthUrl, verifyTotpCode } from '../utils/totp.utils';
+import { sendOtpEmail } from '../utils/email.utils';
 
 const MFA_ROLES = ['ADMIN', 'TECHNICIAN', 'CALL_CENTER', 'WORKSHOP_MANAGER'];
 
@@ -54,7 +55,10 @@ export const login = async (req: Request, res: Response) => {
       return;
     }
 
-    if (MFA_ROLES.includes(user.role)) {
+    // 2FA is temporarily disabled for all panels as requested
+    const TEMPORARILY_DISABLE_2FA = true;
+    
+    if (!TEMPORARILY_DISABLE_2FA && MFA_ROLES.includes(user.role)) {
       if (user.totp_enabled && user.totp_secret) {
         const tempToken = signToken({ id: user.id, purpose: '2fa' }, '5m');
         res.json({
@@ -64,28 +68,9 @@ export const login = async (req: Request, res: Response) => {
           user: { id: user.id, name: user.name, role: user.role },
         });
         return;
-      } else {
-        // Force 2FA setup if not enabled
-        const secret = generateTotpSecret();
-        const label = user.email || user.phone || user.name;
-        const otpauthUrl = getTotpAuthUrl(label, secret);
-
-        await prisma.user.update({
-          where: { id: user.id },
-          data: { totp_secret: secret, totp_enabled: false },
-        });
-
-        const tempToken = signToken({ id: user.id, purpose: '2fa_setup' }, '15m');
-        res.json({
-          message: '2FA Setup Required',
-          requires2FASetup: true,
-          tempToken,
-          secret,
-          otpauthUrl,
-          user: { id: user.id, name: user.name, role: user.role },
-        });
-        return;
       }
+      // If 2FA is not enabled, we just fall through and log them in normally.
+      // This prevents forcing 2FA setup, so if a user disables 2FA, it stays disabled.
     }
 
     const token = signToken({ id: user.id, role: user.role });
@@ -317,7 +302,9 @@ export const disable2FA = async (req: Request, res: Response) => {
   }
 };
 
-/** Public — initiate admin password reset (uses Google Authenticator, not email) */
+const otpCache = new Map<string, { otp: string, expires: number }>();
+
+/** Public — initiate admin password reset via email OTP */
 export const sendPasswordResetOtp = async (req: Request, res: Response) => {
   try {
     const identifier = String(req.body.email || req.body.phone || '').trim();
@@ -328,11 +315,11 @@ export const sendPasswordResetOtp = async (req: Request, res: Response) => {
 
     const user = await prisma.user.findFirst({
       where: { OR: [{ email: identifier }, { phone: identifier }] },
-      select: { id: true, name: true, email: true, role: true, is_active: true, totp_enabled: true, totp_secret: true },
+      select: { id: true, name: true, email: true, role: true, is_active: true },
     });
 
     if (!user || !user.is_active) {
-      res.json({ message: 'If an admin account exists with this email, you can proceed with authenticator verification.' });
+      res.json({ message: 'If an admin account exists with this email, you will receive an OTP shortly.' });
       return;
     }
 
@@ -346,21 +333,30 @@ export const sendPasswordResetOtp = async (req: Request, res: Response) => {
       return;
     }
 
-    if (!user.totp_enabled || !user.totp_secret) {
-      res.status(400).json({
-        message: 'Authenticator app is not set up on this admin account. Ask another admin to reset your password from Staff Management.',
-      });
+    if (!user.email) {
+      res.status(400).json({ message: 'No email associated with this account. Cannot send OTP.' });
+      return;
+    }
+
+    // Generate random 6-digit OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    
+    // Store in cache for 10 minutes
+    otpCache.set(user.email, { otp, expires: Date.now() + 10 * 60 * 1000 });
+
+    const result = await sendOtpEmail(user.email, otp, user.name);
+
+    if (!result.sent) {
+      res.status(500).json({ message: 'Failed to send OTP email. Please try again later.' });
       return;
     }
 
     res.json({
       found: true,
       canSelfReset: true,
-      useAuthenticator: true,
-      message: 'Enter the 6-digit code from your Google Authenticator app.',
-      maskedEmail: user.email
-        ? user.email.replace(/(.)(.*)(@.*)/, (_: string, a: string, b: string, c: string) => a + '*'.repeat(b.length) + c)
-        : '',
+      useAuthenticator: false,
+      message: 'OTP has been sent to your email.',
+      maskedEmail: user.email.replace(/(.)(.*)(@.*)/, (_: string, a: string, b: string, c: string) => a + '*'.repeat(b.length) + c),
     });
   } catch (error: any) {
     const detail = error?.message || String(error);
@@ -372,7 +368,7 @@ export const sendPasswordResetOtp = async (req: Request, res: Response) => {
   }
 };
 
-/** Public — verify authenticator code and reset admin password */
+/** Public — verify email OTP and reset admin password */
 export const verifyPasswordResetOtp = async (req: Request, res: Response) => {
   try {
     const identifier = String(req.body.email || req.body.phone || '').trim();
@@ -380,7 +376,7 @@ export const verifyPasswordResetOtp = async (req: Request, res: Response) => {
     const newPassword = String(req.body.newPassword || '');
 
     if (!identifier || !otp || !newPassword) {
-      res.status(400).json({ message: 'Email, authenticator code and new password are required' });
+      res.status(400).json({ message: 'Email, OTP and new password are required' });
       return;
     }
     if (newPassword.length < 6) {
@@ -392,20 +388,23 @@ export const verifyPasswordResetOtp = async (req: Request, res: Response) => {
       where: { OR: [{ email: identifier }, { phone: identifier }] },
     });
 
-    if (!user || !user.is_active || user.role !== 'ADMIN') {
+    if (!user || !user.is_active || user.role !== 'ADMIN' || !user.email) {
       res.status(403).json({ message: 'Account not found or not eligible for self-reset' });
       return;
     }
 
-    if (!user.totp_enabled || !user.totp_secret) {
-      res.status(400).json({ message: 'Authenticator is not enabled on this account.' });
+    const cached = otpCache.get(user.email);
+    if (!cached || cached.expires < Date.now()) {
+      res.status(400).json({ message: 'OTP expired or invalid. Please request a new one.' });
       return;
     }
 
-    if (!verifyTotpCode(user.totp_secret, otp)) {
-      res.status(400).json({ message: 'Invalid authenticator code. Check Google Authenticator and try again.' });
+    if (cached.otp !== otp) {
+      res.status(400).json({ message: 'Invalid OTP code. Please try again.' });
       return;
     }
+
+    otpCache.delete(user.email); // Consume OTP
 
     const password_hash = await bcrypt.hash(newPassword, 10);
     await prisma.user.update({
@@ -415,7 +414,7 @@ export const verifyPasswordResetOtp = async (req: Request, res: Response) => {
 
     res.json({ message: 'Password reset successful. You can now sign in.' });
   } catch (error) {
-    console.error('Verify authenticator reset error:', error);
+    console.error('Verify OTP reset error:', error);
     res.status(500).json({ message: 'Failed to reset password.' });
   }
 };
@@ -423,3 +422,4 @@ export const verifyPasswordResetOtp = async (req: Request, res: Response) => {
 // Keep old functions for backward compatibility (used internally)
 export const forgotPasswordLookup = sendPasswordResetOtp;
 export const forgotPasswordReset = verifyPasswordResetOtp;
+

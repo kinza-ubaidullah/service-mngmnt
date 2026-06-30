@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import type { RootState } from '../store';
 import { logout } from '../store/slices/authSlice';
-import { LogOut, PhoneCall, Plus, ClipboardList, MapPin, User, Settings, Loader2, Sparkles, Activity, X, Calendar, Wrench, Trash2, Info, Eye, UserMinus, RotateCcw, Volume2, ArrowUpRight } from 'lucide-react';
+import { LogOut, PhoneCall, Phone, Plus, ClipboardList, MapPin, User, Settings, Loader2, Sparkles, Activity, X, Calendar, Wrench, Trash2, Info, Eye, UserMinus, RotateCcw, Volume2, ArrowUpRight } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../services/api';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -11,7 +11,9 @@ import TechnicianTrackingMap from '../components/TechnicianTrackingMap';
 import { useMergedTechnicians } from '../hooks/useLiveTechnicians';
 import TechnicianWorkloadFilter from '../components/TechnicianWorkloadFilter';
 import PendingApprovalCard from '../components/PendingApprovalCard';
-import { matchesLeadSearch, buildLeadsLocationKey, filterLeadsByTechnician, filterLeadsByTeam, countActiveJobsForTechnician, isAssignedTaskStatus, filterLeadsForAssignedTab, countLeadsForFilter, filterLeadsByStatusTab, isCancellableLead, isCompletedLead, countActiveOperationalLeads, formatSAR, APPLIANCE_OPTIONS, parseProductTypes, formatProductTypesDisplay, getLeadProducts, hasVoiceNote, isGlobalMapVisibleLead, type LeadFeedFilter } from '../utils/leadHelpers';
+import { matchesLeadSearch, buildLeadsLocationKey, filterLeadsByTechnician, filterLeadsByTeam, countActiveJobsForTechnician, isAssignedTaskStatus, filterLeadsForAssignedTab, countLeadsForFilter, filterLeadsByStatusTab, isCancellableLead, isCompletedLead, countActiveOperationalLeads, formatSAR, parseProductTypes, formatProductTypesDisplay, getLeadProducts, hasVoiceNote, isGlobalMapVisibleLead, mergeProductImagesIntoPayload, productsToApiPayload, getLeadProductEntries, type LeadFeedFilter, type LeadProductEntry } from '../utils/leadHelpers';
+import LeadProductsEditor from '../components/LeadProductsEditor';
+import LeadProductsTree from '../components/LeadProductsTree';
 import VoiceNotePlayer from '../components/VoiceNotePlayer';
 import GlobalLeadSearch from '../components/GlobalLeadSearch';
 import LeadPdfButtons from '../components/LeadPdfButtons';
@@ -33,6 +35,7 @@ interface Lead {
   status: string;
   product_type: string;
   problem_details: string;
+  products?: Array<{ product_type: string; problem_details?: string | null }>;
   exact_address?: string;
   house_image?: string;
   item_pictures?: string[] | any;
@@ -85,14 +88,23 @@ const CallCenterDashboard = () => {
   const [teams, setTeams] = useState<Team[]>([]);
   const [fetchingLeads, setFetchingLeads] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [activeTab, setActiveTab] = useState<'operations' | 'workshop' | 'settings'>(() => (sessionStorage.getItem('callCenterActiveTab') as 'operations' | 'workshop' | 'settings') || 'operations');
-  const [statusFilter, setStatusFilter] = useState<LeadFeedFilter>('all');
-  const [technicianFilter, setTechnicianFilter] = useState<number | 'all'>('all');
-  const [teamFilter, setTeamFilter] = useState<number | 'all'>('all');
+  const location = useLocation();
+  const urlTab = location.pathname.split('/')[2];
+  const activeTab = (urlTab || 'operations') as 'operations' | 'workshop' | 'settings';
 
   useEffect(() => {
-    sessionStorage.setItem('callCenterActiveTab', activeTab);
-  }, [activeTab]);
+    if (!urlTab) {
+      navigate('/callcenter/operations', { replace: true });
+    }
+  }, [urlTab, navigate]);
+
+  const setActiveTab = (tab: typeof activeTab) => {
+    navigate(`/callcenter/${tab}`);
+  };
+
+  const [statusFilter, setStatusFilter] = useState<LeadFeedFilter>('new');
+  const [technicianFilter, setTechnicianFilter] = useState<number | 'all'>('all');
+  const [teamFilter, setTeamFilter] = useState<number | 'all'>('all');
 
   const [areas, setAreas] = useState<{ id: number; name: string }[]>([]);
   const [loading, setLoading] = useState(false);
@@ -102,7 +114,7 @@ const CallCenterDashboard = () => {
     customer_area: '',
     exact_address: '',
     google_map_link: '',
-    products: [{ type: 'Washing Machine', problem: '', images: [] as string[] }] as { type: string; problem: string; images: string[] }[],
+    products: [] as LeadProductEntry[],
     payment_confirmed: false,
     agreed_amount: '',
     house_image: '',
@@ -113,7 +125,6 @@ const CallCenterDashboard = () => {
   const [locationPreview, setLocationPreview] = useState<string | null>(null);
   const [locationPreviewCoords, setLocationPreviewCoords] = useState<[number, number] | null>(null);
   const [resolvingLocation, setResolvingLocation] = useState(false);
-  const [productImageKeys, setProductImageKeys] = useState<number[]>([0]);
 
   // Assign Modal States
   const [assignModal, setAssignModal] = useState<{ isOpen: boolean; lead: Lead | null }>({ isOpen: false, lead: null });
@@ -128,15 +139,13 @@ const CallCenterDashboard = () => {
     customer_area: '', 
     exact_address: '', 
     google_map_link: '', 
-    products: [] as string[],
-    problem_details: '',
+    products: [] as LeadProductEntry[],
     house_image: '',
     item_pictures: [] as string[],
     lat: null as number | null,
     lng: null as number | null,
   });
   const [editLocationPreview, setEditLocationPreview] = useState<string | null>(null);
-  const [editProductPicker, setEditProductPicker] = useState('');
   const [editing, setEditing] = useState(false);
 
   // Customer Insights
@@ -145,7 +154,6 @@ const CallCenterDashboard = () => {
   const [viewLead, setViewLead] = useState<Lead | null>(null);
   const [zoomImg, setZoomImg] = useState<string | null>(null);
   const [formKey, setFormKey] = useState(0);
-  const [productPicker, setProductPicker] = useState('');
   const houseFileRef = useRef<HTMLInputElement>(null);
   const itemFileRef = useRef<HTMLInputElement>(null);
 
@@ -295,19 +303,11 @@ const CallCenterDashboard = () => {
     setLoading(true);
     try {
       const { products, ...rest } = formData;
-      // Merge per-product images into item_pictures pool
-      const allProductImages = products.flatMap((p) => p.images);
-      const allItemPictures = [...(formData.item_pictures || []), ...allProductImages];
-      // Build combined problem_details from all products
-      const combinedProblem = products
-        .filter((p) => p.problem.trim())
-        .map((p) => `[${p.type}]: ${p.problem.trim()}`)
-        .join(' | ');
+      const allItemPictures = mergeProductImagesIntoPayload(products, formData.item_pictures || []);
+      const productPayload = productsToApiPayload(products);
       const payload = {
         ...rest,
-        products: products.map((p) => ({ product_type: p.type, problem_details: p.problem })),
-        product_type: products.map((p) => p.type).join(', '),
-        problem_details: combinedProblem,
+        ...productPayload,
         customer_name: formData.customer_name.trim(),
         customer_phone: formData.customer_phone.trim(),
         customer_area: formData.customer_area.trim(),
@@ -324,14 +324,11 @@ const CallCenterDashboard = () => {
         setLeads((prev) => [newLead, ...prev]);
       }
       // Reset form
-      const resetProducts = [{ type: 'Washing Machine', problem: '', images: [] }];
       setFormData({
         customer_name: '', customer_phone: '', customer_area: '', exact_address: '', google_map_link: '',
-        products: resetProducts,
+        products: [],
         house_image: '', item_pictures: [], payment_confirmed: false, agreed_amount: '', lat: null, lng: null,
       });
-      setProductPicker('');
-      setProductImageKeys(resetProducts.map(() => Date.now()));
       setCustomerInsight(null);
       setLocationPreview(null);
       setLocationPreviewCoords(null);
@@ -472,10 +469,13 @@ const CallCenterDashboard = () => {
       customer_area: lead.customer.area || '',
       exact_address: lead.exact_address || '',
       google_map_link: lead.customer.google_map_link || '',
-      products: getLeadProducts(lead).length ? getLeadProducts(lead) : [lead.product_type || 'Washing Machine'],
-      problem_details: lead.problem_details || '',
+      products: (() => {
+        const entries = getLeadProductEntries(lead);
+        if (entries.length > 0) return entries;
+        return [{ type: lead.product_type?.split(',')[0]?.trim() || 'Washing Machine', problem: lead.problem_details || '', images: [] }];
+      })(),
       house_image: lead.house_image || '',
-      item_pictures: lead.item_pictures || [],
+      item_pictures: [],
       lat: lead.lat ?? null,
       lng: lead.lng ?? null,
     });
@@ -489,13 +489,18 @@ const CallCenterDashboard = () => {
   const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editModal.lead) return;
+    if (editForm.products.length === 0) {
+      toast.error('Add at least one appliance/product');
+      return;
+    }
     setEditing(true);
     try {
-      const products = editForm.products.length ? editForm.products : ['Washing Machine'];
+      const allItemPictures = mergeProductImagesIntoPayload(editForm.products, editForm.item_pictures || []);
+      const productPayload = productsToApiPayload(editForm.products);
       const res = await api.put(`/leads/${editModal.lead.id}`, {
         ...editForm,
-        products: products.map((p) => ({ product_type: p })),
-        product_type: products.join(', '),
+        ...productPayload,
+        item_pictures: allItemPictures,
       });
       const updated = res.data.lead;
       setLeads((prev) =>
@@ -840,105 +845,10 @@ const CallCenterDashboard = () => {
                           )}
                         </div>
                       </div>
-                      <div className="group relative">
-                        <label className="block text-xs font-bold text-slate-500 mb-2 pl-1 uppercase tracking-wider">Appliances / Products</label>
-                        {/* Per-product entries with individual problem + image fields */}
-                        <div className="space-y-3 mb-3">
-                          {formData.products.map((prod, idx) => (
-                            <div key={idx} className="bg-indigo-50/80 border border-indigo-200/70 rounded-2xl p-3 space-y-2.5">
-                              {/* Header row */}
-                              <div className="flex items-center justify-between gap-2">
-                                <div className="flex items-center gap-2">
-                                  <span className="w-5 h-5 bg-indigo-600 text-white rounded-full text-[9px] font-black flex items-center justify-center shrink-0">{idx + 1}</span>
-                                  <span className="text-sm font-bold text-indigo-900">{prod.type}</span>
-                                </div>
-                                {formData.products.length > 1 && (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setFormData((prev) => ({ ...prev, products: prev.products.filter((_, i) => i !== idx) }));
-                                      setProductImageKeys((prev) => prev.filter((_, i) => i !== idx));
-                                    }}
-                                    className="text-rose-500 hover:text-rose-700 p-1 rounded-lg hover:bg-rose-50 transition-all"
-                                  >
-                                    <X size={14} />
-                                  </button>
-                                )}
-                              </div>
-                              {/* Problem description */}
-                              <textarea
-                                value={prod.problem}
-                                onChange={(e) => setFormData((prev) => ({
-                                  ...prev,
-                                  products: prev.products.map((p, i) => i === idx ? { ...p, problem: e.target.value } : p)
-                                }))}
-                                rows={2}
-                                placeholder={`Describe issue with ${prod.type}...`}
-                                className="w-full bg-white text-slate-800 px-3 py-2 rounded-xl border border-indigo-200/70 focus:border-indigo-400 outline-none text-sm resize-none placeholder-slate-400"
-                              />
-                              {/* Per-product image upload */}
-                              <div>
-                                <label className="block text-[10px] font-bold text-indigo-700 mb-1 uppercase tracking-wider">📷 {prod.type} Photos</label>
-                                <input
-                                  type="file"
-                                  multiple
-                                  accept="image/*"
-                                  key={`prod-img-${idx}-${productImageKeys[idx] ?? idx}`}
-                                  className="w-full bg-white text-slate-400 text-[10px] px-3 py-2 rounded-xl border border-indigo-200/70 outline-none file:mr-3 file:py-1 file:px-2 file:rounded-lg file:border-0 file:text-[9px] file:font-bold file:bg-indigo-500/20 file:text-indigo-700 hover:file:bg-indigo-500/30 transition-all cursor-pointer"
-                                  onChange={async (e) => {
-                                    const files = Array.from(e.target.files || []);
-                                    if (!files.length) return;
-                                    try {
-                                      const results = await Promise.all(files.map(f => compressImageFile(f)));
-                                      setFormData((prev) => ({
-                                        ...prev,
-                                        products: prev.products.map((p, i) =>
-                                          i === idx ? { ...p, images: [...p.images, ...results] } : p
-                                        ),
-                                      }));
-                                    } catch { toast.error('Failed to process images'); }
-                                  }}
-                                />
-                                {prod.images.length > 0 && (
-                                  <div className="flex flex-wrap gap-1.5 mt-2">
-                                    {prod.images.map((img, imgIdx) => (
-                                      <div key={imgIdx} className="relative group w-14 h-14 rounded-lg overflow-hidden border border-indigo-200/70">
-                                        <img src={img} alt={`${prod.type}-${imgIdx}`} className="w-full h-full object-cover" />
-                                        <button
-                                          type="button"
-                                          onClick={() => setFormData((prev) => ({
-                                            ...prev,
-                                            products: prev.products.map((p, i) =>
-                                              i === idx ? { ...p, images: p.images.filter((_, ii) => ii !== imgIdx) } : p
-                                            ),
-                                          }))}
-                                          className="absolute top-0.5 right-0.5 bg-rose-500 text-white rounded-full w-4 h-4 flex items-center justify-center text-[8px] font-black opacity-0 group-hover:opacity-100 transition-all"
-                                        >✕</button>
-                                      </div>
-                                    ))}
-                                    <span className="text-[9px] text-indigo-600 font-bold self-center">{prod.images.length} photo{prod.images.length > 1 ? 's' : ''}</span>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                        <div className="flex gap-2">
-                          <select value={productPicker} onChange={(e) => setProductPicker(e.target.value)} className="flex-1 crm-input text-slate-800 px-3 py-2.5 rounded-xl border border-slate-200/70 text-sm">
-                            <option value="">Add another appliance...</option>
-                            {APPLIANCE_OPTIONS.filter((o) => !formData.products.find(p => p.type === o)).map((o) => (
-                              <option key={o} value={o}>{o}</option>
-                            ))}
-                          </select>
-                          <button type="button" onClick={() => {
-                            if (!productPicker || formData.products.find(p => p.type === productPicker)) return;
-                            setFormData((prev) => ({ ...prev, products: [...prev.products, { type: productPicker, problem: '', images: [] }] }));
-                            setProductImageKeys((prev) => [...prev, Date.now()]);
-                            setProductPicker('');
-                          }} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition-all">Add</button>
-                        </div>
-                        <p className="text-[10px] text-slate-500 mt-1.5">Each appliance has its own problem description and photos.</p>
-                      </div>
+                      <LeadProductsEditor
+                        products={formData.products}
+                        onChange={(products) => setFormData((prev) => ({ ...prev, products }))}
+                      />
                     </div>
                   </div>
 
@@ -1090,7 +1000,7 @@ const CallCenterDashboard = () => {
                             <motion.div 
                               initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }} transition={{ delay: idx * 0.05 }}
                               key={lead.id} 
-                              className={`group border rounded-2xl p-4 lg:p-5 grid grid-cols-1 xl:grid-cols-[auto_auto_1fr_1fr_auto] gap-4 xl:gap-5 items-start xl:items-center transition-all duration-300 max-w-full ${
+                              className={`group border rounded-2xl p-4 lg:p-5 grid grid-cols-1 xl:grid-cols-[auto_1fr_minmax(0,280px)_auto] gap-4 xl:gap-5 items-start xl:items-center transition-all duration-300 max-w-full ${
                                 isAssigned 
                                   ? 'bg-blue-950/20 border-blue-500/25 hover:border-blue-500/40 shadow-lg shadow-blue-500/[0.02]' 
                                   : isDeleted
@@ -1098,13 +1008,7 @@ const CallCenterDashboard = () => {
                                   : 'bg-white/90 border-slate-200/60 hover:border-mint-300/60'
                               }`}
                             >
-                              {/* ID Block */}
-                              <div className="shrink-0 flex flex-col items-center justify-center crm-modal border rounded-xl p-3 min-w-[100px]">
-                                <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Lead ID</span>
-                                <CopyText value={lead.lead_id} label="Lead ID" className="font-mono text-xs font-bold text-mint-600" />
-                              </div>
-
-                              {/* Image Thumbnail with hover + click zoom */}
+                              {/* Image — left */}
                               <div className="shrink-0">
                                 <LeadImageThumb
                                   src={(() => {
@@ -1113,18 +1017,27 @@ const CallCenterDashboard = () => {
                                       : [];
                                     return pics[0] || lead.house_image || null;
                                   })()}
-                                  className="w-28 h-28"
+                                  className="w-24 h-24 xl:w-28 xl:h-28"
                                   onZoom={setZoomImg}
                                 />
                               </div>
 
-                              {/* Customer Info */}
+                              {/* Lead ID + customer */}
                               <div className="flex-1 min-w-0">
+                                <div className="mb-1">
+                                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Lead ID</span>
+                                  <CopyText value={lead.lead_id} label="Lead ID" className="block font-mono text-xs font-bold text-mint-600 mt-0.5" />
+                                </div>
                                 <h4 className="text-base font-bold text-slate-800 truncate">{lead.customer.name}</h4>
-                                <div className="flex flex-wrap items-center gap-2 mt-1 text-xs text-slate-600">
-                                  <span className="flex items-center gap-1"><MapPin size={11} className="text-emerald-600" /> {lead.customer.area}</span>
-                                  <span className="w-1 h-1 bg-slate-400 rounded-full"></span>
-                                  <CopyText value={lead.customer.phone} label="Phone" className="font-mono text-slate-700" />
+                                <div className="flex flex-col gap-1.5 mt-2 text-xs text-slate-600">
+                                  <span className="flex items-center gap-1.5 min-w-0">
+                                    <MapPin size={12} className="text-emerald-600 shrink-0" />
+                                    <span className="truncate">{lead.customer.area}</span>
+                                  </span>
+                                  <span className="flex items-center gap-1.5 min-w-0">
+                                    <Phone size={12} className="text-slate-400 shrink-0" />
+                                    <CopyText value={lead.customer.phone} label="Phone" className="font-mono text-slate-800 font-semibold" />
+                                  </span>
                                 </div>
                                 {lead.technician && (
                                   <div className="inline-flex items-center gap-2 mt-2 bg-blue-50 border border-blue-200 text-blue-800 px-2.5 py-1 rounded-lg text-xs font-black">
@@ -1136,15 +1049,8 @@ const CallCenterDashboard = () => {
                               </div>
 
                               {/* Product & Issue */}
-                              <div className="flex-1 hidden xl:block min-w-0">
-                                <div className="inline-flex flex-wrap items-center gap-1.5 mb-1">
-                                  {parseProductTypes(lead.product_type).length > 0
-                                    ? getLeadProducts(lead).map((p) => (
-                                      <span key={p} className="inline-flex items-center gap-1 bg-slate-100 px-2.5 py-1 rounded-md text-xs font-semibold text-slate-800 border border-slate-200">{p}</span>
-                                    ))
-                                    : <span className="inline-flex items-center gap-2 bg-slate-100 px-2.5 py-1 rounded-md text-xs font-semibold text-slate-800 border border-slate-200">{lead.product_type}</span>}
-                                </div>
-                                <p className="text-xs text-slate-500 truncate pr-4">{lead.problem_details || 'Standard inspection required.'}</p>
+                              <div className="flex-1 min-w-0 xl:max-w-[280px]">
+                                <LeadProductsTree lead={lead} compact className="mb-1" />
                                 {hasVoiceNote(lead) && (
                                   <div className="mt-2">
                                     <VoiceNotePlayer src={lead.voice_note!} title="Pickup / Service Recording" compact />
@@ -1366,7 +1272,7 @@ const CallCenterDashboard = () => {
           >
             <motion.div 
               initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 20 }}
-              className="crm-modal border rounded-3xl w-full max-w-xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]"
+              className="crm-modal border rounded-3xl w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col max-h-[92vh]"
             >
               <div className="px-6 py-5 border-b border-slate-200/60 flex justify-between items-center bg-slate-50/80 shrink-0">
                 <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
@@ -1378,19 +1284,18 @@ const CallCenterDashboard = () => {
                 </button>
               </div>
 
-              <form onSubmit={handleEditSubmit} className="p-6 space-y-6 overflow-y-auto custom-scrollbar flex-1">
-                
-                <div className="space-y-4">
+              <form onSubmit={handleEditSubmit} className="p-6 space-y-5 overflow-y-auto custom-scrollbar flex-1">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-medium text-slate-400 mb-1">Customer Name</label>
+                    <label className="block text-xs font-semibold text-slate-500 mb-1.5">Customer Name</label>
                     <input required type="text" value={editForm.customer_name} onChange={e => setEditForm({...editForm, customer_name: e.target.value})} className="w-full crm-input text-slate-800 px-4 py-2.5 rounded-xl border border-slate-200/70 focus:border-mint-400 outline-none" />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-slate-400 mb-1">Phone Number</label>
+                    <label className="block text-xs font-semibold text-slate-500 mb-1.5">Phone Number</label>
                     <input required type="tel" value={editForm.customer_phone} onChange={e => setEditForm({...editForm, customer_phone: e.target.value})} className="w-full crm-input text-slate-800 px-4 py-2.5 rounded-xl border border-slate-200/70 focus:border-mint-400 outline-none" />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-slate-400 mb-1">Area</label>
+                    <label className="block text-xs font-semibold text-slate-500 mb-1.5">Area</label>
                     <input
                       required
                       type="text"
@@ -1405,7 +1310,7 @@ const CallCenterDashboard = () => {
                     </datalist>
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-slate-400 mb-1">Google Map Link</label>
+                    <label className="block text-xs font-semibold text-slate-500 mb-1.5">Google Map Link</label>
                     <input
                       type="url"
                       value={editForm.google_map_link}
@@ -1419,123 +1324,48 @@ const CallCenterDashboard = () => {
                     />
                     {editLocationPreview && <p className="text-[10px] text-mint-600 font-bold mt-1">{editLocationPreview}</p>}
                   </div>
-                  
-                  {/* Current Image Previews */}
-                  {(editForm.house_image || editForm.item_pictures.length > 0) && (
-                    <div className="bg-white border border-slate-200/60 rounded-2xl p-4">
-                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">Current Images</p>
-                      <div className="flex flex-wrap gap-2">
-                        {editForm.house_image && (
-                          <div className="relative group w-20 h-20 rounded-xl overflow-hidden border border-slate-200/70 cursor-pointer">
-                            <img src={editForm.house_image} alt="house" className="w-full h-full object-cover" />
-                            <div className="absolute inset-0 bg-black/40 flex items-end justify-center pb-1 opacity-0 group-hover:opacity-100 transition-all">
-                              <span className="text-[8px] text-slate-800 font-bold">House</span>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => setEditForm({...editForm, house_image: ''})}
-                              className="absolute top-1 right-1 bg-rose-400 text-white rounded-full w-4 h-4 flex items-center justify-center text-[8px] font-black opacity-0 group-hover:opacity-100 transition-all"
-                            >✕</button>
-                          </div>
-                        )}
-                        {editForm.item_pictures.map((pic, idx) => (
-                          <div key={idx} className="relative group w-20 h-20 rounded-xl overflow-hidden border border-slate-200/70 cursor-pointer">
-                            <img src={pic} alt={`item-${idx}`} className="w-full h-full object-cover" />
-                            <div className="absolute inset-0 bg-black/40 flex items-end justify-center pb-1 opacity-0 group-hover:opacity-100 transition-all">
-                              <span className="text-[8px] text-slate-800 font-bold">#{idx + 1}</span>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => setEditForm({...editForm, item_pictures: editForm.item_pictures.filter((_, i) => i !== idx)})}
-                              className="absolute top-1 right-1 bg-rose-400 text-white rounded-full w-4 h-4 flex items-center justify-center text-[8px] font-black opacity-0 group-hover:opacity-100 transition-all"
-                            >✕</button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Photo Edit Fields */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-bold text-slate-400 mb-2 pl-1">House Picture</label>
-                      <input 
-                        type="file" 
-                        accept="image/*"
-                        className="w-full bg-white text-slate-400 text-xs px-4 py-2.5 rounded-xl border border-slate-200/70 outline-none file:mr-4 file:py-1 file:px-3 file:rounded-full file:border-0 file:text-[10px] file:font-bold file:bg-indigo-500/20 file:text-mint-600 hover:file:bg-indigo-500/30 transition-all cursor-pointer" 
-                        onChange={async (e) => {
-                          const file = e.target.files?.[0];
-                          if (file) {
-                            const reader = new FileReader();
-                            reader.onloadend = () => {
-                              setEditForm({...editForm, house_image: reader.result as string});
-                            };
-                            reader.readAsDataURL(file);
-                          }
-                        }}
-                      />
-                      {editForm.house_image && (
-                        <p className="text-[10px] text-mint-600 font-bold pl-1 mt-1">✓ House Image Loaded</p>
-                      )}
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-bold text-slate-400 mb-2 pl-1">Appliance/Washing Machine Pictures</label>
-                      <input 
-                        type="file" 
-                        multiple 
-                        accept="image/*"
-                        className="w-full bg-white text-slate-400 text-xs px-4 py-2.5 rounded-xl border border-slate-200/70 outline-none file:mr-4 file:py-1 file:px-3 file:rounded-full file:border-0 file:text-[10px] file:font-bold file:bg-indigo-500/20 file:text-mint-600 hover:file:bg-indigo-500/30 transition-all cursor-pointer" 
-                        onChange={async (e) => {
-                          const files = Array.from(e.target.files || []);
-                          const base64Promises = files.map(file => {
-                            return new Promise((resolve) => {
-                              const reader = new FileReader();
-                              reader.onloadend = () => resolve(reader.result as string);
-                              reader.readAsDataURL(file);
-                            });
-                          });
-                          const results = await Promise.all(base64Promises);
-                          setEditForm({...editForm, item_pictures: results as string[]});
-                        }}
-                      />
-                      {editForm.item_pictures.length > 0 && (
-                        <p className="text-[10px] text-mint-600 font-bold pl-1 mt-1">✓ {editForm.item_pictures.length} Pictures Loaded</p>
-                      )}
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-medium text-slate-400 mb-1">Appliances / Products</label>
-                    <div className="flex flex-wrap gap-2 mb-2">
-                      {editForm.products.map((p) => (
-                        <span key={p} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-100 text-indigo-800 text-xs font-bold border border-indigo-200">
-                          {p}
-                          <button type="button" onClick={() => setEditForm((prev) => ({ ...prev, products: prev.products.filter((x) => x !== p) }))} className="text-indigo-500 hover:text-rose-600"><X size={12} /></button>
-                        </span>
-                      ))}
-                    </div>
-                    <div className="flex gap-2">
-                      <select value={editProductPicker} onChange={(e) => setEditProductPicker(e.target.value)} className="flex-1 crm-input text-slate-800 px-3 py-2.5 rounded-xl border border-slate-200/70 text-sm">
-                        <option value="">Add appliance...</option>
-                        {APPLIANCE_OPTIONS.filter((o) => !editForm.products.includes(o)).map((o) => (
-                          <option key={o} value={o}>{o}</option>
-                        ))}
-                      </select>
-                      <button type="button" onClick={() => {
-                        if (!editProductPicker || editForm.products.includes(editProductPicker)) return;
-                        setEditForm((prev) => ({ ...prev, products: [...prev.products, editProductPicker] }));
-                        setEditProductPicker('');
-                      }} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl">Add</button>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-slate-400 mb-1">Problem Details</label>
-                    <textarea rows={3} value={editForm.problem_details} onChange={e => setEditForm({...editForm, problem_details: e.target.value})} className="w-full crm-input text-slate-800 px-4 py-2.5 rounded-xl border border-slate-200/70 focus:border-mint-400 outline-none resize-none" />
-                  </div>
                 </div>
 
-                <div className="flex gap-3 pt-2">
+                <div className="rounded-2xl border border-slate-200/70 bg-slate-50/50 p-4 space-y-4">
+                  <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">House Photo</p>
+                  {editForm.house_image && (
+                    <div className="relative group w-24 h-24 rounded-xl overflow-hidden border border-slate-200/70">
+                      <img src={editForm.house_image} alt="house" className="w-full h-full object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => setEditForm({ ...editForm, house_image: '' })}
+                        className="absolute top-1 right-1 bg-rose-500 text-white rounded-full w-5 h-5 flex items-center justify-center"
+                        aria-label="Remove house photo"
+                      >
+                        <X size={10} />
+                      </button>
+                    </div>
+                  )}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="w-full bg-white text-slate-400 text-xs px-4 py-2.5 rounded-xl border border-slate-200/70 outline-none file:mr-4 file:py-1 file:px-3 file:rounded-full file:border-0 file:text-[10px] file:font-bold file:bg-indigo-500/20 file:text-indigo-700 hover:file:bg-indigo-500/30 transition-all cursor-pointer"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        try {
+                          const result = await compressImageFile(file);
+                          setEditForm({ ...editForm, house_image: result });
+                        } catch {
+                          toast.error('Failed to process house image');
+                        }
+                      }
+                      e.target.value = '';
+                    }}
+                  />
+                </div>
+
+                <LeadProductsEditor
+                  products={editForm.products}
+                  onChange={(products) => setEditForm((prev) => ({ ...prev, products }))}
+                />
+
+                <div className="flex gap-3 pt-1 sticky bottom-0 bg-white/95 backdrop-blur-sm border-t border-slate-100 -mx-6 px-6 py-4 mt-2">
                   <button type="button" onClick={() => setEditModal({ isOpen: false, lead: null })} className="flex-1 crm-btn-ghost font-medium py-3 px-4 rounded-xl transition-colors border border-slate-200/60">
                     Cancel
                   </button>

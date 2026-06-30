@@ -399,3 +399,20 @@ html.crm-dark div[role="status"] {
   color: #e8edf4 !important;
   border-color: #2a3548 !important;
 }
+
+/* ── Scrollbar utility ── */
+.crm-scrollbar::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+.crm-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.crm-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(125, 212, 154, 0.3);
+  border-radius: 10px;
+}
+.crm-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(125, 212, 154, 0.55);
+}
+

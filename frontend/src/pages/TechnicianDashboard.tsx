@@ -1,13 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import type { RootState } from '../store';
 import { logout, setUser } from '../store/slices/authSlice';
 import { 
-  LogOut, Wrench, MapPin, Clock, ClipboardCheck, 
-  ChevronRight, ChevronDown, CheckCircle2, Package, Wallet, Plus,
-  Loader2, Sparkles, X, CreditCard, Info, User, TrendingDown, History, Download,
-  AlertCircle, Search, Filter, Activity, Truck, RefreshCw, Settings, Camera, PhoneOff, Phone, Eye, ArrowUpRight
+  LogOut, Wrench, ClipboardCheck, CheckCircle2, Package, Wallet, Plus,
+  Loader2, X, History, Search, Settings, PhoneOff, Phone, Bell,
+  Briefcase, Clock, CheckCircle, RotateCcw, Headphones, SlidersHorizontal,
+  User, MapPin, Info, Camera, CreditCard, TrendingDown
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../services/api';
@@ -29,6 +29,7 @@ import { useLiveData } from '../hooks/useLiveData';
 import { useMyLivePosition } from '../hooks/useMyLivePosition';
 import LeadSummaryHeader from '../components/LeadSummaryHeader';
 import TechnicianJobBrief from '../components/TechnicianJobBrief';
+import TechnicianJobDetailView from '../components/TechnicianJobDetailView';
 import { compressImageFile } from '../utils/compressImage';
 
 interface Lead {
@@ -104,22 +105,36 @@ interface Expense {
   created_at?: string;
 }
 
+const isVisitToday = (job: Lead) => {
+  if (!job.visit_date) return true;
+  const d = new Date(job.visit_date);
+  const now = new Date();
+  return d.getDate() === now.getDate() && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+};
+
 const TechnicianDashboard = () => {
-  console.log('--- TechnicianDashboard Rendering ---');
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const user = useSelector((state: RootState) => state.auth.user);
   const isAuthenticated = useSelector((state: RootState) => state.auth.isAuthenticated);
 
-  console.log('Tech Auth State:', { isAuthenticated, role: user?.role });
+  const location = useLocation();
+  const urlTab = location.pathname.split('/')[2];
+  const activeTab = (urlTab || 'tasks') as 'tasks' | 'history' | 'wallet' | 'workshop' | 'settings';
 
-  const [activeTab, setActiveTab] = useState<'tasks' | 'history' | 'wallet' | 'workshop' | 'settings'>(() => (sessionStorage.getItem('techActiveTab') as 'tasks' | 'history' | 'wallet' | 'workshop' | 'settings') || 'tasks');
+  useEffect(() => {
+    if (!urlTab) {
+      navigate('/tech/tasks', { replace: true });
+    }
+  }, [urlTab, navigate]);
+
+  const setActiveTab = (tab: typeof activeTab) => {
+    navigate(`/tech/${tab}`);
+  };
+
   const [jobs, setJobs] = useState<Lead[]>([]);
   const [workshopJobs, setWorkshopJobs] = useState<any[]>([]);
 
-  useEffect(() => {
-    sessionStorage.setItem('techActiveTab', activeTab);
-  }, [activeTab]);
   const [loading, setLoading] = useState(true);
   const [workshopSearch, setWorkshopSearch] = useState('');
   const [workshopFilter, setWorkshopFilter] = useState('all');
@@ -140,7 +155,8 @@ const TechnicianDashboard = () => {
   const [voiceNote, setVoiceNote] = useState<string>('');
   const [outcomeLoading, setOutcomeLoading] = useState(false);
   const [historyLead, setHistoryLead] = useState<Lead | null>(null);
-  const [expandedJobIds, setExpandedJobIds] = useState<Set<number>>(new Set());
+  const [detailJobId, setDetailJobId] = useState<number | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [walletDetail, setWalletDetail] = useState<any>(null);
 
   // Wallet State
@@ -176,15 +192,6 @@ const TechnicianDashboard = () => {
     const [lat, lng] = getLeadCoords(job);
     const dist = calculateDistanceKm(techLat, techLng, lat, lng);
     return formatDistanceKm(dist);
-  };
-
-  const toggleJobExpanded = (jobId: number) => {
-    setExpandedJobIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(jobId)) next.delete(jobId);
-      else next.add(jobId);
-      return next;
-    });
   };
 
   const handleNoAnswer = async (job: Lead) => {
@@ -272,7 +279,7 @@ const TechnicianDashboard = () => {
         originalJob: j,
         date: new Date(j.completed_at || j.updated_at || Date.now()),
         title: j.lead_id,
-        subtitle: `${j.customer?.name || 'Customer'} • ${j.product_type || 'Job'}${j.is_settled ? ' • Paid to Admin' : j.is_requested ? ' • Deposit Requested' : ' • Pending Return'}`,
+        subtitle: `${j.customer?.name || 'Customer'} â€¢ ${j.product_type || 'Job'}${j.is_settled ? ' â€¢ Paid to Admin' : j.is_requested ? ' â€¢ Deposit Requested' : ' â€¢ Pending Return'}`,
         amount: Number(j.amount ?? j.collected_amount ?? 0),
         type: j.is_settled ? 'received' : j.is_requested ? 'requested' : 'pending',
       });
@@ -308,11 +315,34 @@ const TechnicianDashboard = () => {
   };
 
   const isGlobalSearch = jobSearch.trim().length > 0;
-  const filteredJobs = jobs.filter(job => {
+  const filteredJobs = useMemo(() => jobs.filter(job => {
     if (!matchesLeadSearch(job, jobSearch)) return false;
     if (isGlobalSearch) return true;
     return matchesJobFilter(job, jobFilter, user?.id);
-  });
+  }), [jobs, jobSearch, isGlobalSearch, jobFilter, user?.id]);
+
+  const listJobs = useMemo(() => {
+    if (isGlobalSearch || jobFilter !== 'active') return filteredJobs;
+    const today = filteredJobs.filter(isVisitToday);
+    return today.length > 0 ? today : filteredJobs;
+  }, [filteredJobs, isGlobalSearch, jobFilter]);
+
+  const detailJobFromList = listJobs.find((j) => j.id === detailJobId) ?? null;
+
+  const handleStartWork = async (job: Lead) => {
+    if (job.status === 'InProgress') {
+      toast.success('Work already in progress');
+      return;
+    }
+    toast('Mark work started — update outcome when job is done', { icon: '🔧' });
+  };
+
+  const handleReschedule = (job: Lead) => {
+    toast('Contact call center to reschedule this visit', { icon: '📅' });
+    if (job.customer?.phone) {
+      window.open(`tel:${job.customer.phone}`, '_self');
+    }
+  };
 
   const updateWorkshopStatus = async (jobId: number, status: string) => {
     try {
@@ -330,7 +360,7 @@ const TechnicianDashboard = () => {
     if (!window.confirm(`Mark ${job.lead_id} as delivered to customer?`)) return;
     try {
       await api.patch(`/workshop/jobs/${job.workshop_job.id}/status`, { status: 'Delivered' });
-      toast.success('Marked as delivered — sent for final approval');
+      toast.success('Marked as delivered â€” sent for final approval');
       fetchJobs();
       fetchWalletData();
     } catch (error: any) {
@@ -469,547 +499,449 @@ const TechnicianDashboard = () => {
     );
   }
 
+  const TAB_LABELS: Record<string, string> = {
+    tasks: 'My Jobs',
+    workshop: 'Workshop',
+    history: 'Job History',
+    wallet: 'My Wallet',
+    settings: 'Settings',
+  };
+
+  const NAV_ITEMS = [
+    { id: 'tasks' as const, label: 'My Jobs', icon: Briefcase },
+    { id: 'workshop' as const, label: 'Workshop', icon: Package },
+    { id: 'history' as const, label: 'History', icon: History },
+    { id: 'wallet' as const, label: 'Wallet', icon: Wallet },
+    { id: 'settings' as const, label: 'Settings', icon: Settings },
+  ];
+
+  const activeJobCount = jobs.filter((j) => matchesJobFilter(j, 'active', user?.id)).length;
+  const pendingCount = jobs.filter((j) => j.status === 'PendingApproval' || j.status === 'Assigned').length;
+  const completedCount = jobs.filter((j) => matchesJobFilter(j, 'completed', user?.id)).length;
+  const returnedCount = jobs.filter(isReturnedJob).length;
+
+  const SUMMARY_CARDS = [
+    { label: 'Active Jobs', count: activeJobCount, icon: Briefcase, color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-100' },
+    { label: 'Pending', count: pendingCount, icon: Clock, color: 'text-orange-600', bg: 'bg-orange-50', border: 'border-orange-100' },
+    { label: 'Completed', count: completedCount, icon: CheckCircle, color: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-100' },
+    { label: 'Returned', count: returnedCount, icon: RotateCcw, color: 'text-purple-600', bg: 'bg-purple-50', border: 'border-purple-100' },
+    { label: 'Wallet Balance', count: formatPKR(walletSummary?.balance || 0), icon: Wallet, color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-100', isMoney: true },
+  ];
+
+  const todayHeader = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' });
+
   return (
-    <div className="crm-shell text-slate-800 flex flex-col font-sans selection:bg-mint-200/50 min-h-screen">
+    <div className="crm-shell text-slate-800 flex h-screen overflow-hidden font-sans">
       
-      {/* Background Glow */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
-        <div className="absolute top-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-mint-300/25 blur-[120px]"></div>
-        <div className="absolute bottom-[-10%] left-[-10%] w-[30%] h-[30%] rounded-full bg-sky-soft/40 blur-[100px]"></div>
-      </div>
-
-      {/* Navbar */}
-      <motion.nav 
-        initial={{ y: -20, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        className="crm-nav backdrop-blur-xl px-6 py-4 flex justify-between items-center sticky top-0 z-20"
-      >
-        <div className="flex items-center gap-3">
-          <div className="crm-icon-box p-2 rounded-lg shadow-lg shadow-mint-300/30">
-            <Wrench size={20} className="text-white" />
+      {/* Sidebar */}
+      <aside className={`${sidebarOpen ? 'w-[220px]' : 'w-0'} shrink-0 crm-sidebar flex flex-col z-20 overflow-hidden transition-all duration-200 border-r border-slate-200/80`}>
+        <div className="px-5 py-5 border-b border-slate-200/80 flex items-center gap-3 min-w-[220px]">
+          <div className="bg-[#1a73e8] p-2 rounded-lg shadow shadow-blue-500/20">
+            <Wrench size={18} className="text-white" />
           </div>
-
-          <div>
-            <h1 className="text-lg font-bold text-slate-800 tracking-wide flex items-center gap-2">
-              TechPanel <Sparkles size={14} className="text-mint-600" />
-            </h1>
-          </div>
-        </div>
-        
-        <div className="flex items-center gap-4">
-          <div className="hidden sm:block text-right">
-            <p className="text-xs text-slate-400 font-medium">Technician</p>
-            <p className="text-sm font-bold text-slate-800">{user?.name}</p>
-          </div>
-
-
-
-          <ThemeToggle />
-          <button 
-            onClick={() => dispatch(logout())}
-            className="p-2.5 crm-btn-ghost rounded-xl transition-all border border-slate-200/70 hover:border-mint-300/50"
-          >
-            <LogOut size={18} />
-          </button>
-        </div>
-      </motion.nav>
-
-      <main className="flex-1 p-4 max-w-4xl mx-auto w-full relative z-10 pb-24">
-        
-        {/* Profile Completion Warning Removed */}
-
-        {/* Tab Switcher */}
-        <div className="flex crm-tabs rounded-2xl mb-8 shadow-xl">
-          <button 
-            onClick={() => setActiveTab('tasks')}
-            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm transition-all
-              ${activeTab === 'tasks' ? 'crm-tab-active shadow-sm' : 'text-slate-500 hover:text-slate-300'}
-            `}
-          >
-            <ClipboardCheck size={18} /> Tasks
-          </button>
-          <button 
-            onClick={() => setActiveTab('workshop')}
-            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-[10px] sm:text-sm transition-all
-              ${activeTab === 'workshop' ? 'crm-tab-active shadow-sm' : 'text-slate-500 hover:text-slate-300'}
-            `}
-          >
-            <Package size={18} /> Workshop
-          </button>
-
-          <button 
-            onClick={() => setActiveTab('history')}
-            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-[10px] sm:text-sm transition-all
-              ${activeTab === 'history' ? 'crm-tab-active shadow-sm' : 'text-slate-500 hover:text-slate-300'}
-            `}
-          >
-            <History size={18} /> History
-          </button>
-          <button 
-            onClick={() => setActiveTab('wallet')}
-            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-[10px] sm:text-sm transition-all
-              ${activeTab === 'wallet' ? 'crm-tab-active shadow-sm' : 'text-slate-500 hover:text-slate-300'}
-            `}
-          >
-            <Wallet size={18} /> Wallet
-          </button>
-          <button 
-            onClick={() => setActiveTab('settings')}
-            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-[10px] sm:text-sm transition-all
-              ${activeTab === 'settings' ? 'crm-tab-active shadow-sm' : 'text-slate-500 hover:text-slate-300'}
-            `}
-          >
-            <Settings size={18} /> Settings
-          </button>
+          <h1 className="text-base font-black text-slate-800 tracking-wide">TechPanel</h1>
         </div>
 
-        {activeTab === 'tasks' ? (
-          <>
-            <div className="mb-4 flex flex-col sm:flex-row sm:justify-between sm:items-end gap-4">
-              <div>
-                <h2 className="text-2xl font-bold text-slate-800">My Jobs</h2>
-                <p className="text-sm text-slate-400">
-                  {jobs.filter(j => matchesJobFilter(j, 'active', user?.id)).length} active • {jobs.filter(j => isReturnedJob(j)).length} returned
-                </p>
-              </div>
-              <div className="flex items-center gap-3 w-full sm:w-auto">
-                <div className="relative flex-1 sm:w-48 group">
-                  <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-mint-600 transition-colors" />
-                  <input 
-                    type="text" 
-                    placeholder="Search lead ID, name, phone (any tab)..." 
-                    value={jobSearch}
-                    onChange={(e) => setJobSearch(e.target.value)}
-                    className="w-full crm-card-soft border border-slate-200/60 rounded-xl py-2 pl-10 pr-4 text-xs outline-none focus:border-mint-400/50 transition-all text-slate-800"
-                  />
-                </div>
-                <RefreshButton onClick={refreshTasksBtn} loading={tasksRefreshing} className="text-mint-600 hover:text-emerald-300" />
-              </div>
-            </div>
+        <nav className="flex-1 p-3 space-y-1 overflow-y-auto min-w-[220px]">
+          {NAV_ITEMS.map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              onClick={() => setActiveTab(id)}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all ${
+                activeTab === id
+                  ? 'bg-[#1a73e8] text-white shadow-md shadow-blue-500/20'
+                  : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'
+              }`}
+            >
+              <Icon size={17} />
+              {label}
+            </button>
+          ))}
+        </nav>
 
-            <div className="flex flex-wrap gap-1 crm-card-soft p-1 rounded-xl border border-slate-200/60 mb-6">
-              {JOB_FILTERS.map((f) => (
-                <button
-                  key={f.id}
-                  type="button"
-                  onClick={() => setJobFilter(f.id)}
-                  className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
-                    jobFilter === f.id
-                      ? f.id === 'complaint' ? 'bg-rose-400 text-white' : f.id === 'delivery' ? 'crm-tab-active' : 'crm-tab-active'
-                      : 'text-slate-400 hover:text-slate-800'
-                  }`}
-                >
-                  {f.label}
-                  <span className="ml-1 opacity-70">({jobs.filter(j => matchesJobFilter(j, f.id, user?.id)).length})</span>
-                </button>
-              ))}
-            </div>
+        <div className="p-4 border-t border-slate-200/80 shrink-0 min-w-[220px]">
+          <div className="bg-blue-50 rounded-xl p-3 border border-blue-100">
+            <p className="text-xs font-black text-slate-700 mb-1">Need Help?</p>
+            <p className="text-[10px] text-slate-500 mb-2 leading-relaxed">Support available 24/7</p>
+            <button className="w-full bg-white border border-blue-200 hover:border-blue-400 text-[#1a73e8] text-[11px] font-bold py-2 rounded-lg transition-all flex items-center justify-center gap-1.5">
+              <Headphones size={12} /> Contact Support
+            </button>
+          </div>
+        </div>
+      </aside>
 
-            {loading ? (
-              <div className="h-64 flex justify-center items-center">
-                <Loader2 className="animate-spin text-mint-500" size={32} />
-              </div>
-            ) : filteredJobs.length === 0 ? (
-              <div className="crm-card-soft border border-slate-200/60 rounded-3xl p-12 text-center">
-                <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <ClipboardCheck size={32} className="text-slate-600" />
-                </div>
-                <h3 className="text-slate-800 font-bold mb-1">No Jobs Found</h3>
-                <p className="text-sm text-slate-500">No jobs match the current filter.</p>
+      {/* â”€â”€ Main Panel â”€â”€ */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Top Header */}
+        <header className="crm-nav px-4 sm:px-6 py-3 flex justify-between items-center shrink-0 z-10 gap-4">
+          <div className="flex items-center gap-3 min-w-0">
+            <button
+              type="button"
+              onClick={() => setSidebarOpen((v) => !v)}
+              className="p-2 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 lg:hidden"
+              aria-label="Toggle menu"
+            >
+              <SlidersHorizontal size={18} />
+            </button>
+            {activeTab === 'tasks' ? (
+              <div className="flex items-center gap-3 min-w-0 flex-wrap">
+                <p className="text-sm sm:text-base font-bold text-slate-700 truncate">Today, {todayHeader}</p>
+                <span className="text-xs font-black bg-[#1a73e8] text-white px-3 py-1 rounded-full shrink-0">
+                  {listJobs.length} Jobs
+                </span>
               </div>
             ) : (
-              <div className="space-y-5">
-                <AnimatePresence mode="popLayout">
-                  {filteredJobs.map((job, idx) => {
-                    const isReturned = isReturnedJob(job);
-                    const isDelivery = isDeliveryJob(job, user?.id);
-                    const distanceLabel = getDistanceDisplay(job);
-                    const extraProductPics = getProductPictures(job).slice(1);
-                    const isExpanded = expandedJobIds.has(job.id);
-                    const statusLabel = isReturned ? 'RETURNED' : isDelivery ? 'READY FOR DELIVERY' : job.status;
-                    const statusTone = isReturned
-                      ? 'returned'
-                      : isDelivery
-                      ? 'delivery'
-                      : job.status === 'Assigned'
-                      ? 'assigned'
-                      : job.status === 'Completed'
-                      ? 'completed'
-                      : 'default';
-                    return (
+              <h2 className="text-lg font-black text-slate-800">{TAB_LABELS[activeTab] || activeTab}</h2>
+            )}
+          </div>
+          <div className="flex items-center gap-2 sm:gap-4 shrink-0">
+            <button type="button" className="relative p-2 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50" aria-label="Notifications">
+              <Bell size={18} />
+              <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-rose-500 text-white text-[9px] font-black rounded-full flex items-center justify-center">3</span>
+            </button>
+            <div className="hidden sm:flex items-center gap-2 pl-2 border-l border-slate-200">
+              <div className="w-9 h-9 rounded-full bg-[#1a73e8]/10 border border-blue-200 flex items-center justify-center text-[#1a73e8] font-black text-sm">
+                {(user?.name || 'T').charAt(0).toUpperCase()}
+              </div>
+              <div className="text-right">
+                <p className="text-sm font-bold text-slate-800 leading-tight">{user?.name}</p>
+                <p className="text-[10px] text-slate-400 font-semibold uppercase">Technician</p>
+              </div>
+            </div>
+            <ThemeToggle />
+            <button
+              onClick={() => dispatch(logout())}
+              className="p-2.5 crm-btn-ghost rounded-xl transition-all border border-slate-200/70 hover:border-red-200 hover:text-red-500"
+              aria-label="Logout"
+            >
+              <LogOut size={18} />
+            </button>
+          </div>
+        </header>
+
+        {/* â”€â”€ Content â”€â”€ */}
+        <main className="flex-1 overflow-hidden relative">
+
+          {/* TASKS TAB â€” Vertical Accordion View */}
+          {activeTab === 'tasks' ? (
+            <div className="h-full flex flex-col overflow-hidden bg-slate-50/60">
+              <div className="px-4 pt-4 pb-2 grid grid-cols-2 lg:grid-cols-5 gap-3 shrink-0">
+                {SUMMARY_CARDS.map((s) => {
+                  const Icon = s.icon;
+                  return (
+                    <div key={s.label} className={`rounded-2xl border ${s.border} ${s.bg} px-4 py-3 flex items-center gap-3`}>
+                      <div className={`p-2 rounded-xl bg-white/80 ${s.color}`}>
+                        <Icon size={18} />
+                      </div>
+                      <div className="min-w-0">
+                        <p className={`text-lg font-black leading-none ${s.color} truncate`}>{s.count}</p>
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide truncate">{s.label}</p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="flex-1 min-h-0 overflow-y-auto crm-scrollbar p-4 pt-2">
+                <div className="max-w-2xl mx-auto space-y-4">
+                  <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                    <div className="p-4 border-b border-slate-100">
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-sm font-black text-slate-800">
+                          Today&apos;s Jobs <span className="text-slate-400 font-bold">({listJobs.length})</span>
+                        </h3>
+                        <RefreshButton onClick={refreshTasksBtn} loading={tasksRefreshing} className="text-[#1a73e8] p-1.5" />
+                      </div>
+                      <div className="relative">
+                        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <input
+                          type="text"
+                          placeholder="Search by name, phone, lead ID..."
+                          value={jobSearch}
+                          onChange={(e) => setJobSearch(e.target.value)}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2.5 pl-10 pr-3 text-sm font-medium outline-none focus:border-[#1a73e8]/40 transition-all text-slate-700"
+                        />
+                      </div>
+                      <div className="flex gap-1.5 flex-wrap mt-3">
+                        {JOB_FILTERS.map((f) => (
+                          <button
+                            key={f.id}
+                            type="button"
+                            onClick={() => setJobFilter(f.id)}
+                            className={`px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
+                              jobFilter === f.id
+                                ? f.id === 'complaint' ? 'bg-rose-500 text-white' : 'bg-[#1a73e8] text-white'
+                                : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                            }`}
+                          >
+                            {f.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="p-3 space-y-3">
+                      {loading ? (
+                        <div className="flex justify-center items-center py-16">
+                          <Loader2 className="animate-spin text-[#1a73e8]" size={28} />
+                        </div>
+                      ) : listJobs.length === 0 ? (
+                        <div className="text-center py-12 px-4">
+                          <ClipboardCheck size={36} className="text-slate-300 mx-auto mb-3" />
+                          <p className="text-sm font-bold text-slate-400">No jobs match this filter</p>
+                        </div>
+                      ) : (
+                        listJobs.map((job) => {
+                          const isReturned = isReturnedJob(job);
+                          const isDelivery = isDeliveryJob(job, user?.id);
+                          const statusLabel = isReturned ? 'RETURNED' : isDelivery ? 'DELIVERY' : job.status === 'Assigned' ? 'ASSIGNED' : job.status === 'InProgress' ? 'IN PROGRESS' : job.status?.toUpperCase() || 'ASSIGNED';
+                          const statusTone = isReturned ? 'returned' : isDelivery ? 'delivery' : job.status === 'Assigned' || job.status === 'InProgress' ? 'assigned' : job.status === 'Completed' ? 'completed' : 'default';
+
+                          return (
+                            <TechnicianJobBrief
+                              key={job.id}
+                              job={job}
+                              statusLabel={statusLabel}
+                              statusTone={statusTone as any}
+                              isDetailOpen={detailJobId === job.id}
+                              onExpand={() => setDetailJobId((prev) => (prev === job.id ? null : job.id))}
+                              onZoom={setZoomImg}
+                            />
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <AnimatePresence>
+                {detailJobFromList && (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/50 backdrop-blur-sm"
+                    onClick={() => setDetailJobId(null)}
+                  >
+                    <motion.div
+                      initial={{ y: 40, opacity: 0 }}
+                      animate={{ y: 0, opacity: 1 }}
+                      exit={{ y: 40, opacity: 0 }}
+                      className="bg-white w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl shadow-2xl max-h-[92vh] flex flex-col overflow-hidden"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 shrink-0">
+                        <p className="text-sm font-black text-slate-800">{detailJobFromList.lead_id}</p>
+                        <button
+                          type="button"
+                          onClick={() => setDetailJobId(null)}
+                          className="p-2 rounded-lg hover:bg-slate-100 text-slate-500"
+                          aria-label="Close"
+                        >
+                          <X size={20} />
+                        </button>
+                      </div>
+                      {detailJobFromList.rejection_note && (
+                        <div className="bg-rose-50 px-4 py-2 border-b border-rose-100 shrink-0">
+                          <p className="text-[10px] font-black uppercase text-rose-600">Rejection Note</p>
+                          <p className="text-sm font-semibold text-rose-800">{detailJobFromList.rejection_note}</p>
+                        </div>
+                      )}
+                      <div className="flex-1 min-h-0 overflow-hidden">
+                        <TechnicianJobDetailView
+                          job={detailJobFromList}
+                          user={user}
+                          onZoom={setZoomImg}
+                          onAction={(j: Lead) => {
+                            openOutcomeModal(j);
+                            setDetailJobId(null);
+                          }}
+                          onNoAnswer={() => {
+                            handleNoAnswer(detailJobFromList);
+                            setDetailJobId(null);
+                          }}
+                          onMarkDelivered={() => {
+                            handleMarkDelivered(detailJobFromList);
+                            setDetailJobId(null);
+                          }}
+                          onHistory={(j: Lead) => setHistoryLead(j)}
+                          onStartWork={handleStartWork}
+                          onReschedule={handleReschedule}
+                        />
+                      </div>
+                    </motion.div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          ) : activeTab === 'workshop' ? (
+            <div className="h-full overflow-y-auto crm-scrollbar p-6">
+              <WorkshopModule showGateInApproval={false} mode="technician" />
+            </div>
+          ) : activeTab === 'wallet' ? (
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="h-full overflow-y-auto crm-scrollbar p-6 space-y-6">
+              <div className="flex justify-between items-center">
+                <div>
+                  <h2 className="text-2xl font-bold text-slate-800">My Wallet</h2>
+                  <p className="text-sm text-slate-400">Track your collections & expenses</p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <button onClick={() => setExpenseModalOpen(true)} className="flex items-center gap-2 bg-[#1a73e8] hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-sm font-bold transition-all shadow-sm">
+                    <Plus size={16} /> Add Expense
+                  </button>
+                  <RefreshButton onClick={refreshTasksBtn} loading={tasksRefreshing} className="text-mint-600" />
+                </div>
+              </div>
+              <div className="crm-header-banner rounded-3xl p-6 shadow-xl shadow-mint-300/30">
+                <div className="flex justify-between items-start mb-6">
+                  <div>
+                    <p className="text-emerald-700 text-sm font-medium mb-1">Total Collected</p>
+                    <h3 className="text-4xl font-black tracking-tight text-slate-800">{formatPKR(walletSummary?.totalCollected || 0)}</h3>
+                    {earningsSummary?.commission > 0 && (
+                      <p className="text-emerald-600 text-xs mt-1">Commission: {formatPKR(earningsSummary.commission)} ({earningsSummary.rate || 10}%)</p>
+                    )}
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-3 border-t border-mint-200/60 pt-4">
+                  <div>
+                    <p className="text-emerald-600 text-[10px] uppercase font-bold mb-1">Expenses</p>
+                    <p className="text-lg font-bold text-slate-800">{formatPKR(walletSummary?.totalSpent || 0)}</p>
+                  </div>
+                  <div>
+                    <p className="text-emerald-600 text-[10px] uppercase font-bold mb-1">To Return</p>
+                    <p className="text-lg font-bold text-slate-800">{formatPKR(walletSummary?.balance || 0)}</p>
+                  </div>
+                  <div>
+                    <p className="text-emerald-600 text-[10px] uppercase font-bold mb-1">Overdue</p>
+                    <p className="text-lg font-bold text-amber-600">{formatPKR(walletDetail?.overdue || 0)}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="crm-card border rounded-2xl p-5">
+                <h3 className="text-sm font-bold text-slate-800 mb-1">All Transactions</h3>
+                <p className="text-[10px] text-slate-500 mb-4">Complete wallet activity â€” collections, pending returns, expenses</p>
+                {walletTimeline.length === 0 ? (
+                  <p className="text-xs text-slate-500 italic">No transactions yet.</p>
+                ) : (
+                  <div className="space-y-2 max-h-80 overflow-y-auto crm-scrollbar">
+                    {walletTimeline.map((entry) => (
+                      <div
+                        key={entry.id}
+                        className={`flex justify-between items-start gap-3 p-3 rounded-xl border text-xs ${
+                          entry.type === 'expense' ? 'bg-rose-500/5 border-rose-500/15'
+                          : entry.type === 'pending' ? 'bg-amber-500/5 border-amber-500/15'
+                          : entry.type === 'requested' ? 'bg-blue-500/5 border-blue-500/20'
+                          : entry.type === 'received' ? 'bg-emerald-500/5 border-emerald-500/15'
+                          : 'bg-slate-50/80 border-slate-200/60'
+                        }`}
+                      >
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="text-slate-700 font-bold">{entry.title}</p>
+                            {entry.type === 'requested' && (
+                              <span className="text-[9px] bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider border border-blue-200">Processing</span>
+                            )}
+                          </div>
+                          <p className="text-slate-500 text-[10px] mt-0.5 truncate">{entry.subtitle}</p>
+                          <p className="text-[10px] text-slate-600 mt-1">{entry.date.toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                        </div>
+                        <div className="text-right shrink-0 flex flex-col items-end">
+                          <p className={`font-black ${
+                            entry.type === 'expense' ? 'text-rose-400' : entry.type === 'pending' ? 'text-amber-500' : entry.type === 'requested' ? 'text-blue-500' : 'text-emerald-500'
+                          }`}>
+                            {entry.type === 'expense' ? '-' : '+'}{formatPKR(entry.amount)}
+                          </p>
+                          {entry.type === 'pending' && entry.amount > 0 && entry.originalJob?.id && (
+                            <button
+                              onClick={() => handleRequestDeposit(entry.originalJob.id)}
+                              disabled={requestingDepositId === entry.originalJob.id}
+                              className="mt-2 bg-amber-500 hover:bg-amber-600 text-white px-3 py-1 rounded shadow-sm flex items-center gap-1 transition-colors disabled:opacity-50"
+                            >
+                              {requestingDepositId === entry.originalJob.id ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle2 size={12} />}
+                              Deposit to Admin
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="crm-card border rounded-2xl p-5">
+                <h3 className="text-sm font-bold text-slate-800 mb-3">My Expenses</h3>
+                {expenses.length === 0 ? (
+                  <p className="text-xs text-slate-500 italic">No expenses recorded. Tap + to add.</p>
+                ) : (
+                  <div className="space-y-2 max-h-64 overflow-y-auto crm-scrollbar">
+                    {expenses.map((exp) => (
+                      <div key={exp.id} className="flex justify-between text-xs bg-slate-50/80 border border-slate-200/60 p-3 rounded-xl">
+                        <div>
+                          <p className="text-slate-700 font-bold">{exp.category}</p>
+                          <p className="text-slate-500">{exp.description || new Date(exp.date).toLocaleDateString()}</p>
+                        </div>
+                        <span className="text-rose-400 font-bold">-{formatPKR(exp.amount)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          ) : activeTab === 'settings' ? (
+            <div className="h-full overflow-y-auto crm-scrollbar p-6">
+              <SettingsModule />
+            </div>
+          ) : (
+            /* HISTORY TAB */
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="h-full overflow-y-auto crm-scrollbar p-6 space-y-6">
+              <div className="flex justify-between items-end">
+                <div>
+                  <h2 className="text-2xl font-bold text-slate-800 tracking-tight">Job History</h2>
+                  <p className="text-sm text-slate-400">Recently completed tasks</p>
+                </div>
+                <RefreshButton onClick={refreshTasksBtn} loading={tasksRefreshing} className="text-mint-600" />
+              </div>
+              {jobs.filter(j => matchesJobFilter(j, 'completed', user?.id)).length === 0 ? (
+                <div className="crm-card-soft border border-slate-200/60 rounded-3xl p-12 text-center">
+                  <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <History size={32} className="text-slate-400" />
+                  </div>
+                  <h3 className="text-slate-800 font-bold mb-1">No History</h3>
+                  <p className="text-sm text-slate-500">You haven't completed any jobs yet.</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {jobs.filter(j => matchesJobFilter(j, 'completed', user?.id)).map((job, idx) => (
                     <motion.div
                       key={job.id}
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: idx * 0.1 }}
-                      className="space-y-0"
+                      transition={{ delay: idx * 0.05 }}
+                      className="crm-card border border-slate-200/70 rounded-2xl p-5 cursor-pointer hover:border-emerald-500/30"
+                      onClick={() => setHistoryLead(job)}
                     >
-                      <TechnicianJobBrief
-                        job={job}
-                        statusLabel={statusLabel}
-                        statusTone={statusTone}
-                        distanceLabel={distanceLabel}
-                        isExpanded={isExpanded}
-                        onToggle={() => toggleJobExpanded(job.id)}
-                        onZoom={setZoomImg}
-                      />
-
-                      {job.rejection_note && (
-                        <div className="mx-1 -mt-1 mb-1 rounded-b-xl border border-rose-300 border-t-0 bg-rose-50 px-3 py-2">
-                          <p className="text-[10px] font-black uppercase text-rose-600 tracking-wider">Admin Rejection Note</p>
-                          <p className="text-xs font-semibold text-rose-800 mt-0.5">{job.rejection_note}</p>
-                        </div>
-                      )}
-
-                      <AnimatePresence initial={false}>
-                        {isExpanded && (
-                          <motion.div
-                            key={`expand-${job.id}`}
-                            initial={{ height: 0, opacity: 0 }}
-                            animate={{ height: 'auto', opacity: 1 }}
-                            exit={{ height: 0, opacity: 0 }}
-                            transition={{ duration: 0.22, ease: 'easeInOut' }}
-                            className="overflow-hidden -mt-1"
-                          >
-                            <div className="mx-1 rounded-b-2xl border border-t-0 border-slate-200 bg-white px-4 pb-5 pt-4 space-y-4 shadow-sm">
-                              {/* Location Image */}
-                              {job.house_image && (
-                                <div className="mb-4">
-                                  <p className="text-xs font-black uppercase tracking-wider text-slate-500 mb-2">Location Image</p>
-                                  <img 
-                                    src={job.house_image} 
-                                    alt="Location" 
-                                    className="w-full max-h-48 object-cover rounded-xl border border-slate-200 cursor-pointer hover:ring-2 hover:ring-emerald-500" 
-                                    onClick={() => setZoomImg(job.house_image as string)}
-                                  />
-                                </div>
-                              )}
-
-                              {job.problem_details && (
-                                <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3">
-                                  <p className="text-xs font-black uppercase tracking-wider text-amber-800 mb-1">Full Issue Description</p>
-                                  <p className="text-base font-semibold text-amber-950 leading-relaxed">{job.problem_details}</p>
-                                </div>
-                              )}
-
-                              {(job.agreed_amount || getFinalAmount(job) > 0) && (
-                                <div className="rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-3">
-                                  <p className="text-xs font-black uppercase tracking-wider text-emerald-800 mb-1">Payment</p>
-                                  <p className="text-lg font-black text-emerald-900">
-                                    {job.agreed_amount ? `Agreed: ${formatPKR(job.agreed_amount)}` : `Amount: ${formatPKR(getFinalAmount(job))}`}
-                                  </p>
-                                </div>
-                              )}
-
-                              <div className="grid grid-cols-2 gap-3">
-                                <div className="rounded-xl bg-white border border-slate-200 px-4 py-3">
-                                  <p className="text-xs font-black uppercase tracking-wider text-slate-500 mb-1">Appliance</p>
-                                  <p className="text-base font-bold text-slate-900">{job.product_type}</p>
-                                </div>
-                                <div className="rounded-xl bg-white border border-slate-200 px-4 py-3">
-                                  <p className="text-xs font-black uppercase tracking-wider text-slate-500 mb-1">Visit Date</p>
-                                  <p className="text-base font-bold text-slate-900">
-                                    {job.visit_date ? new Date(job.visit_date).toLocaleDateString() : 'Today'}
-                                  </p>
-                                </div>
-                              </div>
-
-                              {/* PDF Buttons - Available if job has outcome submitted */}
-                              {(['Completed', 'InspectionCompleted', 'PickedForWorkshop', 'PendingApproval'].includes(job.status)) && (
-                                <div className="flex flex-wrap gap-2 pt-2">
-                                  {/* Determine which PDF to show based on outcome */}
-                                  {(job.status === 'Completed' || (job.status === 'PendingApproval' && job.pending_outcome === 'Completed')) && (
-                                    <button type="button" onClick={() => generateInvoicePDF(job)} className="text-sm font-bold px-4 py-2 rounded-xl bg-blue-50 text-[#1a73e8] border border-blue-200 flex items-center gap-2 w-full sm:w-auto justify-center">
-                                      <Download size={16} /> On-Site Repair PDF
-                                    </button>
-                                  )}
-                                  
-                                  {/* If it was a workshop delivery (Complete Repair) */}
-                                  {job.workshop_job?.status === 'Delivered' && (
-                                    <button type="button" onClick={() => generateCompleteRepairPDF(job)} className="text-sm font-bold px-4 py-2 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-2 w-full sm:w-auto justify-center">
-                                      <Download size={16} /> Complete Repair PDF
-                                    </button>
-                                  )}
-
-                                  {(job.status === 'InspectionCompleted' || (job.status === 'PendingApproval' && job.pending_outcome === 'InspectionCompleted')) && (
-                                    <button type="button" onClick={() => generateInspectionReportPDF(job)} className="text-sm font-bold px-4 py-2 rounded-xl bg-amber-50 text-amber-700 border border-amber-200 flex items-center gap-2 w-full sm:w-auto justify-center">
-                                      <Download size={16} /> Inspection PDF
-                                    </button>
-                                  )}
-
-                                  {(job.status === 'PickedForWorkshop' || (job.status === 'PendingApproval' && job.pending_outcome === 'PickedForWorkshop')) && (
-                                    <button type="button" onClick={async () => {
-                                      try { await generateWorkshopPickupPDF(job); } catch { toast.error('Failed to generate Pickup PDF'); }
-                                    }} className="text-sm font-bold px-4 py-2 rounded-xl bg-purple-50 text-purple-700 border border-purple-200 flex items-center gap-2 w-full sm:w-auto justify-center">
-                                      <Download size={16} /> Pickup PDF
-                                    </button>
-                                  )}
-                                </div>
-                              )}
-
-                              {extraProductPics.length > 0 && (
-                                <div>
-                                  <p className="text-xs font-black uppercase tracking-wider text-slate-500 mb-2">More Photos</p>
-                                  <div className="flex gap-2 overflow-x-auto pb-1 custom-scrollbar">
-                                    {extraProductPics.map((pic: string, pIdx: number) => (
-                                      <img
-                                        key={pIdx}
-                                        src={pic}
-                                        alt="Product"
-                                        className="w-20 h-20 rounded-xl object-cover border border-slate-200 shrink-0 cursor-pointer hover:ring-2 hover:ring-emerald-500"
-                                        onClick={() => setZoomImg(pic)}
-                                      />
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
-
-                              <div className="flex flex-col sm:flex-row flex-wrap gap-2 pt-4 border-t border-slate-100">
-                                <button type="button" onClick={() => setHistoryLead(job)} className="flex-1 min-w-[140px] bg-white hover:bg-slate-50 text-slate-800 text-sm font-bold py-3.5 rounded-xl border border-slate-200 flex items-center justify-center gap-2">
-                                  <Eye size={18} /> View Details
-                                </button>
-                                {!['Completed', 'PickedForWorkshop', 'PendingApproval'].includes(job.status) && !isDelivery && (
-                                  <>
-                                    <button type="button" onClick={() => handleNoAnswer(job)} className="flex-1 min-w-[140px] bg-rose-50 hover:bg-rose-100 text-rose-800 text-sm font-bold py-3.5 rounded-xl border border-rose-200 flex items-center justify-center gap-2">
-                                      <PhoneOff size={18} /> No Answer
-                                    </button>
-                                    <button type="button" onClick={() => openOutcomeModal(job)} className="flex-1 min-w-[140px] bg-[#1a73e8] hover:bg-[#1557b0] text-white text-sm font-bold py-3.5 rounded-xl flex items-center justify-center gap-2 shadow-sm">
-                                      <ClipboardCheck size={18} /> Update Outcome
-                                    </button>
-                                  </>
-                                )}
-                                {isDelivery && (
-                                  <button type="button" onClick={() => handleMarkDelivered(job)} className="flex-1 bg-[#1a73e8] hover:bg-[#1557b0] text-white text-sm font-bold py-3.5 rounded-xl flex items-center justify-center gap-2 shadow-sm">
-                                    <Truck size={18} /> Mark Delivered
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </motion.div>
-                    );
-                  })}
-                </AnimatePresence>
-              </div>
-            )}
-          </>
-        ) : activeTab === 'workshop' ? (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-            <WorkshopModule showGateInApproval={false} mode="technician" />
-          </motion.div>
-        ) : activeTab === 'wallet' ? (
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
-            <div className="flex justify-between items-center">
-              <h2 className="text-2xl font-bold text-slate-800">My Wallet</h2>
-              <RefreshButton onClick={refreshTasksBtn} loading={tasksRefreshing} className="text-mint-600 hover:text-emerald-300" />
-            </div>
-            <div className="crm-header-banner rounded-3xl p-6 text-white shadow-xl shadow-mint-300/30">
-              <div className="flex justify-between items-start mb-6">
-                <div>
-                  <p className="text-emerald-100 text-sm font-medium mb-1">Total Collected</p>
-                  <h3 className="text-4xl font-black tracking-tight">{formatPKR(walletSummary?.totalCollected || 0)}</h3>
-                  {earningsSummary?.commission > 0 && (
-                    <p className="text-emerald-200 text-xs mt-1">Commission: {formatPKR(earningsSummary.commission)} ({earningsSummary.rate || 10}%)</p>
-                  )}
-                </div>
-                <button onClick={() => setExpenseModalOpen(true)} className="p-3 bg-white/20 rounded-2xl hover:bg-white/30 transition">
-                  <Plus size={24} />
-                </button>
-              </div>
-              <div className="grid grid-cols-3 gap-3 border-t border-white/20 pt-4">
-                <div>
-                  <p className="text-emerald-200 text-[10px] uppercase font-bold mb-1">Expenses</p>
-                  <p className="text-lg font-bold">{formatPKR(walletSummary?.totalSpent || 0)}</p>
-                </div>
-                <div>
-                  <p className="text-emerald-200 text-[10px] uppercase font-bold mb-1">To Return</p>
-                  <p className="text-lg font-bold">{formatPKR(walletSummary?.balance || 0)}</p>
-                </div>
-                <div>
-                  <p className="text-emerald-200 text-[10px] uppercase font-bold mb-1">Overdue</p>
-                  <p className="text-lg font-bold text-amber-200">{formatPKR(walletDetail?.overdue || 0)}</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="crm-card border rounded-2xl p-5">
-              <h3 className="text-sm font-bold text-slate-800 mb-1">All Transactions</h3>
-              <p className="text-[10px] text-slate-500 mb-4">Complete wallet activity — collections, pending returns, expenses</p>
-              {walletTimeline.length === 0 ? (
-                <p className="text-xs text-slate-500 italic">No transactions yet.</p>
-              ) : (
-                <div className="space-y-2 max-h-80 overflow-y-auto">
-                  {walletTimeline.map((entry) => (
-                    <div
-                      key={entry.id}
-                      className={`flex justify-between items-start gap-3 p-3 rounded-xl border text-xs ${
-                        entry.type === 'expense'
-                          ? 'bg-rose-500/5 border-rose-500/15'
-                          : entry.type === 'pending'
-                          ? 'bg-amber-500/5 border-amber-500/15'
-                          : entry.type === 'requested'
-                          ? 'bg-blue-500/5 border-blue-500/20'
-                          : entry.type === 'received'
-                          ? 'bg-emerald-500/5 border-emerald-500/15'
-                          : 'bg-slate-50/80 border-slate-200/60'
-                      }`}
-                    >
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <p className="text-slate-700 font-bold">{entry.title}</p>
-                          {entry.type === 'requested' && (
-                            <span className="text-[9px] bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider border border-blue-200">Processing</span>
-                          )}
-                        </div>
-                        <p className="text-slate-500 text-[10px] mt-0.5 truncate">{entry.subtitle}</p>
-                        <p className="text-[10px] text-slate-600 mt-1">
-                          {entry.date.toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                        </p>
-                      </div>
-                      <div className="text-right shrink-0 flex flex-col items-end">
-                        <p className={`font-black ${
-                          entry.type === 'expense' ? 'text-rose-400' :
-                          entry.type === 'pending' ? 'text-amber-500' :
-                          entry.type === 'requested' ? 'text-blue-500' :
-                          'text-emerald-500'
+                      <LeadSummaryHeader lead={job} onZoom={setZoomImg} className="mb-3" />
+                      <div className="flex justify-between items-start">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                          job.status === 'Completed' ? 'bg-emerald-500/20 text-emerald-600' : 'bg-blue-500/20 text-blue-500'
                         }`}>
-                          {entry.type === 'expense' ? '-' : '+'}{formatPKR(entry.amount)}
-                        </p>
-                        {entry.type === 'pending' && entry.amount > 0 && entry.originalJob?.id && (
-                          <button
-                            onClick={() => handleRequestDeposit(entry.originalJob.id)}
-                            disabled={requestingDepositId === entry.originalJob.id}
-                            className="mt-2 bg-amber-500 hover:bg-amber-600 text-white px-3 py-1 rounded shadow-sm flex items-center gap-1 transition-colors disabled:opacity-50"
-                          >
-                            {requestingDepositId === entry.originalJob.id ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle2 size={12} />}
-                            Deposit to Admin
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {walletDetail?.settlements?.length > 0 && (
-              <div className="crm-card border rounded-2xl p-5">
-                <h3 className="text-sm font-bold text-slate-800 mb-3">Received Payments</h3>
-                <div className="space-y-2">
-                  {walletDetail.settlements.filter((s: any) => s.is_received).map((s: any) => (
-                    <div key={s.id} className="flex justify-between text-xs bg-emerald-500/5 border border-emerald-500/10 p-3 rounded-xl">
-                      <span className="text-slate-300">{s.description}</span>
-                      <span className="text-mint-600 font-bold">{formatPKR(s.amount)}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div className="crm-card border rounded-2xl p-5">
-              <h3 className="text-sm font-bold text-slate-800 mb-3">My Expenses</h3>
-              {expenses.length === 0 ? (
-                <p className="text-xs text-slate-500 italic">No expenses recorded. Tap + to add.</p>
-              ) : (
-                <div className="space-y-2 max-h-64 overflow-y-auto">
-                  {expenses.map((exp) => (
-                    <div key={exp.id} className="flex justify-between text-xs bg-slate-50/80 border border-slate-200/60 p-3 rounded-xl">
-                      <div>
-                        <p className="text-slate-700 font-bold">{exp.category}</p>
-                        <p className="text-slate-500">{exp.description || new Date(exp.date).toLocaleDateString()}</p>
-                      </div>
-                      <span className="text-rose-400 font-bold">-{formatPKR(exp.amount)}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {(walletDetail?.jobs?.length > 0 || walletDetail?.completedJobs?.length > 0) && (
-              <div className="crm-card border rounded-2xl p-5">
-                <h3 className="text-sm font-bold text-slate-800 mb-1">Task Payments</h3>
-                <p className="text-[10px] text-slate-500 mb-3">Har task ki payment admin ko alag jama hoti hai</p>
-                <div className="space-y-2 max-h-72 overflow-y-auto">
-                  {(walletDetail.jobs || walletDetail.completedJobs || []).map((j: any) => {
-                    const settled = !!j.is_settled;
-                    return (
-                      <div key={j.id} className={`p-3 rounded-xl border text-xs ${settled ? 'bg-emerald-500/5 border-emerald-500/15' : 'bg-rose-500/5 border-rose-500/20'}`}>
-                        <div className="flex justify-between items-center gap-2">
-                          <div className="min-w-0">
-                            <p className="text-slate-700 font-bold truncate">{j.lead_id} — {j.customer?.name}</p>
-                            <p className="text-slate-500 text-[10px] mt-0.5">
-                              {j.product_type ? `${j.product_type} • ` : ''}
-                              {new Date(j.completed_at || j.updated_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}
-                              {settled && j.settlement?.received_at && (
-                                <span className="text-emerald-500"> • Paid {new Date(j.settlement.received_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}</span>
-                              )}
-                            </p>
-                          </div>
-                          <div className="text-right shrink-0">
-                            <p className={`font-black ${settled ? 'text-mint-600' : 'text-rose-400'}`}>{formatPKR(j.amount ?? j.collected_amount)}</p>
-                            <span className={`text-[9px] font-black uppercase ${settled ? 'text-emerald-500' : 'text-rose-500'}`}>
-                              {settled ? 'Paid to Admin' : 'Pending'}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </motion.div>
-        ) : activeTab === 'settings' ? (
-          <SettingsModule />
-        ) : (
-          /* HISTORY TAB */
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
-            <div className="flex justify-between items-end mb-6">
-               <div>
-                  <h2 className="text-2xl font-bold text-slate-800 tracking-tight">Job History</h2>
-                  <p className="text-sm text-slate-400">Recently completed tasks</p>
-               </div>
-               <RefreshButton onClick={refreshTasksBtn} loading={tasksRefreshing} className="text-mint-600 hover:text-emerald-300" />
-            </div>
-            {jobs.filter(j => matchesJobFilter(j, 'completed', user?.id)).length === 0 ? (
-              <div className="crm-card-soft border border-slate-200/60 rounded-3xl p-12 text-center">
-                 <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4">
-                   <History size={32} className="text-slate-600" />
-                 </div>
-                 <h3 className="text-slate-800 font-bold mb-1">No History</h3>
-                 <p className="text-sm text-slate-500">You haven't completed any jobs yet.</p>
-               </div>
-            ) : (
-              <div className="space-y-4">
-                {jobs.filter(j => matchesJobFilter(j, 'completed', user?.id)).map((job, idx) => (
-                  <motion.div 
-                    key={job.id}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: idx * 0.05 }}
-                    className="crm-card backdrop-blur-xl border border-slate-200/70 rounded-2xl p-5 cursor-pointer hover:border-emerald-500/30"
-                    onClick={() => setHistoryLead(job)}
-                  >
-                    <LeadSummaryHeader lead={job} onZoom={setZoomImg} className="mb-3" />
-                    <div className="flex justify-between items-start">
-                       <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase
-                          ${job.status === 'Completed' ? 'bg-emerald-500/20 text-mint-600' : 'bg-blue-500/20 text-blue-400'}
-                       `}>
                           {job.status}
-                       </span>
-                       <span className="text-mint-600 font-black text-sm">{formatPKR(getFinalAmount(job))}</span>
-                    </div>
-                  </motion.div>
-                ))}
-              </div>
-            )}
-          </motion.div>
-        )}
-      </main>
+                        </span>
+                        <span className="text-emerald-600 font-black text-sm">{formatPKR(getFinalAmount(job))}</span>
+                      </div>
+                    </motion.div>
+                  ))}
+                </div>
+              )}
+            </motion.div>
+          )}
 
-      {/* Outcome Modal (Existing) */}
+        </main>
+      </div>
+
+      {/* â”€â”€ Outcome Modal â”€â”€ */}
       <AnimatePresence>
         {outcomeModalOpen && selectedJob && (
           <motion.div
@@ -1024,7 +956,6 @@ const TechnicianDashboard = () => {
               exit={{ y: 50, opacity: 0 }}
               className="crm-modal border rounded-[32px] w-full max-w-md overflow-hidden shadow-2xl flex flex-col max-h-[90vh]"
             >
-              {/* Modal Header */}
               <div className="p-6 border-b border-slate-200/60 flex justify-between items-center bg-slate-50/80 shrink-0">
                 <div>
                   <h3 className="text-lg font-bold text-slate-800">Update Job Outcome</h3>
@@ -1035,7 +966,7 @@ const TechnicianDashboard = () => {
                 </button>
               </div>
 
-              <form id="tech-outcome-form" onSubmit={handleOutcomeSubmit} className="flex-1 overflow-y-auto min-h-0 p-6 space-y-6 custom-scrollbar">
+              <form id="tech-outcome-form" onSubmit={handleOutcomeSubmit} className="flex-1 overflow-y-auto min-h-0 p-6 space-y-6 crm-scrollbar">
                 <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200/60 space-y-2">
                   <div className="flex items-center gap-2 text-sm font-bold text-slate-700">
                     <User size={14} className="text-mint-600" /> {selectedJob.customer?.name}
@@ -1046,7 +977,7 @@ const TechnicianDashboard = () => {
                       <p className="font-bold">{selectedJob.customer?.area}</p>
                       <p>{selectedJob.exact_address || selectedJob.customer?.exact_address || 'No exact address'}</p>
                       {selectedJob.customer?.google_map_link && (
-                        <a href={selectedJob.customer.google_map_link} target="_blank" rel="noreferrer" className="text-amber-600 underline mt-1 inline-block">Open Google Maps →</a>
+                        <a href={selectedJob.customer.google_map_link} target="_blank" rel="noreferrer" className="text-amber-600 underline mt-1 inline-block">Open Google Maps â†’</a>
                       )}
                     </div>
                   </div>
@@ -1066,12 +997,11 @@ const TechnicianDashboard = () => {
                       key={opt.id}
                       type="button"
                       onClick={() => setOutcomeData({...outcomeData, status: opt.id})}
-                      className={`flex flex-col items-center gap-2 p-3 rounded-2xl border transition-all
-                        ${outcomeData.status === opt.id 
-                          ? 'bg-mint-50 border-emerald-500/50 scale-[1.05] shadow-[0_0_15px_rgba(16,185,129,0.1)]' 
+                      className={`flex flex-col items-center gap-2 p-3 rounded-2xl border transition-all ${
+                        outcomeData.status === opt.id
+                          ? 'bg-mint-50 border-emerald-500/50 scale-[1.05] shadow-[0_0_15px_rgba(16,185,129,0.1)]'
                           : 'bg-slate-50 border-slate-200/60 opacity-60'
-                        }
-                      `}
+                      }`}
                     >
                       <opt.icon size={20} className={opt.color} />
                       <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600">{opt.label}</span>
@@ -1082,11 +1012,11 @@ const TechnicianDashboard = () => {
                 <div className="space-y-4">
                   <div className="space-y-1.5">
                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Actual Problem Found</label>
-                    <textarea 
+                    <textarea
                       required
                       value={outcomeData.actual_problem}
                       onChange={(e) => setOutcomeData({...outcomeData, actual_problem: e.target.value})}
-                      className="w-full crm-input text-slate-800 px-4 py-3 rounded-2xl border border-slate-200/70 focus:border-mint-400 outline-none transition-all resize-none" 
+                      className="w-full crm-input text-slate-800 px-4 py-3 rounded-2xl border border-slate-200/70 focus:border-mint-400 outline-none transition-all resize-none"
                       placeholder="Describe the actual problem..."
                       rows={2}
                     />
@@ -1094,14 +1024,14 @@ const TechnicianDashboard = () => {
 
                   <div className="space-y-1.5">
                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                      {outcomeData.status === 'Completed' ? 'Work Performed / Parts Used' : 
-                       outcomeData.status === 'PickedForWorkshop' ? 'Agreed Parts to Change (Warranty)' : 
+                      {outcomeData.status === 'Completed' ? 'Work Performed / Parts Used' :
+                       outcomeData.status === 'PickedForWorkshop' ? 'Agreed Parts to Change (Warranty)' :
                        'Inspection Notes & Recommendations'}
                     </label>
-                    <textarea 
+                    <textarea
                       value={outcomeData.repair_details}
                       onChange={(e) => setOutcomeData({...outcomeData, repair_details: e.target.value})}
-                      className="w-full crm-input text-slate-800 px-4 py-3 rounded-2xl border border-slate-200/70 focus:border-mint-400 outline-none transition-all resize-none" 
+                      className="w-full crm-input text-slate-800 px-4 py-3 rounded-2xl border border-slate-200/70 focus:border-mint-400 outline-none transition-all resize-none"
                       placeholder="Enter details..."
                       rows={2}
                     />
@@ -1111,23 +1041,11 @@ const TechnicianDashboard = () => {
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-1.5">
                         <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Deal Amount</label>
-                        <input 
-                          type="number"
-                          value={outcomeData.total_amount}
-                          onChange={(e) => setOutcomeData({...outcomeData, total_amount: e.target.value})}
-                          className="w-full crm-input text-slate-800 px-4 py-3 rounded-2xl border border-slate-200/70 focus:border-mint-400 outline-none transition-all" 
-                          placeholder="0"
-                        />
+                        <input type="number" value={outcomeData.total_amount} onChange={(e) => setOutcomeData({...outcomeData, total_amount: e.target.value})} className="w-full crm-input text-slate-800 px-4 py-3 rounded-2xl border border-slate-200/70 focus:border-mint-400 outline-none transition-all" placeholder="0" />
                       </div>
                       <div className="space-y-1.5">
                         <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Advance Taken</label>
-                        <input 
-                          type="number"
-                          value={outcomeData.collected_amount}
-                          onChange={(e) => setOutcomeData({...outcomeData, collected_amount: e.target.value})}
-                          className="w-full crm-input text-slate-800 px-4 py-3 rounded-2xl border border-slate-200/70 focus:border-mint-400 outline-none transition-all" 
-                          placeholder="0"
-                        />
+                        <input type="number" value={outcomeData.collected_amount} onChange={(e) => setOutcomeData({...outcomeData, collected_amount: e.target.value})} className="w-full crm-input text-slate-800 px-4 py-3 rounded-2xl border border-slate-200/70 focus:border-mint-400 outline-none transition-all" placeholder="0" />
                       </div>
                     </div>
                   ) : (
@@ -1136,22 +1054,12 @@ const TechnicianDashboard = () => {
                         <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
                           {outcomeData.status === 'Completed' ? 'Amount Collected' : 'Charges'}
                         </label>
-                        <input 
-                          type="number"
-                          value={outcomeData.collected_amount}
-                          onChange={(e) => setOutcomeData({...outcomeData, collected_amount: e.target.value})}
-                          className="w-full crm-input text-slate-800 px-4 py-3 rounded-2xl border border-slate-200/70 focus:border-mint-400 outline-none transition-all" 
-                          placeholder="0"
-                        />
+                        <input type="number" value={outcomeData.collected_amount} onChange={(e) => setOutcomeData({...outcomeData, collected_amount: e.target.value})} className="w-full crm-input text-slate-800 px-4 py-3 rounded-2xl border border-slate-200/70 focus:border-mint-400 outline-none transition-all" placeholder="0" />
                       </div>
                       {outcomeData.status === 'Completed' && (
                         <div className="space-y-1.5">
                           <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Warranty</label>
-                          <select 
-                            value={outcomeData.warranty_months}
-                            onChange={(e) => setOutcomeData({...outcomeData, warranty_months: e.target.value})}
-                            className="w-full crm-input text-slate-800 px-4 py-3 rounded-2xl border border-slate-200/70 focus:border-mint-400 outline-none transition-all appearance-none"
-                          >
+                          <select value={outcomeData.warranty_months} onChange={(e) => setOutcomeData({...outcomeData, warranty_months: e.target.value})} className="w-full crm-input text-slate-800 px-4 py-3 rounded-2xl border border-slate-200/70 focus:border-mint-400 outline-none transition-all appearance-none">
                             <option value="0">No Warranty</option>
                             <option value="1">1 Month</option>
                             <option value="3">3 Months</option>
@@ -1188,8 +1096,7 @@ const TechnicianDashboard = () => {
                         {outcomePictures.map((pic, idx) => (
                           <div key={idx} className="relative w-16 h-16 rounded-xl overflow-hidden border border-slate-200/70 shrink-0">
                             <img src={pic} alt="" className="w-full h-full object-cover" />
-                            <button type="button" onClick={() => setOutcomePictures(prev => prev.filter((_, i) => i !== idx))}
-                              className="absolute top-0.5 right-0.5 bg-red-500/80 text-white rounded-full p-0.5">
+                            <button type="button" onClick={() => setOutcomePictures(prev => prev.filter((_, i) => i !== idx))} className="absolute top-0.5 right-0.5 bg-red-500/80 text-white rounded-full p-0.5">
                               <X size={10} />
                             </button>
                           </div>
@@ -1211,7 +1118,7 @@ const TechnicianDashboard = () => {
         )}
       </AnimatePresence>
 
-      {/* Expense Modal */}
+      {/* â”€â”€ Expense Modal â”€â”€ */}
       <AnimatePresence>
         {expenseModalOpen && (
           <motion.div
@@ -1230,51 +1137,22 @@ const TechnicianDashboard = () => {
                 <h3 className="text-lg font-bold text-slate-800">Record Expense</h3>
                 <button onClick={() => setExpenseModalOpen(false)} className="p-2 text-slate-400 hover:text-slate-800 transition"><X size={20} /></button>
               </div>
-
               <form onSubmit={handleExpenseSubmit} className="p-6 space-y-6">
                 <div className="space-y-4">
                   <div className="group relative">
                     <div className="absolute left-4 top-3.5 text-slate-500"><CreditCard size={16}/></div>
-                    <input 
-                      type="number" 
-                      required
-                      value={expenseForm.amount}
-                      onChange={(e) => setExpenseForm({...expenseForm, amount: e.target.value})}
-                      className="w-full crm-input text-slate-800 pl-10 pr-4 py-4 rounded-2xl border border-slate-200/70 focus:border-mint-400 outline-none transition-all" 
-                      placeholder="Amount"
-                    />
+                    <input type="number" required value={expenseForm.amount} onChange={(e) => setExpenseForm({...expenseForm, amount: e.target.value})} className="w-full crm-input text-slate-800 pl-10 pr-4 py-4 rounded-2xl border border-slate-200/70 focus:border-mint-400 outline-none transition-all" placeholder="Amount" />
                   </div>
-
-                  <div className="group relative">
-                    <select 
-                      value={expenseForm.category}
-                      onChange={(e) => setExpenseForm({...expenseForm, category: e.target.value})}
-                      className="w-full crm-input text-slate-800 px-4 py-4 rounded-2xl border border-slate-200/70 focus:border-mint-400 outline-none transition-all appearance-none"
-                    >
-                      <option value="Petrol">Petrol / Fuel</option>
-                      <option value="Food">Food / Meals</option>
-                      <option value="Parts">Parts Purchase</option>
-                      <option value="Transport">Transport / Rickshaw</option>
-                      <option value="Other">Other</option>
-                    </select>
-                  </div>
-
-                  <div className="group relative">
-                    <input 
-                      type="text" 
-                      value={expenseForm.description}
-                      onChange={(e) => setExpenseForm({...expenseForm, description: e.target.value})}
-                      className="w-full crm-input text-slate-800 px-4 py-4 rounded-2xl border border-slate-200/70 focus:border-mint-400 outline-none transition-all" 
-                      placeholder="Notes (optional)"
-                    />
-                  </div>
+                  <select value={expenseForm.category} onChange={(e) => setExpenseForm({...expenseForm, category: e.target.value})} className="w-full crm-input text-slate-800 px-4 py-4 rounded-2xl border border-slate-200/70 focus:border-mint-400 outline-none transition-all appearance-none">
+                    <option value="Petrol">Petrol / Fuel</option>
+                    <option value="Food">Food / Meals</option>
+                    <option value="Parts">Parts Purchase</option>
+                    <option value="Transport">Transport / Rickshaw</option>
+                    <option value="Other">Other</option>
+                  </select>
+                  <input type="text" value={expenseForm.description} onChange={(e) => setExpenseForm({...expenseForm, description: e.target.value})} className="w-full crm-input text-slate-800 px-4 py-4 rounded-2xl border border-slate-200/70 focus:border-mint-400 outline-none transition-all" placeholder="Notes (optional)" />
                 </div>
-
-                <button 
-                  type="submit" 
-                  disabled={expenseLoading}
-                  className="w-full crm-btn-primary font-black py-4 rounded-2xl shadow-lg flex items-center justify-center gap-2"
-                >
+                <button type="submit" disabled={expenseLoading} className="w-full crm-btn-primary font-black py-4 rounded-2xl shadow-lg flex items-center justify-center gap-2">
                   {expenseLoading ? <Loader2 className="animate-spin" size={18} /> : <TrendingDown size={18} />}
                   Save Expense
                 </button>
@@ -1284,15 +1162,9 @@ const TechnicianDashboard = () => {
         )}
       </AnimatePresence>
 
-      <style>{`
-        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 10px; }
-      `}</style>
       <ImageZoomModal src={zoomImg} onClose={() => setZoomImg(null)} />
       {historyLead && <LeadHistoryModal lead={historyLead} onClose={() => setHistoryLead(null)} />}
     </div>
   );
 };
-
 export default TechnicianDashboard;

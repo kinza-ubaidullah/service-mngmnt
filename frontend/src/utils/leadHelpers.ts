@@ -210,6 +210,92 @@ export const APPLIANCE_OPTIONS = [
   'Other Appliance',
 ] as const;
 
+export type LeadProductEntry = {
+  type: string;
+  problem: string;
+  images: string[];
+};
+
+/** Parse `[Product]: detail` segments from combined problem_details */
+export function parseProblemForProduct(combined: string | null | undefined, productType: string): string {
+  if (!combined?.trim()) return '';
+  const parts = combined.split(/\s*\|\s*/);
+  for (const part of parts) {
+    const match = part.match(/^\[([^\]]+)\]:\s*([\s\S]+)$/);
+    if (match && match[1].trim() === productType) return match[2].trim();
+  }
+  return '';
+}
+
+export function buildCombinedProblemDetails(products: LeadProductEntry[]): string {
+  return products
+    .filter((p) => p.problem.trim())
+    .map((p) => `[${p.type}]: ${p.problem.trim()}`)
+    .join(' | ');
+}
+
+/** Full per-product rows for forms (problems + images for edit) */
+export function getLeadProductEntries(lead: {
+  products?: Array<{ product_type: string; problem_details?: string | null }>;
+  product_type?: string | null;
+  problem_details?: string | null;
+  item_pictures?: string[] | string | null;
+  house_image?: string | null;
+}): LeadProductEntry[] {
+  const itemPics = getProductPictures(lead);
+  let entries: LeadProductEntry[] = [];
+
+  if (Array.isArray(lead.products) && lead.products.length > 0) {
+    entries = lead.products.map((p) => ({
+      type: p.product_type,
+      problem:
+        p.problem_details?.trim() ||
+        parseProblemForProduct(lead.problem_details, p.product_type) ||
+        '',
+      images: [] as string[],
+    }));
+  } else {
+    const types = parseProductTypes(lead.product_type);
+    if (types.length === 0 && lead.product_type?.trim()) {
+      types.push(lead.product_type.trim());
+    }
+    entries = types.map((type) => ({
+      type,
+      problem:
+        parseProblemForProduct(lead.problem_details, type) ||
+        (types.length === 1 ? lead.problem_details?.trim() || '' : ''),
+      images: [] as string[],
+    }));
+  }
+
+  if (itemPics.length > 0 && entries.length > 0) {
+    if (entries.length === 1) {
+      entries[0] = { ...entries[0], images: [...itemPics] };
+    } else {
+      const chunk = Math.max(1, Math.ceil(itemPics.length / entries.length));
+      entries = entries.map((entry, i) => ({
+        ...entry,
+        images: itemPics.slice(i * chunk, (i + 1) * chunk),
+      }));
+    }
+  }
+
+  return entries.length > 0 ? entries : [];
+}
+
+export function mergeProductImagesIntoPayload(products: LeadProductEntry[], extraItemPictures: string[] = []) {
+  const allProductImages = products.flatMap((p) => p.images);
+  return [...extraItemPictures, ...allProductImages];
+}
+
+export function productsToApiPayload(products: LeadProductEntry[]) {
+  return {
+    products: products.map((p) => ({ product_type: p.type, problem_details: p.problem })),
+    product_type: products.map((p) => p.type).join(', '),
+    problem_details: buildCombinedProblemDetails(products),
+  };
+}
+
 /** Parse comma-separated product_type into array */
 export function parseProductTypes(productType?: string | null): string[] {
   if (!productType?.trim()) return [];

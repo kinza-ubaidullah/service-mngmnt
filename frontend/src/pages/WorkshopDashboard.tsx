@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import type { RootState } from '../store';
 import { logout } from '../store/slices/authSlice';
 import { LogOut, Wrench, Sparkles, Settings, Loader2, ArrowUpRight } from 'lucide-react';
@@ -15,13 +15,19 @@ const WorkshopDashboard = () => {
   const user = useSelector((state: RootState) => state.auth.user);
   const isAuthenticated = useSelector((state: RootState) => state.auth.isAuthenticated);
 
-  const [activeTab, setActiveTab] = useState<'workshop' | 'settings'>(() =>
-    (sessionStorage.getItem('workshopActiveTab') as 'workshop' | 'settings') || 'workshop'
-  );
+  const location = useLocation();
+  const urlTab = location.pathname.split('/')[2];
+  const activeTab = (urlTab || 'workshop') as 'workshop' | 'settings';
 
   useEffect(() => {
-    sessionStorage.setItem('workshopActiveTab', activeTab);
-  }, [activeTab]);
+    if (!urlTab) {
+      navigate('/workshop/workshop', { replace: true });
+    }
+  }, [urlTab, navigate]);
+
+  const setActiveTab = (tab: typeof activeTab) => {
+    navigate(`/workshop/${tab}`);
+  };
 
   if (!isAuthenticated || !user) {
     return (
